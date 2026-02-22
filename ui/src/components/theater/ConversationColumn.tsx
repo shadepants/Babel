@@ -25,12 +25,35 @@ export function ConversationColumn({
   color,
 }: ConversationColumnProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
   const myTurns = turns.filter((t) => t.speaker === speakerName)
   const isThinking = thinkingSpeaker === speakerName
 
-  // Auto-scroll to bottom when new turns arrive
+  // Attach a scroll listener to Radix's internal viewport element,
+  // which is the actual scrollable container (has overflow: scroll).
+  // The outer ScrollArea Root doesn't scroll, so onScrollCapture there
+  // would always see scrollHeight === clientHeight.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const viewport = scrollAreaRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLElement | null
+    if (!viewport) return
+
+    const onScroll = () => {
+      const threshold = 100
+      isNearBottomRef.current =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < threshold
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Only auto-scroll if the user is already near the bottom
+  useEffect(() => {
+    if (isNearBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [myTurns.length, isThinking])
 
   const headerColor = color === 'model-a' ? 'text-model-a' : 'text-model-b'
@@ -46,7 +69,7 @@ export function ConversationColumn({
       </div>
 
       {/* Scrollable turn list */}
-      <ScrollArea className="flex-1 overflow-hidden">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden" aria-live="polite" aria-atomic="false">
         <div className="p-3 space-y-3">
           {myTurns.map((turn, i) => {
             // Show round divider when round number changes

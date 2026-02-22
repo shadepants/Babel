@@ -163,47 +163,39 @@ async def relay_stream(
     async def generate_with_keepalive():
         """Stream events with periodic keepalive comments.
 
-        Uses asyncio.wait with two tasks instead of wait_for on __anext__().
-        wait_for injects CancelledError into the generator on timeout,
-        which kills the subscription. This approach is safe — the event
-        task stays alive across keepalive cycles.
+        Uses an asyncio.Queue to decouple the hub subscription from
+        the keepalive timeout. This avoids cancelling __anext__() on
+        the async generator, which would inject CancelledError and
+        permanently close the subscription.
         """
-        subscription = hub.subscribe(
-            match_id=match_id,
-            include_history=include_history,
-        )
-        event_iter = subscription.__aiter__()
+        q: asyncio.Queue = asyncio.Queue()
 
+        async def consume_hub():
+            try:
+                async for evt in hub.subscribe(
+                    match_id=match_id,
+                    include_history=include_history,
+                ):
+                    await q.put(evt)
+            except Exception:
+                pass
+            finally:
+                await q.put(None)  # Sentinel: subscription ended
+
+        task = asyncio.create_task(consume_hub())
         try:
             while True:
-                # Create a fresh task for the next event
-                event_task = asyncio.ensure_future(event_iter.__anext__())
-                timer_task = asyncio.ensure_future(asyncio.sleep(KEEPALIVE_INTERVAL))
-
-                done, pending = await asyncio.wait(
-                    {event_task, timer_task},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                # Cancel whichever didn't finish
-                for task in pending:
-                    task.cancel()
-
-                if event_task in done:
-                    try:
-                        event = event_task.result()
-                        yield f"data: {event.to_sse_data()}\n\n"
-                    except StopAsyncIteration:
-                        break
-                else:
-                    # Timer fired — send keepalive, loop back to wait for events
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=KEEPALIVE_INTERVAL)
+                    if event is None:
+                        break  # Subscription ended
+                    yield f"data: {event.to_sse_data()}\n\n"
+                except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
-
         except asyncio.CancelledError:
             logger.debug("SSE client disconnected (match_id=%s)", match_id)
         finally:
-            # Ensure cleanup of the async generator
-            await subscription.aclose()
+            task.cancel()
 
     return StreamingResponse(
         generate_with_keepalive(),

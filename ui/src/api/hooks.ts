@@ -38,7 +38,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           state.status = 'running';
           break;
         case 'relay.turn':
-          state.turns = [...state.turns, event];
+          state.turns.push(event);
           state.thinkingSpeaker = null;
           state.currentRound = event.round;
           break;

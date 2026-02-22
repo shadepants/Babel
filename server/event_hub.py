@@ -51,7 +51,7 @@ class EventHub:
     Subscribers can filter by match_id.
     """
 
-    def __init__(self, max_history: int = 200) -> None:
+    def __init__(self, max_history: int = 2000) -> None:
         self._subscribers: list[tuple[asyncio.Queue, str | None]] = []
         self._history: list[SSEEvent] = []
         self._max_history = max_history
@@ -93,7 +93,7 @@ class EventHub:
         include_history:
             Replay recent events before streaming new ones.
         """
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=200)
+        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=2000)
         sub_entry = (queue, match_id)
         self._subscribers.append(sub_entry)
 

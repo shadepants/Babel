@@ -5,6 +5,9 @@ import type {
   PresetsResponse,
   VocabResponse,
   ExperimentRecord,
+  ExperimentsListResponse,
+  ExperimentStats,
+  TurnsResponse,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -69,6 +72,23 @@ export const api = {
       `/api/relay/history?${params.toString()}`
     );
   },
+
+  /** List all experiments (Gallery page) */
+  listExperiments: (params?: { limit?: number; offset?: number; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    if (params?.status) query.set('status', params.status);
+    return fetchJson<ExperimentsListResponse>(`/api/experiments/?${query.toString()}`);
+  },
+
+  /** Get pre-aggregated analytics for an experiment */
+  getExperimentStats: (experimentId: string) =>
+    fetchJson<ExperimentStats>(`/api/experiments/${experimentId}/stats`),
+
+  /** Get all turns with full content (for export) */
+  getExperimentTurns: (experimentId: string) =>
+    fetchJson<TurnsResponse>(`/api/experiments/${experimentId}/turns`),
 };
 
 export { ApiError };

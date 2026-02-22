@@ -135,12 +135,21 @@ class Database:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def list_experiments(self, limit: int = 50) -> list[dict]:
-        """List experiments, most recent first."""
-        cursor = await self.db.execute(
-            "SELECT * FROM experiments ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        )
+    async def list_experiments(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> list[dict]:
+        """List experiments, most recent first. Optional status filter and pagination."""
+        query = "SELECT * FROM experiments"
+        params: list[Any] = []
+        if status:
+            query += " WHERE status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        cursor = await self.db.execute(query, params)
         return [dict(row) for row in await cursor.fetchall()]
 
     async def update_experiment_status(
@@ -243,3 +252,93 @@ class Database:
             if row.get("parent_words"):
                 row["parent_words"] = json.loads(row["parent_words"])
         return rows
+
+    # ── Analytics ─────────────────────────────────────────────────────
+
+    async def get_experiment_stats(self, experiment_id: str) -> dict:
+        """Pre-aggregated analytics for one experiment.
+
+        Returns per-round latency/tokens broken out by speaker position,
+        vocabulary growth curve, and summary totals. The frontend receives
+        chart-ready data without needing to crunch raw turns.
+        """
+        # Fetch experiment to know speaker names
+        exp = await self.get_experiment(experiment_id)
+        if not exp:
+            return {"turns_by_round": [], "vocab_by_round": [], "totals": {}}
+        model_a_name = exp["model_a"]
+        model_b_name = exp["model_b"]
+
+        # Per-turn data ordered by round
+        cursor = await self.db.execute(
+            """SELECT round, speaker, latency_seconds, token_count
+               FROM turns WHERE experiment_id = ? ORDER BY round, id""",
+            (experiment_id,),
+        )
+        turn_rows = await cursor.fetchall()
+
+        # Group turns into per-round stats
+        rounds_data: dict[int, dict] = {}
+        total_tokens = 0
+        latencies_a: list[float] = []
+        latencies_b: list[float] = []
+
+        for row in turn_rows:
+            r = row["round"]
+            if r not in rounds_data:
+                rounds_data[r] = {
+                    "round": r,
+                    "model_a_latency": None, "model_b_latency": None,
+                    "model_a_tokens": None, "model_b_tokens": None,
+                }
+            entry = rounds_data[r]
+            lat = row["latency_seconds"]
+            tok = row["token_count"]
+
+            # First speaker in each round wrote model_a, second wrote model_b
+            if row["speaker"] == model_a_name or (
+                row["speaker"] != model_b_name and entry["model_a_latency"] is None
+            ):
+                entry["model_a_latency"] = round(lat, 2) if lat else None
+                entry["model_a_tokens"] = tok
+                if lat:
+                    latencies_a.append(lat)
+            else:
+                entry["model_b_latency"] = round(lat, 2) if lat else None
+                entry["model_b_tokens"] = tok
+                if lat:
+                    latencies_b.append(lat)
+
+            if tok:
+                total_tokens += tok
+
+        turns_by_round = sorted(rounds_data.values(), key=lambda x: x["round"])
+
+        # Vocab growth curve (cumulative words coined by round)
+        cursor = await self.db.execute(
+            """SELECT coined_round, COUNT(*) as count
+               FROM vocabulary WHERE experiment_id = ?
+               GROUP BY coined_round ORDER BY coined_round""",
+            (experiment_id,),
+        )
+        vocab_rows = await cursor.fetchall()
+        cumulative = 0
+        vocab_by_round = []
+        for row in vocab_rows:
+            cumulative += row["count"]
+            vocab_by_round.append({
+                "round": row["coined_round"],
+                "cumulative_count": cumulative,
+            })
+
+        return {
+            "turns_by_round": turns_by_round,
+            "vocab_by_round": vocab_by_round,
+            "totals": {
+                "total_turns": len(turn_rows),
+                "total_tokens": total_tokens,
+                "avg_latency_a": round(sum(latencies_a) / len(latencies_a), 2) if latencies_a else None,
+                "avg_latency_b": round(sum(latencies_b) / len(latencies_b), 2) if latencies_b else None,
+                "vocab_count": cumulative,
+            },
+        }

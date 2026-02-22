@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Phase 4 complete)
+**Last Updated:** 2026-02-22 (Phase 5 complete)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -11,7 +11,7 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - **LLM Routing:** litellm (9+ providers: Anthropic, Google, OpenAI, DeepSeek, Groq, Cerebras, Mistral, SambaNova, OpenRouter)
 - **Real-time:** Server-Sent Events (SSE)
 - **Frontend:** React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI v4
-- **Visualization:** D3.js 7 (vocabulary constellation) + Recharts 2 (analytics charts)
+- **Visualization:** D3.js 7 (vocabulary constellation + analytics charts)
 - **Database:** SQLite (WAL mode) — experiments, turns, vocabulary
 - **Testing:** pytest (backend) + vitest (frontend)
 
@@ -61,14 +61,17 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] Configure page at `/configure/:presetId` — full experiment setup (models, rounds, temperature, max tokens, seed, system prompt)
 - [x] Settings placeholder page at `/settings` (Phase 5/6)
 - [x] Theater simplified to pure live-view at `/theater/:matchId` (setup form removed)
-- [x] Nav bar added to Layout (BABEL brand + Seed Lab + Settings links)
+- [x] Nav bar added to Layout (BABEL brand + Seed Lab + Gallery + Settings links)
 - [x] Audit fixes: route ordering bug in experiments.py, unused imports, resilient preset loader, dynamic Tailwind class fix
 - [x] Build passes: 2449 modules, zero errors
 
-### Phase 5: Gallery + Analytics
-- [ ] Experiment gallery (past runs, card grid)
-- [ ] Analytics dashboard (growth curves, adoption rate, latency)
-- [ ] Export features (markdown blog post, JSON download)
+### Phase 5: Gallery + Analytics (DONE)
+- [x] Experiment gallery at `/gallery` — card grid with status badges, model pairs, preset tags, quick-nav to Theater/Dictionary
+- [x] Analytics dashboard at `/analytics/:experimentId` — stats summary row, D3 vocab growth line chart, D3 latency comparison chart
+- [x] Export features — JSON download (experiment + turns + vocab blob) + markdown clipboard copy
+- [x] Backend: `GET /stats` and `/turns` endpoints, `list_experiments` with pagination/status filter
+- [x] Gemini Checkpoint 4 — 4 fixes: incremental D3 graph updates (no more tearing), EventHub buffer 200→2000, async vocab extraction, self-referencing parent word filter
+- [x] Build passes: 2453 modules, zero errors
 
 ### Phase 6: Arena Mode + Polish
 - [ ] Multi-model tournament runner
@@ -100,7 +103,7 @@ Babel/
       philosophy.yaml          Explore deep questions
     routers/
       relay.py                 POST /api/relay/start (+ preset resolution), GET /api/relay/stream (SSE)
-      experiments.py            GET /api/experiments (list, detail, vocabulary)
+      experiments.py            GET /api/experiments (list, detail, vocabulary, stats, turns)
       presets.py               GET /api/presets (list, detail)
   ui/
     src/
@@ -109,16 +112,19 @@ Babel/
         Configure.tsx           Full experiment config — models, sliders, seed, system prompt
         Theater.tsx             Pure live-view — SSE stream, split columns, vocab panel
         Dictionary.tsx          Cards grid + D3 constellation, polls for live updates
-        Settings.tsx            Placeholder for Phase 5/6
+        Gallery.tsx             Past experiments card grid with status badges
+        Analytics.tsx           Per-experiment stats, D3 charts, JSON/markdown export
+        Settings.tsx            Placeholder for Phase 6
       components/
         theater/                TurnBubble, ThinkingIndicator, RoundDivider,
                                 ConversationColumn, ExperimentHeader, VocabPanel
-        dictionary/             WordCard, ConstellationGraph
+        dictionary/             WordCard, ConstellationGraph (incremental D3 updates)
+        analytics/              VocabGrowthChart, LatencyChart (D3 line charts)
         common/                 Layout (nav bar), ErrorBoundary
         ui/                     9 Shadcn primitives
       api/
-        types.ts                SSE events + REST types + Preset types
-        client.ts               fetchJson + api object (7 endpoints)
+        types.ts                SSE events + REST types + Preset + Analytics types
+        client.ts               fetchJson + api object (10 endpoints)
         sse.ts                  useSSE hook (EventSource, typed events)
         hooks.ts                useExperimentState (event sourcing)
   tests/                       pytest + vitest

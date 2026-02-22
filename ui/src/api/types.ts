@@ -156,9 +156,63 @@ export interface ExperimentRecord {
   created_at: string;
   model_a: string;
   model_b: string;
+  preset: string | null;
   seed: string;
   rounds_planned: number;
   rounds_completed: number;
   status: string;
   elapsed_seconds: number | null;
+}
+
+/** GET /api/experiments/ response */
+export interface ExperimentsListResponse {
+  experiments: ExperimentRecord[];
+}
+
+// ── Analytics Types ─────────────────────────────────────────────
+
+/** Per-round latency and token breakdown by model */
+export interface TurnStatRow {
+  round: number;
+  model_a_latency: number | null;
+  model_b_latency: number | null;
+  model_a_tokens: number | null;
+  model_b_tokens: number | null;
+}
+
+/** Cumulative vocabulary count at a given round */
+export interface VocabGrowthRow {
+  round: number;
+  cumulative_count: number;
+}
+
+/** GET /api/experiments/:id/stats response */
+export interface ExperimentStats {
+  turns_by_round: TurnStatRow[];
+  vocab_by_round: VocabGrowthRow[];
+  totals: {
+    total_turns: number;
+    total_tokens: number;
+    avg_latency_a: number | null;
+    avg_latency_b: number | null;
+    vocab_count: number;
+  };
+}
+
+/** Single turn record (for export) */
+export interface TurnRecord {
+  id: number;
+  round: number;
+  speaker: string;
+  model: string;
+  content: string;
+  latency_seconds: number | null;
+  token_count: number | null;
+  created_at: string;
+}
+
+/** GET /api/experiments/:id/turns response */
+export interface TurnsResponse {
+  experiment_id: string;
+  turns: TurnRecord[];
 }

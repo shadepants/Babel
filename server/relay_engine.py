@@ -224,9 +224,10 @@ async def run_relay(
                 "turn_id": turn_id_a,
             })
 
-            await _extract_and_publish_vocab(
+            asyncio.create_task(_extract_and_publish_vocab(
                 content_a, agent_a.name, round_num, match_id, hub, db, known_words,
-            )
+            ))
+            await asyncio.sleep(0)  # yield to let extraction task start
 
             # ── Agent B's turn ──
             hub.publish(RelayEvent.THINKING, {
@@ -260,9 +261,10 @@ async def run_relay(
                 "turn_id": turn_id_b,
             })
 
-            await _extract_and_publish_vocab(
+            asyncio.create_task(_extract_and_publish_vocab(
                 content_b, agent_b.name, round_num, match_id, hub, db, known_words,
-            )
+            ))
+            await asyncio.sleep(0)  # yield to let extraction task start
 
             # ── Round complete ──
             hub.publish(RelayEvent.ROUND_COMPLETE, {

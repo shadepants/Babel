@@ -19,6 +19,9 @@ export function Layout() {
           <NavLink to="/" end className={linkClass}>
             Seed Lab
           </NavLink>
+          <NavLink to="/gallery" className={linkClass}>
+            Gallery
+          </NavLink>
           <NavLink to="/settings" className={linkClass}>
             Settings
           </NavLink>

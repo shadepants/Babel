@@ -5,6 +5,8 @@ import SeedLab from './pages/SeedLab'
 import Configure from './pages/Configure'
 import Theater from './pages/Theater'
 import Dictionary from './pages/Dictionary'
+import Gallery from './pages/Gallery'
+import Analytics from './pages/Analytics'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -17,8 +19,9 @@ export default function App() {
             <Route path="/configure/:presetId" element={<Configure />} />
             <Route path="/theater/:matchId" element={<Theater />} />
             <Route path="/dictionary/:experimentId" element={<Dictionary />} />
+            <Route path="/gallery" element={<Gallery />} />
+            <Route path="/analytics/:experimentId" element={<Analytics />} />
             <Route path="/settings" element={<Settings />} />
-            {/* Phase 5+: <Route path="/gallery" element={<Gallery />} /> */}
           </Route>
         </Routes>
       </BrowserRouter>

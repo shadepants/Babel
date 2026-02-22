@@ -2,66 +2,65 @@
 
 ## Current Session Status
 **Last Updated:** 2026-02-22
-**Active Agent:** —
-**Current Goal:** Phase 4 complete — ready for Phase 5
+**Active Agent:** Claude Code
+**Current Goal:** Phase 5 complete — ready for live E2E test then Phase 6
 
 ## What's Done (Cumulative)
 - **Phase 1:** Backend core — FastAPI, relay engine, EventHub SSE, SQLite WAL, config/registry
 - **Phase 2:** React UI — Theater page, SSE streaming, start form, Shadcn components
 - **Phase 3:** Vocabulary extractor + dictionary — regex extraction, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation graph
 - **Phase 4:** Seed Lab + Presets — 6 preset YAML files, SeedLab landing page, Configure page, Settings placeholder, Theater simplified to pure live-view, nav bar
-- **Gemini Checkpoints 1-3:** All review findings addressed (13 fixes total across 3 reviews)
+- **Phase 5:** Gallery + Analytics — experiment gallery card grid, per-experiment analytics with D3 charts (vocab growth + latency), JSON/markdown export, `/stats` and `/turns` endpoints
+- **Gemini Checkpoints 1-4:** All review findings addressed (17 fixes total across 4 reviews)
 - **Post-Phase 4 audit:** Route ordering fix, unused imports cleanup, resilient preset loader, Tailwind dynamic class fix, Dictionary link text fix
+- **Tooling:** Enhanced `~/.claude/hooks/skill-suggester.py` with dynamic skill discovery
 
-## Session Summary (Phase 4)
+## Session Summary (Phase 5 Implementation)
 
-### Built
-- `server/presets/*.yaml` (×6) — conlang, debate, story, cipher, emotion-math, philosophy
-- `server/presets.py` — YAML loader with error handling (malformed files skip gracefully)
-- `server/routers/presets.py` — `GET /api/presets` (list) + `GET /api/presets/{id}` (single)
-- `server/app.py` — lifespan loads presets to `app.state`, mounts presets router
-- `server/routers/relay.py` — preset resolution: when `preset` is set, server overrides seed + system_prompt from YAML (authoritative source of truth)
-- `ui/src/pages/SeedLab.tsx` — landing page at `/`, preset card grid with emoji/tags/description + Custom card
-- `ui/src/pages/Configure.tsx` — full experiment config at `/configure/:presetId` (models, rounds, temperature, max tokens, seed editing, system prompt)
-- `ui/src/pages/Settings.tsx` — placeholder stub at `/settings`
-- `ui/src/pages/Theater.tsx` — simplified to pure live-view at `/theater/:matchId`, setup form removed entirely
-- `ui/src/components/common/Layout.tsx` — nav bar: BABEL brand + Seed Lab + Settings links
-- `ui/src/App.tsx` — new route structure: `/` → SeedLab, `/configure/:presetId` → Configure, `/theater/:matchId` → Theater
+### Gemini Checkpoint 4 Fixes (4 issues)
+1. **Critical — D3 Graph Tearing:** Rewrote `ConstellationGraph.tsx` to use incremental D3 `.data().join()` pattern. Simulation persists via `useRef`, new words animate in smoothly with `alpha(0.3)` reheat instead of full graph destruction.
+2. **Moderate — EventHub Buffer:** Bumped `max_history` and queue `maxsize` from 200→2000 in `event_hub.py`. Prevents late-joining clients from losing history and slow clients from being dropped.
+3. **Minor — Sequential Vocab Extraction:** Changed `await _extract_and_publish_vocab()` to `asyncio.create_task()` in `relay_engine.py`. Agent B starts thinking immediately instead of waiting for vocab DB writes.
+4. **Edge Case — Self-Referencing Parent Words:** Added `if p != word` filter in `vocab_extractor.py` to prevent circular edges in the D3 graph.
 
-### Fixed (audit)
-- `server/routers/experiments.py` — route ordering bug: `GET /` moved before `GET /{experiment_id}` (list endpoint was unreachable)
-- `server/routers/relay.py` — removed unused imports (`json`, `typing.Any`)
-- `server/presets.py` — added try/except + logging for malformed YAML files
-- `ui/src/components/dictionary/WordCard.tsx` — replaced dynamic Tailwind class `text-${color}` with explicit conditional (prevents production CSS purge)
-- `ui/src/pages/Dictionary.tsx` — fixed "Back to Theater" link text → "Back to Seed Lab" (matches `/` destination)
+### Phase 5 Features
+- **Backend:** `get_experiment_stats()` in `db.py` — pre-aggregated per-round latency/tokens, vocab growth curve, totals. `list_experiments()` extended with `offset`/`status` params. New `/stats` and `/turns` endpoints in `experiments.py`.
+- **Gallery page** (`/gallery`): Card grid mirroring SeedLab pattern. Status badges (running=green pulse, completed=purple, failed=red). Model pair names, round progress, elapsed time, preset tag. Quick-nav buttons to Theater/Dictionary. Empty state links to Seed Lab.
+- **Analytics page** (`/analytics/:experimentId`): Stats summary row (5 cards), D3 vocab growth line chart (purple accent), D3 latency comparison dual-line chart (indigo vs amber). Export buttons: "Download JSON" (blob download) and "Copy Markdown" (clipboard). Polls every 10s for running experiments.
+- **D3 Charts:** `VocabGrowthChart.tsx` and `LatencyChart.tsx` in `components/analytics/`. Follow ConstellationGraph's `useRef + useEffect + d3.select` pattern. Dark theme colors, axis labels, tooltips.
+- **Types + API:** 6 new TypeScript types, 3 new API client methods (`listExperiments`, `getExperimentStats`, `getExperimentTurns`). `ExperimentRecord` now includes `preset` field.
+- **Routing:** Gallery and Analytics routes added to `App.tsx`. "Gallery" NavLink added to `Layout.tsx` nav bar.
 
 ## Verification Status
 | Check | Status |
 |-------|--------|
-| Python import check | PASSED (6 presets loaded) |
-| Vite production build | PASSED (2449 modules, 0 errors) |
-| Route ordering fix | APPLIED |
+| Python import check | PASSED (all backend modules) |
+| TypeScript check | PASSED (0 errors) |
+| Vite production build | PASSED (2453 modules, 0 errors) |
+| pytest | NOT INSTALLED in venv |
 | Live end-to-end test | NOT YET |
 
 ## Known Issues
-- **`setup.ps1` / `start.ps1` missing:** Referenced in old CONTEXT.md but never created. Removed from docs. Manual launch commands documented instead.
-- **Pre-existing TS type warnings:** `turn_id` string/number mismatch in `sse.ts`, D3 drag type in `ConstellationGraph.tsx` — these are from Phase 3 and don't block the Vite build.
-- **Preset `defaults` not applied server-side:** When a preset is resolved, only `seed` and `system_prompt` are overridden. The client sends its own `rounds`, `temperature`, `max_tokens`. The Configure page pre-fills from preset defaults, so in practice the values match.
-- **SeedLab cards not keyboard accessible:** Cards use `onClick` on `<div>` — missing `tabIndex`, `role="button"`, `onKeyDown`. Low-priority a11y fix.
+- **`setup.ps1` / `start.ps1` missing:** Manual launch commands documented in CONTEXT.md instead.
+- **Pre-existing TS type warning:** `turn_id` string/number mismatch in `sse.ts` — from Phase 3, doesn't block build.
+- **Preset `defaults` not applied server-side:** Client sends its own values; Configure page pre-fills from preset defaults so they match in practice.
+- **SeedLab/Gallery cards not keyboard accessible:** Cards use `onClick` on `<div>` — missing `tabIndex`, `role="button"`, `onKeyDown`. Low-priority a11y fix.
+- **pytest not in venv:** `pip install pytest` needed before running backend tests.
 
 ## Next Steps
-1. **Live end-to-end test** — start backend + frontend, run a real experiment from SeedLab → Configure → Theater flow
-2. **Phase 5: Gallery + Analytics**
-   - Experiment gallery (past runs, card grid)
-   - Analytics dashboard (growth curves, adoption rate, latency)
-   - Export features (markdown blog post, JSON download)
+1. **Live end-to-end test** — start backend + frontend, run a real experiment from SeedLab → Configure → Theater → Gallery → Analytics flow
+2. **Phase 6: Arena Mode + Polish**
+   - Multi-model tournament runner
+   - Side-by-side comparison view
+   - Model personality radar chart
+   - README with screenshots, GitHub publish
 
 ## Git State
 - **Branch:** master
-- **Latest commits:** (pending — Phase 4 work needs to be committed)
-- **Files changed:** 9 modified, 10 new files
+- **Latest commit:** (pending — Phase 5 commit about to be created)
 
 ## Key References
+- **Phase 5 plan:** `~/.claude/plans/idempotent-napping-fiddle.md`
 - **Phase 4 plan:** `~/.claude/plans/swirling-splashing-dahl.md`
 - **Phase 3 plan:** `~/.claude/plans/curious-brewing-lake.md`
 - **Phase 2 plan:** `~/.claude/plans/noble-brewing-fairy.md`

@@ -123,7 +123,7 @@ def extract_vocabulary(
                 continue
 
             if word not in found:
-                parents = _find_parent_words(meaning, known_words)
+                parents = [p for p in _find_parent_words(meaning, known_words) if p != word]
                 category = _detect_category(content, match.start(), match.end())
                 found[word] = ExtractedWord(
                     word=word,

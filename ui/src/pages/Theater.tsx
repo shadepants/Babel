@@ -7,12 +7,16 @@ import { Button } from '@/components/ui/button'
 import { ConversationColumn } from '@/components/theater/ConversationColumn'
 import { ExperimentHeader } from '@/components/theater/ExperimentHeader'
 import { VocabPanel } from '@/components/theater/VocabPanel'
+import { TheaterCanvas } from '@/components/theater/TheaterCanvas'
+
+const COLOR_A  = '#F59E0B'   // amber
+const COLOR_B  = '#06B6D4'   // cyan
+const COLOR_DEFAULT = '#8b5cf6' // accent purple (idle)
 
 export default function Theater() {
   const { matchId } = useParams<{ matchId: string }>()
   const location = useLocation()
 
-  // Model names — passed via location.state from Configure, or fetched from API
   const [modelAName, setModelAName] = useState(
     (location.state as { modelAName?: string })?.modelAName ?? ''
   )
@@ -20,12 +24,10 @@ export default function Theater() {
     (location.state as { modelBName?: string })?.modelBName ?? ''
   )
 
-  // Fetch experiment record as fallback for model names (e.g. direct URL nav)
   useEffect(() => {
     if (matchId && !modelAName && !modelBName) {
       api.getExperiment(matchId)
         .then((exp) => {
-          // exp.model_a is a litellm string — extract display name
           setModelAName(exp.model_a.split('/').pop() ?? exp.model_a)
           setModelBName(exp.model_b.split('/').pop() ?? exp.model_b)
         })
@@ -33,11 +35,45 @@ export default function Theater() {
     }
   }, [matchId, modelAName, modelBName])
 
-  // ── SSE + derived state ──
   const { events, connected, error: sseError } = useSSE(matchId ?? null)
   const experiment = useExperimentState(events)
 
-  // No matchId — show empty state
+  // ── Color bleed — update body data-attr so CSS transitions the nav border ──
+  useEffect(() => {
+    const root = document.documentElement
+    const speaking = experiment.thinkingSpeaker
+
+    if (speaking === modelAName) {
+      root.setAttribute('data-active-model', 'a')
+      root.style.setProperty('--color-active', COLOR_A)
+    } else if (speaking === modelBName) {
+      root.setAttribute('data-active-model', 'b')
+      root.style.setProperty('--color-active', COLOR_B)
+    } else if (experiment.turns.length > 0) {
+      // Hold the last speaker's color between turns
+      const last = experiment.turns[experiment.turns.length - 1]
+      const isA = last.speaker === modelAName
+      root.setAttribute('data-active-model', isA ? 'a' : 'b')
+      root.style.setProperty('--color-active', isA ? COLOR_A : COLOR_B)
+    }
+  }, [experiment.thinkingSpeaker, experiment.turns, modelAName, modelBName])
+
+  // ── Reset color bleed when leaving Theater ────────────────────────────────
+  useEffect(() => {
+    return () => {
+      document.documentElement.removeAttribute('data-active-model')
+      document.documentElement.style.setProperty('--color-active', COLOR_DEFAULT)
+    }
+  }, [])
+
+  // Derived: last turn + last vocab for canvas
+  const lastTurn  = experiment.turns.length > 0
+    ? experiment.turns[experiment.turns.length - 1]
+    : null
+  const lastVocab = experiment.vocab.length > 0
+    ? experiment.vocab[experiment.vocab.length - 1]
+    : null
+
   if (!matchId) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -51,9 +87,8 @@ export default function Theater() {
     )
   }
 
-  // ── Render: Live Theater ──
   return (
-    <div className="flex-1 flex flex-col bg-bg-deep">
+    <div className="flex-1 flex flex-col">
       <ExperimentHeader
         modelA={modelAName}
         modelB={modelBName}
@@ -73,8 +108,13 @@ export default function Theater() {
         modelA={modelAName}
       />
 
-      {/* Split columns */}
-      <div className="flex-1 grid grid-cols-2 gap-4 p-4 min-h-0">
+      {/* Split columns — relative so TheaterCanvas positions inside it */}
+      <div className="flex-1 relative grid grid-cols-2 gap-4 p-4 min-h-0">
+        <TheaterCanvas
+          lastTurn={lastTurn}
+          lastVocab={lastVocab}
+          modelAName={modelAName}
+        />
         <ConversationColumn
           speakerName={modelAName}
           turns={experiment.turns}
@@ -89,13 +129,10 @@ export default function Theater() {
         />
       </div>
 
-      {/* Footer: new experiment button after completion */}
       {experiment.status === 'completed' && (
         <div className="px-4 py-3 border-t border-border-custom text-center">
           <Link to="/">
-            <Button variant="outline">
-              New Experiment
-            </Button>
+            <Button variant="outline">New Experiment</Button>
           </Link>
         </div>
       )}

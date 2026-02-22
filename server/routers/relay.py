@@ -49,6 +49,7 @@ class RelayStartRequest(BaseModel):
     temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=100, le=4096)
     preset: str | None = Field(default=None, description="Preset name (if from Seed Lab)")
+    turn_delay_seconds: float = Field(default=2.0, ge=0.0, le=10.0, description="Seconds to pause between turns")
 
 
 class RelayStartResponse(BaseModel):
@@ -138,6 +139,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
             rounds=body.rounds,
             hub=hub,
             db=db,
+            turn_delay_seconds=body.turn_delay_seconds,
         )
     )
 

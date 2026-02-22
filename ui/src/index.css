@@ -4,27 +4,58 @@
 
 @layer base {
   :root {
+    /* Background layers */
     --bg-deep: 222 47% 7%;
     --bg-card: 224 30% 11%;
     --border: 224 25% 21%;
+
+    /* Text */
     --text: 214 32% 91%;
     --text-dim: 215 16% 47%;
-    --model-a: 239 84% 67%;
-    --model-b: 38 92% 50%;
-    --accent: 263 70% 58%;
+
+    /* Model identity — A: amber/gold, B: cyan/teal */
+    --model-a: 38 92% 50%;      /* #F59E0B */
+    --model-b: 192 91% 43%;     /* #06B6D4 */
+
+    /* Brand accent */
+    --accent: 263 70% 58%;      /* #8b5cf6 */
+
+    /* Active model color — driven by Theater, defaults to accent */
+    --color-active: #8b5cf6;
+
+    /* Glow tokens */
+    --glow-a: 0 0 24px rgba(245, 158, 11, 0.45);
+    --glow-b: 0 0 24px rgba(6, 182, 212, 0.45);
+    --glow-accent: 0 0 24px rgba(139, 92, 246, 0.35);
+
+    /* Typography */
+    --font-display: 'Orbitron', sans-serif;
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
   }
 }
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #0a0e1a;
+  font-family: var(--font-ui);
+  background-color: #020817;
   color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Nav border reacts to active model color in Theater */
+nav {
+  transition: border-bottom-color 0.8s ease;
+}
+html[data-active-model="a"] nav {
+  border-bottom-color: rgba(245, 158, 11, 0.45) !important;
+}
+html[data-active-model="b"] nav {
+  border-bottom-color: rgba(6, 182, 212, 0.45) !important;
+}
+
 /* Dark scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #0a0e1a; }
+::-webkit-scrollbar-track { background: #020817; }
 ::-webkit-scrollbar-thumb { background: #2a3146; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }

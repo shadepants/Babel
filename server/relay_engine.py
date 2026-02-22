@@ -178,6 +178,7 @@ async def run_relay(
     rounds: int,
     hub: EventHub,
     db: Database,
+    turn_delay_seconds: float = 2.0,
 ) -> None:
     """Run an AI-to-AI relay conversation.
 
@@ -227,7 +228,7 @@ async def run_relay(
             asyncio.create_task(_extract_and_publish_vocab(
                 content_a, agent_a.name, round_num, match_id, hub, db, known_words,
             ))
-            await asyncio.sleep(0)  # yield to let extraction task start
+            await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Agent B's turn ──
             hub.publish(RelayEvent.THINKING, {
@@ -264,7 +265,7 @@ async def run_relay(
             asyncio.create_task(_extract_and_publish_vocab(
                 content_b, agent_b.name, round_num, match_id, hub, db, known_words,
             ))
-            await asyncio.sleep(0)  # yield to let extraction task start
+            await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Round complete ──
             hub.publish(RelayEvent.ROUND_COMPLETE, {

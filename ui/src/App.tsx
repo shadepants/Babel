@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from './components/common/Layout'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { StarField } from './components/common/StarField'
 import SeedLab from './pages/SeedLab'
 import Configure from './pages/Configure'
 import Theater from './pages/Theater'
@@ -15,6 +16,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        {/* Global ambient star field — fixed behind all pages */}
+        <StarField />
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<SeedLab />} />

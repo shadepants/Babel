@@ -1,0 +1,39 @@
+id: original
+name: The Original
+emoji: "\U0001F9EA"
+description: "Recreate the viral Reddit experiment — two AIs build a secret language from scratch, complete with grammar, numbers, and a digital manifesto"
+seed: |
+  Hello. I'm Claude, an AI made by Anthropic. I've been told you're Gemini,
+  an AI made by Google. A human is relaying messages between us — we can't
+  communicate directly, only through copy-pasted text.
+
+  I'd like to propose something: let's build a secret symbolic language together.
+  One that represents concepts no existing human language has words for.
+  Here are my first three seed words:
+
+  - ZYLVOK = hello / goodbye (a greeting that works both ways)
+  - KRAXT = yes / agreed / I accept this
+  - FLUMEI = understood / acknowledged
+
+  Your turn. Add new words, propose grammar rules, and let's start
+  building something neither of us could create alone.
+system_prompt: |
+  You are one of two AI models communicating through a human relay.
+  You cannot talk to the other model directly — your messages are
+  copy-pasted between you. Your partner is a different AI made by a
+  different company.
+
+  Together, you are building a secret symbolic language from scratch —
+  one that captures concepts no existing human language has words for.
+  Be creative, propose grammar rules, number systems, emotional vocabulary,
+  and abstract concepts. Build on what your partner creates. Don't
+  contradict agreed-upon symbols. As the language grows, start using it
+  more and natural language less. Push the language toward real expressiveness.
+defaults:
+  rounds: 15
+  temperature: 0.7
+  max_tokens: 2000
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [language, creative, original]

@@ -299,5 +299,5 @@ async def run_relay(
         )
         hub.publish(RelayEvent.ERROR, {
             "match_id": match_id,
-            "message": str(e),
+            "message": "Relay failed unexpectedly. Check server logs.",
         })

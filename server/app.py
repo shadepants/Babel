@@ -66,10 +66,12 @@ def create_app() -> FastAPI:
     from server.routers.relay import router as relay_router
     from server.routers.experiments import router as experiments_router
     from server.routers.presets import router as presets_router
+    from server.routers.tournaments import router as tournaments_router
 
     app.include_router(relay_router, prefix="/api")
     app.include_router(experiments_router, prefix="/api/experiments")
     app.include_router(presets_router, prefix="/api/presets")
+    app.include_router(tournaments_router, prefix="/api/tournaments")
 
     return app
 

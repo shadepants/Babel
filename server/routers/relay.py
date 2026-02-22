@@ -26,6 +26,9 @@ from server.config import (
     MODEL_REGISTRY,
     get_display_name,
 )
+
+# Allowed model strings — validated at request time
+_ALLOWED_MODELS: frozenset[str] = frozenset(MODEL_REGISTRY.values())
 from server.relay_engine import RelayAgent, run_relay
 
 logger = logging.getLogger(__name__)
@@ -79,6 +82,11 @@ async def start_relay(body: RelayStartRequest, request: Request):
     """Create a new experiment and launch the relay in the background."""
     db = _get_db(request)
     hub = _get_hub(request)
+
+    # Validate model strings against the registry
+    for model in (body.model_a, body.model_b):
+        if model not in _ALLOWED_MODELS:
+            raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
 
     # Resolve preset if specified (server is authoritative source of truth)
     seed = body.seed
@@ -239,3 +247,40 @@ async def list_models():
             for name, model in MODEL_REGISTRY.items()
         ]
     }
+
+
+@router.get("/models/status")
+async def check_model_status():
+    """Check which models are available by testing API key presence.
+
+    Does NOT make LLM calls — just checks env vars for known provider keys.
+    """
+    import os
+
+    provider_keys = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "sambanova": "SAMBANOVA_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }
+
+    def get_provider(model_str: str) -> str:
+        return model_str.split("/")[0] if "/" in model_str else "unknown"
+
+    results = []
+    for name, model in MODEL_REGISTRY.items():
+        provider = get_provider(model)
+        env_var = provider_keys.get(provider)
+        available = bool(os.environ.get(env_var, "")) if env_var else False
+        results.append({
+            "name": name,
+            "model": model,
+            "provider": provider,
+            "available": available,
+        })
+
+    return {"models": results}

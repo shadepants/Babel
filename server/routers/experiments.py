@@ -3,11 +3,13 @@
 Separate from the relay router which handles lifecycle (start/stream).
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from server.db import Database
 
 router = APIRouter(tags=["experiments"])
+
+_VALID_STATUSES = frozenset({"running", "completed", "failed", "stopped"})
 
 
 def _get_db(request: Request) -> Database:
@@ -17,11 +19,16 @@ def _get_db(request: Request) -> Database:
 @router.get("/")
 async def list_experiments(
     request: Request,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     status: str | None = None,
 ):
     """List recent experiments (most recent first). Optional status filter and pagination."""
+    if status and status not in _VALID_STATUSES:
+        raise HTTPException(
+            400,
+            f"Invalid status '{status}'. Valid values: {sorted(_VALID_STATUSES)}",
+        )
     db = _get_db(request)
     return {"experiments": await db.list_experiments(limit=limit, offset=offset, status=status)}
 
@@ -66,3 +73,14 @@ async def get_experiment_turns(experiment_id: str, request: Request):
         raise HTTPException(404, "Experiment not found")
     turns = await db.get_turns(experiment_id)
     return {"experiment_id": experiment_id, "turns": turns}
+
+
+@router.get("/{experiment_id}/radar")
+async def get_experiment_radar(experiment_id: str, request: Request):
+    """Radar chart data for both models in an experiment (normalized 0-1)."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    data = await db.get_model_radar_stats(experiment_id)
+    return {"experiment_id": experiment_id, "models": data}

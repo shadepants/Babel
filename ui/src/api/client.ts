@@ -8,6 +8,13 @@ import type {
   ExperimentsListResponse,
   ExperimentStats,
   TurnsResponse,
+  TournamentStartRequest,
+  TournamentStartResponse,
+  TournamentDetail,
+  TournamentListResponse,
+  TournamentLeaderboard,
+  ExperimentRadarResponse,
+  ModelStatusResponse,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -89,6 +96,38 @@ export const api = {
   /** Get all turns with full content (for export) */
   getExperimentTurns: (experimentId: string) =>
     fetchJson<TurnsResponse>(`/api/experiments/${experimentId}/turns`),
+
+  /** Get radar chart data for an experiment (both models, normalized 0-1) */
+  getExperimentRadar: (experimentId: string) =>
+    fetchJson<ExperimentRadarResponse>(`/api/experiments/${experimentId}/radar`),
+
+  /** Check which models have API keys configured */
+  getModelStatus: () => fetchJson<ModelStatusResponse>('/api/relay/models/status'),
+
+  // ── Tournament endpoints ──────────────────────────────────
+
+  /** Start a new multi-model tournament */
+  startTournament: (body: TournamentStartRequest) =>
+    fetchJson<TournamentStartResponse>('/api/tournaments/start', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** List all tournaments */
+  listTournaments: (params?: { limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    return fetchJson<TournamentListResponse>(`/api/tournaments/?${query.toString()}`);
+  },
+
+  /** Get tournament details including match list */
+  getTournament: (tournamentId: string) =>
+    fetchJson<TournamentDetail>(`/api/tournaments/${tournamentId}`),
+
+  /** Get tournament leaderboard with radar data */
+  getTournamentLeaderboard: (tournamentId: string) =>
+    fetchJson<TournamentLeaderboard>(`/api/tournaments/${tournamentId}/leaderboard`),
 };
 
 export { ApiError };

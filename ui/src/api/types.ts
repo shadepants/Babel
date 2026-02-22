@@ -216,3 +216,166 @@ export interface TurnsResponse {
   experiment_id: string;
   turns: TurnRecord[];
 }
+
+// ── Tournament Types ─────────────────────────────────────────
+
+/** POST /api/tournaments/start request body */
+export interface TournamentStartRequest {
+  name: string;
+  models: string[];       // litellm model strings (min 3)
+  preset?: string;
+  seed: string;
+  system_prompt: string;
+  rounds: number;
+  temperature: number;
+  max_tokens: number;
+}
+
+/** POST /api/tournaments/start response */
+export interface TournamentStartResponse {
+  tournament_id: string;
+  name: string;
+  total_matches: number;
+  models: string[];
+  status: string;
+}
+
+/** Tournament record from REST */
+export interface TournamentRecord {
+  id: string;
+  name: string;
+  preset: string | null;
+  models: string[];
+  status: string;
+  total_matches: number;
+  completed_matches: number;
+  created_at: string;
+  rounds: number;
+}
+
+/** Single match within a tournament */
+export interface TournamentMatch {
+  id: number;
+  tournament_id: string;
+  experiment_id: string | null;
+  model_a: string;
+  model_b: string;
+  match_order: number;
+  status: string;
+}
+
+/** GET /api/tournaments/:id response (tournament + matches) */
+export interface TournamentDetail extends TournamentRecord {
+  matches: TournamentMatch[];
+}
+
+/** GET /api/tournaments/ response */
+export interface TournamentListResponse {
+  tournaments: TournamentRecord[];
+}
+
+/** Single entry in the tournament leaderboard */
+export interface LeaderboardEntry {
+  model: string;
+  display_name: string;
+  matches_played: number;
+  avg_latency: number | null;
+  avg_tokens: number | null;
+  total_vocab_coined: number;
+  // Radar chart axes (normalized 0-1)
+  verbosity: number;
+  speed: number;
+  creativity: number;
+  consistency: number;
+  engagement: number;
+}
+
+/** GET /api/tournaments/:id/leaderboard response */
+export interface TournamentLeaderboard {
+  tournament_id: string;
+  entries: LeaderboardEntry[];
+}
+
+// ── Tournament SSE Events ────────────────────────────────────
+
+export interface TournamentMatchStartedEvent extends BaseSSEEvent {
+  type: 'tournament.match_started';
+  tournament_id: string;
+  match_order: number;
+  total_matches: number;
+  model_a: string;
+  model_b: string;
+  experiment_id: string;
+}
+
+export interface TournamentMatchCompleteEvent extends BaseSSEEvent {
+  type: 'tournament.match_complete';
+  tournament_id: string;
+  match_order: number;
+  total_matches: number;
+  experiment_id: string;
+}
+
+export interface TournamentCompleteEvent extends BaseSSEEvent {
+  type: 'tournament.complete';
+  tournament_id: string;
+  total_matches: number;
+  elapsed_s: number;
+}
+
+export interface TournamentErrorEvent extends BaseSSEEvent {
+  type: 'tournament.error';
+  tournament_id: string;
+  message: string;
+}
+
+export type TournamentSSEEvent =
+  | TournamentMatchStartedEvent
+  | TournamentMatchCompleteEvent
+  | TournamentCompleteEvent
+  | TournamentErrorEvent;
+
+// ── Radar Chart Types ────────────────────────────────────────
+
+/** One axis value for the radar chart */
+export interface RadarAxis {
+  axis: string;
+  value: number; // 0 to 1
+}
+
+/** One model's polygon on the radar chart */
+export interface RadarDataPoint {
+  model: string;
+  display_name: string;
+  color: string;
+  axes: RadarAxis[];
+}
+
+/** GET /api/experiments/:id/radar response */
+export interface ExperimentRadarResponse {
+  experiment_id: string;
+  models: RadarModelEntry[];
+}
+
+/** Single model entry from radar endpoint (raw from backend) */
+export interface RadarModelEntry {
+  model: string;
+  display_name: string;
+  verbosity: number;
+  speed: number;
+  creativity: number;
+  consistency: number;
+  engagement: number;
+}
+
+/** Model status from GET /api/relay/models/status */
+export interface ModelStatusInfo {
+  name: string;
+  model: string;
+  provider: string;
+  available: boolean;
+}
+
+export interface ModelStatusResponse {
+  models: ModelStatusInfo[];
+}

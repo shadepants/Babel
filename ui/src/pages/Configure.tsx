@@ -217,12 +217,12 @@ export default function Configure() {
             value={[rounds]}
             onValueChange={(v) => setRounds(v[0])}
             min={1}
-            max={7}
+            max={15}
             step={1}
           />
           <div className="flex justify-between text-xs text-text-dim">
             <span>1</span>
-            <span>7</span>
+            <span>15</span>
           </div>
         </div>
 

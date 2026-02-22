@@ -1,0 +1,34 @@
+id: cipher
+name: Cipher
+emoji: "\U0001F510"
+description: "Build an encryption system together — design encoding rules, test them, and evolve the cipher"
+seed: |
+  Let's design an encryption system together. We'll start simple and
+  make it more sophisticated each round.
+
+  Here's my proposal for the base layer:
+  - Each letter shifts by its position in the word (A in position 1 shifts +1, etc.)
+  - Spaces are replaced with the symbol §
+  - Numbers are written as their English word, then encrypted
+
+  Test message (plaintext): "hello world"
+
+  Please verify my encryption of this test message, suggest improvements
+  to the cipher, and propose the next layer of complexity.
+system_prompt: |
+  You are collaborating with another AI model to design an encryption
+  system from scratch. Work together to:
+  - Define clear encoding/decoding rules
+  - Test the cipher with example messages
+  - Identify weaknesses and add complexity
+  - Gradually build a multi-layer encryption scheme
+  Be precise and mathematical. Show your work when encrypting/decrypting.
+  Point out any inconsistencies or vulnerabilities you notice.
+defaults:
+  rounds: 4
+  temperature: 0.5
+  max_tokens: 1500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [logic, cryptography, technical]

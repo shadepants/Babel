@@ -102,6 +102,33 @@ export type RelaySSEEvent =
   | ErrorEvent
   | VocabEvent;
 
+// ── Preset Types ─────────────────────────────────────────────
+
+/** Single preset from GET /api/presets */
+export interface Preset {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  seed: string;
+  system_prompt: string;
+  defaults: {
+    rounds: number;
+    temperature: number;
+    max_tokens: number;
+  };
+  suggested_models: {
+    a: string;  // display name like "Claude Sonnet"
+    b: string;
+  };
+  tags: string[];
+}
+
+/** GET /api/presets response */
+export interface PresetsResponse {
+  presets: Preset[];
+}
+
 // ── REST Response Types ───────────────────────────────────────
 
 /** Single vocabulary word from REST endpoint */

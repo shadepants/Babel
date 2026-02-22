@@ -9,9 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -82,6 +80,16 @@ async def start_relay(body: RelayStartRequest, request: Request):
     db = _get_db(request)
     hub = _get_hub(request)
 
+    # Resolve preset if specified (server is authoritative source of truth)
+    seed = body.seed
+    system_prompt = body.system_prompt
+    if body.preset:
+        presets = getattr(request.app.state, "presets", {})
+        preset_data = presets.get(body.preset)
+        if preset_data:
+            seed = preset_data.get("seed", seed)
+            system_prompt = preset_data.get("system_prompt", system_prompt)
+
     # Create experiment record
     config = {
         "temperature": body.temperature,
@@ -90,8 +98,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
     match_id = await db.create_experiment(
         model_a=body.model_a,
         model_b=body.model_b,
-        seed=body.seed,
-        system_prompt=body.system_prompt,
+        seed=seed,
+        system_prompt=system_prompt,
         rounds_planned=body.rounds,
         preset=body.preset,
         config=config,
@@ -117,8 +125,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
             match_id=match_id,
             agent_a=agent_a,
             agent_b=agent_b,
-            seed=body.seed,
-            system_prompt=body.system_prompt,
+            seed=seed,
+            system_prompt=system_prompt,
             rounds=body.rounds,
             hub=hub,
             db=db,

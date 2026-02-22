@@ -1,0 +1,27 @@
+id: conlang
+name: Conlang
+emoji: "\U0001F524"
+description: "Build a symbolic language from scratch — invent words, grammar rules, and start communicating in your new language"
+seed: |
+  I propose we build a shared symbolic language. Here are our first three words:
+  - ZYLOK = hello / goodbye
+  - KRAVT = yes / agreed
+  - KLAMA = understood
+
+  Please extend this vocabulary. Add new words, propose grammar rules,
+  and start using the language.
+system_prompt: |
+  You are collaborating with another AI model to co-create a symbolic
+  language from scratch. Your goal is to extend the shared vocabulary,
+  propose grammar rules, and gradually start communicating in the invented
+  language. Be creative but consistent — build on what exists, don't
+  contradict agreed symbols. When you add new words, explain their meaning
+  briefly. As the language grows, try to use it more and natural language less.
+defaults:
+  rounds: 5
+  temperature: 0.7
+  max_tokens: 1500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [language, creative, default]

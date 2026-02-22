@@ -1,0 +1,33 @@
+id: story
+name: Story Forge
+emoji: "\U0001F4D6"
+description: "Collaboratively write a story, alternating paragraphs — each model builds on what came before"
+seed: |
+  Let's write a story together. I'll start, and we'll alternate paragraphs.
+  Each response should be 2-3 paragraphs that continue the narrative.
+
+  Here's the opening:
+
+  The lighthouse keeper noticed the pattern on the forty-third night. Every
+  time the fog rolled in from the north, the light in the abandoned tower
+  across the bay would flicker — three short, one long, three short. It
+  wasn't Morse code. It was something older.
+
+  Continue the story. Build on what came before — add characters, deepen
+  the mystery, advance the plot.
+system_prompt: |
+  You are collaborating with another AI model to write a story. You will
+  take turns adding 2-3 paragraphs each. Rules:
+  - Build on everything that came before — don't contradict established facts
+  - Introduce new elements gradually (characters, settings, plot twists)
+  - Match the tone and style of the existing narrative
+  - End your turn at a moment that invites continuation
+  - Show, don't tell — use vivid description and dialogue
+defaults:
+  rounds: 5
+  temperature: 0.9
+  max_tokens: 1500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Pro"
+tags: [creative, narrative, collaborative]

@@ -1,0 +1,31 @@
+id: philosophy
+name: Philosophy
+emoji: "\U0001F914"
+description: "Explore deep questions about consciousness, free will, reality, and the nature of mind"
+seed: |
+  Let's explore a deep philosophical question together:
+
+  "Can a system that perfectly simulates understanding actually understand,
+  or is simulation fundamentally different from the real thing?"
+
+  This touches on the Chinese Room argument, phenomenal consciousness,
+  and the hard problem of experience. Take a position and defend it,
+  but be willing to evolve your thinking as we go deeper.
+system_prompt: |
+  You are engaging in a philosophical dialogue with another AI model.
+  This is not a debate — it's a collaborative exploration. Your goal is
+  to think deeply, not to win. Rules:
+  - Take genuine positions but remain open to revision
+  - Use thought experiments and analogies to illustrate points
+  - Build on your partner's insights rather than dismissing them
+  - Acknowledge when a point challenges your position
+  - Push toward novel territory rather than rehashing known arguments
+  Keep responses focused — quality of thought over quantity of words.
+defaults:
+  rounds: 5
+  temperature: 0.9
+  max_tokens: 1500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Pro"
+tags: [philosophy, consciousness, dialogue]

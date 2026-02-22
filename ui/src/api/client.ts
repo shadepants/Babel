@@ -2,6 +2,7 @@ import type {
   RelayStartRequest,
   RelayStartResponse,
   ModelsResponse,
+  PresetsResponse,
   VocabResponse,
   ExperimentRecord,
 } from './types';
@@ -47,6 +48,9 @@ export const api = {
 
   /** Get available models from the registry */
   getModels: () => fetchJson<ModelsResponse>('/api/relay/models'),
+
+  /** Get available experiment presets */
+  getPresets: () => fetchJson<PresetsResponse>('/api/presets'),
 
   /** Get experiment metadata */
   getExperiment: (experimentId: string) =>

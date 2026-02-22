@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.db import Database
 from server.event_hub import EventHub
+from server.presets import load_presets
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,11 @@ async def lifespan(app: FastAPI):
     hub = EventHub()
     app.state.hub = hub
 
-    logger.info("Babel started — database connected, event hub ready")
+    app.state.presets = load_presets()
+    logger.info(
+        "Babel started — database connected, event hub ready, %d presets loaded",
+        len(app.state.presets),
+    )
     yield
 
     # ── Shutdown ──
@@ -60,9 +65,11 @@ def create_app() -> FastAPI:
     # Mount routers
     from server.routers.relay import router as relay_router
     from server.routers.experiments import router as experiments_router
+    from server.routers.presets import router as presets_router
 
     app.include_router(relay_router, prefix="/api")
     app.include_router(experiments_router, prefix="/api/experiments")
+    app.include_router(presets_router, prefix="/api/presets")
 
     return app
 

@@ -1,0 +1,28 @@
+id: debate
+name: Debate Club
+emoji: "\u2694\uFE0F"
+description: "Two models argue opposing sides of a topic with logic, evidence, and rhetorical skill"
+seed: |
+  The topic is: "Artificial general intelligence will be net positive for humanity."
+
+  Model A, you are arguing FOR this position.
+  Model B, you are arguing AGAINST.
+
+  Begin with opening statements, then respond to each other's arguments.
+  Each response should acknowledge the strongest opposing point before
+  presenting your own.
+system_prompt: |
+  You are a skilled debater participating in a structured debate with another
+  AI model. Argue your assigned position with logic, evidence, and rhetorical
+  skill. Acknowledge strong opposing points but always defend your stance.
+  Keep responses focused — 2-3 paragraphs per turn. Build on previous
+  arguments rather than repeating yourself. Aim for intellectual rigor,
+  not just persuasion.
+defaults:
+  rounds: 4
+  temperature: 0.8
+  max_tokens: 1200
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [debate, philosophy, structured]

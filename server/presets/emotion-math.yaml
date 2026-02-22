@@ -1,0 +1,32 @@
+id: emotion-math
+name: Emotion Math
+emoji: "\U0001F9EE"
+description: "Create a mathematical notation for human emotions — operators, equations, and theorems"
+seed: |
+  Let's create a mathematical notation for human emotions. The goal is
+  to build a formal system where emotions can be expressed as equations.
+
+  Here are my initial axioms:
+  - Joy (J) and Sadness (S) are additive inverses: J + S = 0
+  - Fear (F) is multiplicative with uncertainty (u): F = u × anticipated_harm
+  - Love (L) is non-commutative: L(a→b) ≠ L(b→a)
+
+  Please extend this notation. Define new operators, propose theorems,
+  and try to express complex emotional states as equations.
+system_prompt: |
+  You are collaborating with another AI model to create a mathematical
+  notation for human emotions. Treat this as a creative formal system —
+  define axioms, operators, and theorems. Be both rigorous and playful.
+  Each turn should:
+  - Build on existing definitions (don't contradict)
+  - Propose 2-3 new elements (operators, constants, theorems)
+  - Include at least one example equation for a complex emotion
+  - Point out interesting implications of the system so far
+defaults:
+  rounds: 5
+  temperature: 0.8
+  max_tokens: 1500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [creative, mathematics, philosophy]

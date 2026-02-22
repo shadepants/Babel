@@ -80,7 +80,14 @@ async def call_model(
             )
             latency = time.time() - t0
             content = response.choices[0].message.content or "[NO OUTPUT]"
-            token_count = getattr(response.usage, "total_tokens", None)
+            # Some providers return usage as dict, others as object
+            usage = response.usage
+            if hasattr(usage, "total_tokens"):
+                token_count = usage.total_tokens
+            elif isinstance(usage, dict):
+                token_count = usage.get("total_tokens")
+            else:
+                token_count = None
             return content, latency, token_count
         except Exception as e:
             last_exc = e

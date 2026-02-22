@@ -67,8 +67,8 @@ export function useSSE(
           // Deduplicate on reconnect: skip events already in history.
           // Turn events have turn_id; other events use type+timestamp.
           if (parsed.type === 'relay.turn') {
-            const turnId = (parsed as { turn_id: string }).turn_id;
-            if (prev.some((e) => e.type === 'relay.turn' && (e as { turn_id: string }).turn_id === turnId)) {
+            const turnId = (parsed as { turn_id: number }).turn_id;
+            if (prev.some((e) => e.type === 'relay.turn' && (e as { turn_id: number }).turn_id === turnId)) {
               return prev;
             }
           }

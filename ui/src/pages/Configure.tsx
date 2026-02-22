@@ -12,7 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+
+/** Map emoji to sci-fi geometric symbols */
+const SYMBOL_MAP: Record<string, string> = {
+  '🧠': '◈', '⚙️': '⊕', '🎭': '✦', '📊': '⬡', '🌱': '◉',
+  '🤝': '⟡', '🔬': '⌬', '💡': '◇', '🎯': '⊗', '🤖': '⧖',
+  '🌍': '◉', '⚖️': '⊗', '🎪': '✦', '🔮': '◈', '🗺️': '⬡',
+  '🌐': '⬡', '🧬': '◈', '⚡': '⊕', '🌊': '◉', '🔥': '✦',
+}
+
+function getSymbol(emoji: string): string {
+  return SYMBOL_MAP[emoji] ?? '◈'
+}
 
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
@@ -49,12 +60,11 @@ export default function Configure() {
         setModels(modelsRes.models)
 
         if (isCustom) {
-          // Custom mode — set reasonable defaults
           if (modelsRes.models.length >= 2) {
             setModelA(modelsRes.models[0].model)
             setModelB(modelsRes.models[1].model)
           }
-          setSeedEditing(true) // always editable in custom mode
+          setSeedEditing(true)
         } else if (presetsRes) {
           const found = presetsRes.presets.find((p) => p.id === presetId)
           if (!found) {
@@ -68,7 +78,6 @@ export default function Configure() {
           setTemperature(found.defaults.temperature)
           setMaxTokens(found.defaults.max_tokens)
 
-          // Match suggested models to registry
           const sugA = modelsRes.models.find((m) => m.name === found.suggested_models.a)
           const sugB = modelsRes.models.find((m) => m.name === found.suggested_models.b)
           setModelA(sugA?.model ?? modelsRes.models[0]?.model ?? '')
@@ -97,7 +106,6 @@ export default function Configure() {
     setFormError(null)
 
     try {
-      // Build request — omit system_prompt if empty (let server use default)
       const request: Parameters<typeof api.startRelay>[0] = {
         model_a: modelA,
         model_b: modelB,
@@ -115,7 +123,6 @@ export default function Configure() {
 
       const res = await api.startRelay(request)
 
-      // Navigate to Theater with model names for the header
       const nameA = models.find((m) => m.model === modelA)?.name ?? modelA
       const nameB = models.find((m) => m.model === modelB)?.name ?? modelB
       navigate(`/theater/${res.match_id}`, {
@@ -131,7 +138,7 @@ export default function Configure() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-text-dim animate-pulse-slow">Loading...</p>
+        <p className="font-mono text-[10px] text-text-dim animate-pulse-slow tracking-widest uppercase">initializing...</p>
       </div>
     )
   }
@@ -140,9 +147,9 @@ export default function Configure() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center space-y-3">
-          <p className="text-danger">{loadError}</p>
-          <Link to="/" className="text-accent hover:underline text-sm">
-            Back to Seed Lab
+          <p className="font-mono text-xs text-danger">{loadError}</p>
+          <Link to="/" className="font-mono text-[10px] text-accent hover:text-accent/80 tracking-widest uppercase">
+            ← Back to Seed Lab
           </Link>
         </div>
       </div>
@@ -153,170 +160,177 @@ export default function Configure() {
     <div className="flex-1 p-6 max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <Link to="/" className="text-sm text-text-dim hover:text-accent transition-colors">
-          &larr; Seed Lab
+        <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
+          ← Seed Lab
         </Link>
-        <div className="mt-3 flex items-center gap-3">
-          {preset && <span className="text-3xl">{preset.emoji}</span>}
+
+        <div className="mt-4 flex items-center gap-4">
+          {/* Geometric symbol — replaces emoji */}
+          {preset && (
+            <span className="font-display text-3xl text-accent/50 leading-none select-none">
+              {getSymbol(preset.emoji)}
+            </span>
+          )}
+          {isCustom && (
+            <span className="font-display text-3xl text-accent/35 leading-none select-none">✦</span>
+          )}
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">
-              {isCustom ? 'Custom Experiment' : preset?.name}
+            <h1 className="font-display font-black tracking-widest text-2xl text-text-primary">
+              {isCustom ? 'Custom' : preset?.name}
             </h1>
             {preset && (
-              <p className="text-sm text-text-dim mt-0.5">{preset.description}</p>
+              <p className="font-mono text-[10px] text-text-dim mt-0.5 tracking-wider">
+                <span className="text-accent/60">// </span>{preset.description}
+              </p>
             )}
           </div>
         </div>
-        {preset && (
-          <div className="flex gap-1.5 mt-2">
+
+        {/* Tags */}
+        {preset && preset.tags.length > 0 && (
+          <div className="flex gap-1.5 mt-3">
             {preset.tags.map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+              <span key={tag} className="font-mono text-[9px] tracking-wider text-accent/55 border border-accent/20 px-1.5 py-0.5 rounded-sm uppercase">
+                {tag}
+              </span>
             ))}
           </div>
         )}
       </div>
 
       {/* Configuration Form */}
-      <div className="space-y-5 bg-bg-card border border-border-custom rounded-lg p-6">
-        {/* Models Row */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-model-a">Model A</label>
-            <Select value={modelA} onValueChange={setModelA}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select model..." />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.model} value={m.model}>{m.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-model-b">Model B</label>
-            <Select value={modelB} onValueChange={setModelB}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select model..." />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.model} value={m.model}>{m.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      <div className="neural-card">
+        <div className="neural-card-bar" />
+        <div className="p-6 space-y-6">
 
-        {/* Rounds */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Rounds: {rounds}
-          </label>
-          <Slider
-            value={[rounds]}
-            onValueChange={(v) => setRounds(v[0])}
-            min={1}
-            max={15}
-            step={1}
-          />
-          <div className="flex justify-between text-xs text-text-dim">
-            <span>1</span>
-            <span>15</span>
+          {/* Models */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// model_selection</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
+                  ◈ Model A
+                </label>
+                <Select value={modelA} onValueChange={setModelA}>
+                  <SelectTrigger className="font-mono text-xs border-model-a/30 focus:ring-model-a/40">
+                    <SelectValue placeholder="Select model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
+                  ◈ Model B
+                </label>
+                <Select value={modelB} onValueChange={setModelB}>
+                  <SelectTrigger className="font-mono text-xs border-model-b/30 focus:ring-model-b/40">
+                    <SelectValue placeholder="Select model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Temperature */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Temperature: {temperature.toFixed(1)}
-          </label>
-          <Slider
-            value={[temperature]}
-            onValueChange={(v) => setTemperature(v[0])}
-            min={0}
-            max={2}
-            step={0.1}
-          />
-          <div className="flex justify-between text-xs text-text-dim">
-            <span>0 (precise)</span>
-            <span>2 (creative)</span>
+          {/* Parameters */}
+          <div className="space-y-4">
+            <div className="neural-section-label">// parameters</div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Rounds <span className="text-accent/60">[{rounds}]</span>
+              </label>
+              <Slider value={[rounds]} onValueChange={(v) => setRounds(v[0])} min={1} max={15} step={1} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>1</span><span>15</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Temperature <span className="text-accent/60">[{temperature.toFixed(1)}]</span>
+              </label>
+              <Slider value={[temperature]} onValueChange={(v) => setTemperature(v[0])} min={0} max={2} step={0.1} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>0 precise</span><span>2 creative</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Max Tokens <span className="text-accent/60">[{maxTokens}]</span>
+              </label>
+              <Slider value={[maxTokens]} onValueChange={(v) => setMaxTokens(v[0])} min={100} max={4096} step={100} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>100</span><span>4096</span>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Max Tokens */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Max Tokens: {maxTokens}
-          </label>
-          <Slider
-            value={[maxTokens]}
-            onValueChange={(v) => setMaxTokens(v[0])}
-            min={100}
-            max={4096}
-            step={100}
-          />
-          <div className="flex justify-between text-xs text-text-dim">
-            <span>100</span>
-            <span>4096</span>
-          </div>
-        </div>
-
-        {/* Seed */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-text-primary">Seed Message</label>
-            {!isCustom && !seedEditing && (
-              <button
-                onClick={() => setSeedEditing(true)}
-                className="text-xs text-accent hover:underline"
-              >
-                Customize
-              </button>
+          {/* Seed */}
+          <div className="space-y-2">
+            <div className="neural-section-label flex items-center justify-between">
+              <span>// seed_message</span>
+              {!isCustom && !seedEditing && (
+                <button
+                  onClick={() => setSeedEditing(true)}
+                  className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                >
+                  Customize →
+                </button>
+              )}
+            </div>
+            {seedEditing || isCustom ? (
+              <Textarea
+                value={seed}
+                onChange={(e) => setSeed(e.target.value)}
+                rows={6}
+                className="resize-none font-mono text-xs"
+                placeholder="Enter the opening message for the experiment..."
+              />
+            ) : (
+              <div className="font-mono text-xs text-text-dim bg-bg-deep/80 rounded-sm p-3 max-h-32 overflow-y-auto whitespace-pre-wrap border border-border-custom/50">
+                {seed}
+              </div>
             )}
           </div>
-          {seedEditing || isCustom ? (
-            <Textarea
-              value={seed}
-              onChange={(e) => setSeed(e.target.value)}
-              rows={6}
-              className="resize-none"
-              placeholder="Enter the opening message for the experiment..."
-            />
-          ) : (
-            <div className="text-sm text-text-dim bg-bg-deep rounded-md p-3 max-h-32 overflow-y-auto whitespace-pre-wrap">
-              {seed}
+
+          {/* System Prompt */}
+          <div className="space-y-2">
+            <div className="neural-section-label">
+              // system_prompt {isCustom && <span className="text-text-dim/40">(optional)</span>}
             </div>
+            <Textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={4}
+              className="resize-none font-mono text-xs"
+              placeholder={isCustom ? 'Leave empty to use the default system prompt...' : ''}
+            />
+          </div>
+
+          {/* Error */}
+          {formError && (
+            <p className="font-mono text-xs text-danger">// {formError}</p>
           )}
+
+          {/* Launch */}
+          <Button
+            onClick={handleLaunch}
+            disabled={starting || !modelA || !modelB}
+            className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
+          >
+            {starting ? '// Launching...' : 'Launch Experiment'}
+          </Button>
         </div>
-
-        {/* System Prompt (always editable) */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            System Prompt {isCustom && <span className="text-text-dim font-normal">(optional)</span>}
-          </label>
-          <Textarea
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-            rows={4}
-            className="resize-none"
-            placeholder={isCustom ? 'Leave empty to use the default system prompt...' : ''}
-          />
-        </div>
-
-        {/* Error */}
-        {formError && (
-          <p className="text-sm text-danger">{formError}</p>
-        )}
-
-        {/* Launch */}
-        <Button
-          onClick={handleLaunch}
-          disabled={starting || !modelA || !modelB}
-          className="w-full bg-accent hover:bg-accent/90"
-        >
-          {starting ? 'Launching...' : 'Launch Experiment'}
-        </Button>
       </div>
     </div>
   )

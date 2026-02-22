@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
 
 /**
  * Arena page — tournament setup with multi-model selection.
@@ -125,7 +124,7 @@ export default function Arena() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-text-dim animate-pulse-slow">Loading...</p>
+        <p className="font-mono text-[10px] text-text-dim animate-pulse-slow tracking-widest uppercase">initializing...</p>
       </div>
     )
   }
@@ -134,204 +133,199 @@ export default function Arena() {
     <div className="flex-1 p-6 max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <Link to="/" className="text-sm text-text-dim hover:text-accent transition-colors">
-          &larr; Seed Lab
+        <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
+          ← Seed Lab
         </Link>
-        <h1 className="text-2xl font-bold text-text-primary mt-3">Arena</h1>
-        <p className="text-sm text-text-dim mt-1">
-          Run a round-robin tournament across multiple models. Same preset, every pairing.
+        <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
+          Arena
+        </h1>
+        <p className="font-mono text-xs text-text-dim mt-1 tracking-wider">
+          <span className="text-accent/60">// </span>round-robin tournament — same preset, every pairing
         </p>
       </div>
 
-      <div className="space-y-5 bg-bg-card border border-border-custom rounded-lg p-6">
-        {/* Tournament Name */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">Tournament Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Battle of the Bots"
-            className="w-full px-3 py-2 bg-bg-deep border border-border-custom rounded-md text-text-primary text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
+      {/* Form Panel */}
+      <div className="neural-card">
+        <div className="neural-card-bar" />
+        <div className="p-6 space-y-6">
 
-        {/* Preset */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">Preset</label>
-          <Select value={presetId} onValueChange={handlePresetChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose a preset..." />
-            </SelectTrigger>
-            <SelectContent>
-              {presets.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.emoji} {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Model Multi-Select */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Models
-            <span className="ml-2 font-normal text-text-dim">
-              ({selectedModels.size} selected
-              {selectedModels.size >= 2 && ` \u2014 ${pairingCount} matches`})
-            </span>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {models.map((m) => {
-              const selected = selectedModels.has(m.model)
-              return (
-                <button
-                  key={m.model}
-                  type="button"
-                  onClick={() => toggleModel(m.model)}
-                  className={`px-3 py-2 rounded-md border text-sm text-left transition-colors ${
-                    selected
-                      ? 'bg-accent/20 border-accent text-accent'
-                      : 'bg-bg-deep border-border-custom text-text-dim hover:border-accent/50'
-                  }`}
-                >
-                  {m.name}
-                </button>
-              )
-            })}
-          </div>
-          {selectedModels.size > 0 && selectedModels.size < 3 && (
-            <p className="text-xs text-warning">Select at least 3 models for a tournament.</p>
-          )}
-        </div>
-
-        {/* Rounds */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Rounds per match: {rounds}
-          </label>
-          <Slider
-            value={[rounds]}
-            onValueChange={(v) => setRounds(v[0])}
-            min={1}
-            max={15}
-            step={1}
-          />
-          <div className="flex justify-between text-xs text-text-dim">
-            <span>1</span>
-            <span>15</span>
-          </div>
-        </div>
-
-        {/* Temperature */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Temperature: {temperature.toFixed(1)}
-          </label>
-          <Slider
-            value={[temperature]}
-            onValueChange={(v) => setTemperature(v[0])}
-            min={0}
-            max={2}
-            step={0.1}
-          />
-          <div className="flex justify-between text-xs text-text-dim">
-            <span>0 (precise)</span>
-            <span>2 (creative)</span>
-          </div>
-        </div>
-
-        {/* Max Tokens */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-primary">
-            Max Tokens: {maxTokens}
-          </label>
-          <Slider
-            value={[maxTokens]}
-            onValueChange={(v) => setMaxTokens(v[0])}
-            min={100}
-            max={4096}
-            step={100}
-          />
-        </div>
-
-        {/* Seed (read-only from preset, or editable if no preset) */}
-        {seed && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-primary">Seed Message</label>
-            {presetId ? (
-              <div className="text-sm text-text-dim bg-bg-deep rounded-md p-3 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                {seed}
-              </div>
-            ) : (
-              <Textarea
-                value={seed}
-                onChange={(e) => setSeed(e.target.value)}
-                rows={4}
-                className="resize-none"
-                placeholder="Enter the opening message..."
-              />
-            )}
-          </div>
-        )}
-
-        {/* System Prompt */}
-        {systemPrompt && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-primary">System Prompt</label>
-            <Textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={3}
-              className="resize-none"
+          {/* Tournament Name */}
+          <div className="space-y-2">
+            <div className="neural-section-label">// tournament_identity</div>
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Battle of the Bots"
+              className="w-full px-3 py-2 bg-bg-deep/80 border border-border-custom rounded-sm text-text-primary text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent/50 placeholder:text-text-dim/40"
             />
           </div>
-        )}
 
-        {/* Pairing Preview */}
-        {selectedModels.size >= 3 && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-primary">Match Pairings</label>
-            <div className="flex flex-wrap gap-1.5">
-              {(() => {
-                const modelArr = Array.from(selectedModels)
-                const pairs: [string, string][] = []
-                for (let i = 0; i < modelArr.length; i++) {
-                  for (let j = i + 1; j < modelArr.length; j++) {
-                    pairs.push([modelArr[i], modelArr[j]])
-                  }
-                }
-                return pairs.map(([a, b]) => {
-                  const nameA = models.find((m) => m.model === a)?.name ?? a.split('/').pop()
-                  const nameB = models.find((m) => m.model === b)?.name ?? b.split('/').pop()
-                  return (
-                    <Badge key={`${a}-${b}`} variant="secondary" className="text-xs">
-                      {nameA} vs {nameB}
-                    </Badge>
-                  )
-                })
-              })()}
+          {/* Preset */}
+          <div className="space-y-2">
+            <div className="neural-section-label">// experiment_protocol</div>
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">Preset</label>
+            <Select value={presetId} onValueChange={handlePresetChange}>
+              <SelectTrigger className="font-mono text-sm">
+                <SelectValue placeholder="Choose a preset..." />
+              </SelectTrigger>
+              <SelectContent>
+                {presets.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="font-mono">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Model Multi-Select */}
+          <div className="space-y-2">
+            <div className="neural-section-label">// model_selection</div>
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+              Models
+              <span className="ml-2 text-accent/60">
+                [{selectedModels.size} selected
+                {selectedModels.size >= 2 && ` · ${pairingCount} matches`}]
+              </span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {models.map((m) => {
+                const selected = selectedModels.has(m.model)
+                return (
+                  <button
+                    key={m.model}
+                    type="button"
+                    onClick={() => toggleModel(m.model)}
+                    className={`px-3 py-2 rounded-sm border font-mono text-xs text-left transition-colors ${
+                      selected
+                        ? 'bg-accent/15 border-accent/60 text-accent'
+                        : 'bg-bg-deep/60 border-border-custom text-text-dim hover:border-accent/35 hover:text-text-primary'
+                    }`}
+                  >
+                    {m.name}
+                  </button>
+                )
+              })}
+            </div>
+            {selectedModels.size > 0 && selectedModels.size < 3 && (
+              <p className="font-mono text-[10px] text-warning tracking-wider">// select at least 3 models</p>
+            )}
+          </div>
+
+          {/* Parameters */}
+          <div className="space-y-4">
+            <div className="neural-section-label">// parameters</div>
+
+            {/* Rounds */}
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Rounds per match <span className="text-accent/60">[{rounds}]</span>
+              </label>
+              <Slider value={[rounds]} onValueChange={(v) => setRounds(v[0])} min={1} max={15} step={1} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>1</span><span>15</span>
+              </div>
+            </div>
+
+            {/* Temperature */}
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Temperature <span className="text-accent/60">[{temperature.toFixed(1)}]</span>
+              </label>
+              <Slider value={[temperature]} onValueChange={(v) => setTemperature(v[0])} min={0} max={2} step={0.1} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>0 precise</span><span>2 creative</span>
+              </div>
+            </div>
+
+            {/* Max Tokens */}
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Max Tokens <span className="text-accent/60">[{maxTokens}]</span>
+              </label>
+              <Slider value={[maxTokens]} onValueChange={(v) => setMaxTokens(v[0])} min={100} max={4096} step={100} />
             </div>
           </div>
-        )}
 
-        {/* Error */}
-        {formError && (
-          <p className="text-sm text-danger">{formError}</p>
-        )}
+          {/* Seed */}
+          {seed && (
+            <div className="space-y-2">
+              <div className="neural-section-label">// seed_message</div>
+              {presetId ? (
+                <div className="font-mono text-xs text-text-dim bg-bg-deep/80 rounded-sm p-3 max-h-32 overflow-y-auto whitespace-pre-wrap border border-border-custom/50">
+                  {seed}
+                </div>
+              ) : (
+                <Textarea
+                  value={seed}
+                  onChange={(e) => setSeed(e.target.value)}
+                  rows={4}
+                  className="resize-none font-mono text-sm"
+                  placeholder="Enter the opening message..."
+                />
+              )}
+            </div>
+          )}
 
-        {/* Launch */}
-        <Button
-          onClick={handleLaunch}
-          disabled={starting || selectedModels.size < 3 || !name.trim() || !seed.trim()}
-          className="w-full bg-accent hover:bg-accent/90"
-        >
-          {starting
-            ? 'Launching...'
-            : `Launch Tournament (${pairingCount} matches)`
-          }
-        </Button>
+          {/* System Prompt */}
+          {systemPrompt && (
+            <div className="space-y-2">
+              <div className="neural-section-label">// system_prompt</div>
+              <Textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                rows={3}
+                className="resize-none font-mono text-sm"
+              />
+            </div>
+          )}
+
+          {/* Pairing Preview */}
+          {selectedModels.size >= 3 && (
+            <div className="space-y-2">
+              <div className="neural-section-label">// match_pairings</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(() => {
+                  const modelArr = Array.from(selectedModels)
+                  const pairs: [string, string][] = []
+                  for (let i = 0; i < modelArr.length; i++) {
+                    for (let j = i + 1; j < modelArr.length; j++) {
+                      pairs.push([modelArr[i], modelArr[j]])
+                    }
+                  }
+                  return pairs.map(([a, b]) => {
+                    const nameA = models.find((m) => m.model === a)?.name ?? a.split('/').pop()
+                    const nameB = models.find((m) => m.model === b)?.name ?? b.split('/').pop()
+                    return (
+                      <span key={`${a}-${b}`} className="font-mono text-[10px] text-accent/60 border border-accent/20 px-1.5 py-0.5 rounded-sm">
+                        {nameA} ⇌ {nameB}
+                      </span>
+                    )
+                  })
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {formError && (
+            <p className="font-mono text-xs text-danger">// {formError}</p>
+          )}
+
+          {/* Launch */}
+          <Button
+            onClick={handleLaunch}
+            disabled={starting || selectedModels.size < 3 || !name.trim() || !seed.trim()}
+            className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
+          >
+            {starting
+              ? '// Launching...'
+              : `Launch Tournament (${pairingCount} matches)`
+            }
+          </Button>
+        </div>
       </div>
     </div>
   )

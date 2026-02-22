@@ -4,17 +4,18 @@ import { motion } from 'framer-motion'
 import { api } from '@/api/client'
 import type { Preset } from '@/api/types'
 import { HudBrackets } from '@/components/common/HudBrackets'
+import { ScrambleText } from '@/components/common/ScrambleText'
 
 /** Map emoji to sci-fi geometric symbols */
 const SYMBOL_MAP: Record<string, string> = {
-  '🧠': '◈', '⚙️': '⊕', '🎭': '✦', '📊': '⬡', '🌱': '◉',
-  '🤝': '⟡', '🔬': '⌬', '💡': '◇', '🎯': '⊗', '🤖': '⧖',
-  '🌍': '◉', '⚖️': '⊗', '🎪': '✦', '🔮': '◈', '🗺️': '⬡',
-  '🌐': '⬡', '🧬': '◈', '⚡': '⊕', '🌊': '◉', '🔥': '✦',
+  'ðŸ§ ': 'â—ˆ', 'âš™ï¸': 'âŠ•', 'ðŸŽ­': 'âœ¦', 'ðŸ“Š': 'â¬¡', 'ðŸŒ±': 'â—‰',
+  'ðŸ¤': 'âŸ¡', 'ðŸ”¬': 'âŒ¬', 'ðŸ’¡': 'â—‡', 'ðŸŽ¯': 'âŠ—', 'ðŸ¤–': 'â§–',
+  'ðŸŒ': 'â—‰', 'âš–ï¸': 'âŠ—', 'ðŸŽª': 'âœ¦', 'ðŸ”®': 'â—ˆ', 'ðŸ—ºï¸': 'â¬¡',
+  'ðŸŒ': 'â¬¡', 'ðŸ§¬': 'â—ˆ', 'âš¡': 'âŠ•', 'ðŸŒŠ': 'â—‰', 'ðŸ”¥': 'âœ¦',
 }
 
 /** Fallback symbols by index for unmapped emojis */
-const FALLBACK_SYMBOLS = ['◈', '⬡', '◉', '✦', '⊕', '⟡', '⌬', '◇', '⊗', '⧖']
+const FALLBACK_SYMBOLS = ['â—ˆ', 'â¬¡', 'â—‰', 'âœ¦', 'âŠ•', 'âŸ¡', 'âŒ¬', 'â—‡', 'âŠ—', 'â§–']
 
 function getSymbol(emoji: string, index: number): string {
   return SYMBOL_MAP[emoji] ?? FALLBACK_SYMBOLS[index % FALLBACK_SYMBOLS.length]
@@ -53,10 +54,10 @@ export default function SeedLab() {
       {/* Header */}
       <motion.div className="text-center space-y-3" variants={headingVariants} initial="hidden" animate="show">
         <h1 className="font-display font-black tracking-widest text-3xl text-text-primary uppercase">
-          Seed Lab
+          <ScrambleText>Seed Lab</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim tracking-wider">
-          <span className="text-accent/60">// </span>select experiment protocol — or define your own
+          <span className="text-accent/60">// </span>select experiment protocol â€” or define your own
         </p>
       </motion.div>
 
@@ -114,10 +115,10 @@ export default function SeedLab() {
                     </p>
                   </div>
 
-                  {/* Metadata — terminal data row */}
+                  {/* Metadata â€” terminal data row */}
                   <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-3 pt-1 border-t border-border-custom/40">
                     <span><span className="text-accent/50">RND</span> {String(preset.defaults.rounds).padStart(2, '0')}</span>
-                    <span className="text-accent/25">·</span>
+                    <span className="text-accent/25">Â·</span>
                     <span className="truncate">
                       <span className="text-accent/50">A</span> {preset.suggested_models.a.split('/').pop()}
                       <span className="text-accent/25 mx-1">vs</span>
@@ -143,7 +144,7 @@ export default function SeedLab() {
             >
               <div className="neural-card-bar neural-card-bar--dim" />
               <div className="p-5 flex flex-col items-center justify-center min-h-[160px] space-y-3">
-                <span className="font-display text-3xl text-accent/35 group-hover:text-accent/75 transition-colors select-none">✦</span>
+                <span className="font-display text-3xl text-accent/35 group-hover:text-accent/75 transition-colors select-none">âœ¦</span>
                 <div className="text-center space-y-1">
                   <h3 className="font-display text-sm font-bold tracking-wider text-text-dim group-hover:text-accent transition-colors uppercase">
                     Custom

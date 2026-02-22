@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { ScrambleText } from '@/components/common/ScrambleText'
 import { api } from '@/api/client'
 import type { ModelStatusInfo } from '@/api/types'
 
 /**
- * Settings page — API key status and model availability.
+ * Settings page â€” API key status and model availability.
  */
 export default function Settings() {
   const [models, setModels] = useState<ModelStatusInfo[]>([])
@@ -33,10 +34,10 @@ export default function Settings() {
       {/* Header */}
       <div>
         <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          ← Seed Lab
+          â† Seed Lab
         </Link>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
-          Settings
+          <ScrambleText>Settings</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim mt-1 tracking-wider">
           <span className="text-accent/60">// </span>api key status &amp; model availability
@@ -104,7 +105,7 @@ export default function Settings() {
       )}
 
       <p className="font-mono text-[10px] text-text-dim/50 tracking-wider">
-        // api keys read from environment variables — set in <code className="text-accent/60">.env</code> and restart backend
+        // api keys read from environment variables â€” set in <code className="text-accent/60">.env</code> and restart backend
       </p>
     </div>
   )

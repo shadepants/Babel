@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { ModelInfo, Preset } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { ScrambleText } from '@/components/common/ScrambleText'
 import { Textarea } from '@/components/ui/textarea'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -14,18 +15,18 @@ import {
 } from '@/components/ui/select'
 
 /**
- * Arena page — tournament setup with multi-model selection.
+ * Arena page â€” tournament setup with multi-model selection.
  * Pick 3+ models, a preset, and launch a round-robin tournament.
  */
 export default function Arena() {
   const navigate = useNavigate()
 
-  // ── Data loading ──
+  // â”€â”€ Data loading â”€â”€
   const [models, setModels] = useState<ModelInfo[]>([])
   const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
 
-  // ── Form state ──
+  // â”€â”€ Form state â”€â”€
   const [name, setName] = useState('')
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
   const [presetId, setPresetId] = useState<string>('')
@@ -47,7 +48,7 @@ export default function Arena() {
         setModels(modelsRes.models)
         setPresets(presetsRes.presets)
       } catch {
-        // Non-critical — form still usable
+        // Non-critical â€” form still usable
       } finally {
         setLoading(false)
       }
@@ -134,13 +135,13 @@ export default function Arena() {
       {/* Header */}
       <div>
         <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          ← Seed Lab
+          â† Seed Lab
         </Link>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
-          Arena
+          <ScrambleText>Arena</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim mt-1 tracking-wider">
-          <span className="text-accent/60">// </span>round-robin tournament — same preset, every pairing
+          <span className="text-accent/60">// </span>round-robin tournament â€” same preset, every pairing
         </p>
       </div>
 
@@ -187,7 +188,7 @@ export default function Arena() {
               Models
               <span className="ml-2 text-accent/60">
                 [{selectedModels.size} selected
-                {selectedModels.size >= 2 && ` · ${pairingCount} matches`}]
+                {selectedModels.size >= 2 && ` Â· ${pairingCount} matches`}]
               </span>
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -300,7 +301,7 @@ export default function Arena() {
                     const nameB = models.find((m) => m.model === b)?.name ?? b.split('/').pop()
                     return (
                       <span key={`${a}-${b}`} className="font-mono text-[10px] text-accent/60 border border-accent/20 px-1.5 py-0.5 rounded-sm">
-                        {nameA} ⇌ {nameB}
+                        {nameA} â‡Œ {nameB}
                       </span>
                     )
                   })

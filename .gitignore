@@ -1,0 +1,29 @@
+# Environment
+.env
+.venv/
+
+# Database
+.babel_data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node (for ui/ later)
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Temp files
+_*.txt

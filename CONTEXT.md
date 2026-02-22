@@ -10,7 +10,7 @@ A standalone shareable web app where AI models talk to each other in real-time â
 - **Backend:** FastAPI (port 8000)
 - **LLM Routing:** litellm (9+ providers: Anthropic, Google, OpenAI, DeepSeek, Groq, Cerebras, Mistral, SambaNova, OpenRouter)
 - **Real-time:** Server-Sent Events (SSE)
-- **Frontend:** React 19 + Vite 6 + Tailwind 3.4 + Shadcn/UI
+- **Frontend:** React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI v4
 - **Visualization:** D3.js 7 (vocabulary constellation) + Recharts 2 (analytics charts)
 - **Database:** SQLite (WAL mode) â€” experiments, turns, vocabulary
 - **Testing:** pytest (backend) + vitest (frontend)
@@ -41,6 +41,7 @@ A standalone shareable web app where AI models talk to each other in real-time â
 - [x] Wire SSE client to stream turns live
 - [x] Start Experiment form (model selects, seed textarea, round slider)
 - [x] Build passes: 1875 modules, zero errors
+- [x] Gemini Checkpoint 2 â€” 5 fixes: Queue-based keepalive, O(nÂ²) render fix, reconnect dedup, smart auto-scroll, aria-live a11y
 
 ### Phase 3: Vocabulary Extractor + Dictionary
 - [ ] Parse turn content to auto-extract invented words

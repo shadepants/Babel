@@ -3,7 +3,7 @@
 ## Current Session Status
 **Last Updated:** 2026-02-22
 **Active Agent:** Claude Code
-**Current Goal:** Phase 2 complete — React UI + Conversation Theater built, ready for live testing
+**Current Goal:** Phase 2 complete + hardened via Gemini review — ready for live testing
 
 ## Changes This Session
 - [x] Scaffolded React frontend: Vite 7 + React 19 + TypeScript + Tailwind 3.4 + Shadcn/UI v4
@@ -15,7 +15,14 @@
 - [x] Added Layout shell, ErrorBoundary, router with extensible route structure
 - [x] Shadcn UI components manually installed (8 components: card, badge, button, separator, scroll-area, select, slider, textarea)
 - [x] Reviewed Gemini proposals (Pixel Sprites + Virtual Tabletop) — added to CONTEXT.md roadmap as Future Expansions
-- [x] Production build passes: 1875 modules, zero errors, 10.6s
+- [x] Created GitHub repo: https://github.com/shadepants/Babel
+- [x] Gemini Checkpoint 2 — audited + applied 5 fixes:
+  - Backend: Queue-based SSE keepalive (prevents async generator corruption)
+  - Frontend: React 19 Strict Mode double-mount guard + reconnect event clearing
+  - Hooks: O(n²) array spread → `.push()` in useMemo
+  - ConversationColumn: Smart auto-scroll via Radix Viewport scroll listener (Gemini's original `onScrollCapture` approach was a no-op — caught during audit)
+  - Accessibility: `aria-live="polite"` on ScrollArea + ThinkingIndicator
+- [x] Production build passes: 1875 modules, zero errors
 
 ## Files Created/Modified
 | File | Purpose |
@@ -49,9 +56,10 @@
 ## Verification Status
 | Check | Status | Notes |
 |-------|--------|-------|
-| `vite build` | PASSED | 1875 modules, 0 errors, 10.6s |
+| `vite build` | PASSED | 1875 modules, 0 errors |
 | File structure | CORRECT | Matches CONTEXT.md architecture |
 | TS types match backend | VERIFIED | Checked against relay_engine.py + relay.py |
+| Gemini review audited | YES | 5/5 findings valid, 1 fix corrected (auto-scroll) |
 | Live end-to-end test | NOT YET | Needs backend running + browser test |
 
 ## Known Issues
@@ -61,8 +69,7 @@
 
 ## Next Steps
 1. **Live test** — Start backend + frontend, run a real experiment in the browser
-2. **Gemini Checkpoint 2** — SSE reconnection, UX, accessibility, render perf review
-3. **Phase 3** — Vocabulary Extractor + Dictionary
+2. **Phase 3** — Vocabulary Extractor + Dictionary
 
 ## Key References
 - **Phase 2 plan:** `~/.claude/plans/noble-brewing-fairy.md`

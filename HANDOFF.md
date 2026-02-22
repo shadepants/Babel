@@ -2,100 +2,62 @@
 
 ## Current Session Status
 **Last Updated:** 2026-02-22
-**Active Agent:** Claude Code (Opus 4.6)
-**Current Goal:** Phase 3 complete — vocabulary extractor + dictionary ready for Gemini Checkpoint 3 review
+**Active Agent:** —
+**Current Goal:** Phase 3 complete + Gemini Checkpoint 3 applied — ready for Phase 4
 
-## Changes This Session
+## What's Done (Cumulative)
+- **Phase 1:** Backend core — FastAPI, relay engine, EventHub SSE, SQLite WAL, config/registry
+- **Phase 2:** React UI — Theater page, SSE streaming, start form, Shadcn components
+- **Phase 3:** Vocabulary extractor + dictionary — regex extraction, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation graph
+- **Gemini Checkpoints 1-3:** All review findings addressed (13 fixes total across 3 reviews)
 
-### Gemini Checkpoint 3 — Review Triage
-Gemini reviewed the full codebase after Phase 2. Validation results:
-- **Bug #1 (system_prompt erasure): FIXED** — `system_prompt: ''` in Theater.tsx was overriding DEFAULT_SYSTEM_PROMPT. Removed the key from payload, made field optional in TS interface.
-- **Bug #2 (async generator corruption): Already fixed** — Queue-based keepalive was implemented in Checkpoint 2.
-- **Bug #3 (O(n²) array spread): Already fixed** — `push()` used, not spread.
-- **Bug #4 (reconnect state duplication): Already fixed** — `setEvents([])` in onopen.
-- **Bug #5 (hardcoded CORS): Skipped** — localhost-only is fine for dev.
-- **Bug #6 (forced auto-scroll): Already fixed** — `isNearBottomRef` threshold in place.
+## Session Summary (Phase 3)
 
-### Phase 3: Vocabulary Extractor + Dictionary
-- [x] Created `server/vocab_extractor.py` — regex-based extraction with `ExtractedWord` dataclass
-  - Pattern 1: Explicit definitions (`WORD = meaning`, `WORD: meaning`, "propose WORD to mean...")
-  - Pattern 2: ALL_CAPS tokens (3+ chars, blocklist of ~60 common words/acronyms)
-  - Detects categories from grammar markers (noun/verb/prefix/etc.)
-  - Detects parent_words by scanning definitions for known vocabulary
-  - Tested: correctly extracts words with meanings and parent relationships
-- [x] Wired extractor into `server/relay_engine.py` — `_extract_and_publish_vocab()` called after each turn
-  - `known_words: set[str]` accumulator tracks words across all rounds
-  - Publishes `relay.vocab` SSE events (constant was defined but unwired since Phase 1)
-  - Persists via `db.upsert_word()` (schema + CRUD existed since Phase 1)
-- [x] Created `server/routers/experiments.py` — REST endpoints for experiment data
-  - `GET /api/experiments/` — list recent experiments
-  - `GET /api/experiments/{id}` — experiment metadata
-  - `GET /api/experiments/{id}/vocabulary` — all extracted words
-- [x] Frontend type plumbing:
-  - `VocabEvent` interface added to SSE discriminated union (now 6 event types)
-  - `VocabWord`, `VocabResponse`, `ExperimentRecord` REST types
-  - `getExperiment()` + `getVocabulary()` added to API client
-  - `vocab: VocabEvent[]` added to `ExperimentState` with `relay.vocab` case
-- [x] Installed D3 v7 + @types/d3
-- [x] Created `VocabPanel` — inline strip in Theater (word count + recent words + dictionary link)
-- [x] Created `WordCard` — color-coded card (word, meaning, category badge, metadata, parent chips)
-- [x] Created `ConstellationGraph` — D3 force-directed graph (useRef + useEffect pattern)
-  - Nodes sized by usage_count, colored by coined_by speaker
-  - Edges from parent_words relationships
-  - Draggable nodes, click to select, hover tooltips
-- [x] Created `Dictionary` page at `/dictionary/:experimentId`
-  - Cards grid view + Constellation toggle
-  - Polls every 10s during live experiments
-  - Linked from VocabPanel in Theater
+### Built
+- `server/vocab_extractor.py` — regex extraction: definitions, ALL_CAPS tokens, categories, parent word relationships
+- `server/routers/experiments.py` — REST: `GET /api/experiments/`, `GET /{id}`, `GET /{id}/vocabulary`
+- `server/relay_engine.py` — `_extract_and_publish_vocab()` wired after each turn, `relay.vocab` SSE events now live
+- `ui/src/pages/Dictionary.tsx` — cards grid + D3 constellation toggle, polls during live experiments
+- `ui/src/components/dictionary/WordCard.tsx` — color-coded word card
+- `ui/src/components/dictionary/ConstellationGraph.tsx` — D3 v7 force graph (usage-sized nodes, parent edges, draggable)
+- `ui/src/components/theater/VocabPanel.tsx` — inline Theater strip (word count + badges + dictionary link)
 
-## Files Created/Modified
-
-### New Files
-| File | Purpose |
-|------|---------|
-| `server/vocab_extractor.py` | Regex extraction engine — ExtractedWord dataclass + extract_vocabulary() |
-| `server/routers/experiments.py` | REST endpoints for experiment data + vocabulary |
-| `ui/src/components/dictionary/WordCard.tsx` | Single word display card |
-| `ui/src/components/dictionary/ConstellationGraph.tsx` | D3 v7 force-directed graph |
-| `ui/src/components/theater/VocabPanel.tsx` | Inline vocab strip in Theater |
-| `ui/src/pages/Dictionary.tsx` | Full dictionary page with cards + constellation views |
-
-### Modified Files
-| File | Change |
-|------|--------|
-| `server/relay_engine.py` | Added `_extract_and_publish_vocab()` + `known_words` + 2 call sites |
-| `server/app.py` | Mounted experiments router at `/api/experiments` |
-| `ui/src/api/types.ts` | Added VocabEvent, VocabWord, VocabResponse, ExperimentRecord; system_prompt optional |
-| `ui/src/api/client.ts` | Added getExperiment() + getVocabulary() |
-| `ui/src/api/hooks.ts` | Added vocab to ExperimentState + relay.vocab case |
-| `ui/src/pages/Theater.tsx` | Removed system_prompt bug, added VocabPanel |
-| `ui/src/App.tsx` | Added /dictionary/:experimentId route |
-| `ui/package.json` | Added d3 + @types/d3 dependencies |
+### Fixed (Gemini reviews)
+- Removed `system_prompt: ''` overriding server default (Checkpoint 3, finding #1)
+- Hardened litellm `response.usage` parsing — handles dict or object (Checkpoint 3, finding #1)
+- Corrected `turn_id` type cast from string to number in sse.ts (Checkpoint 3, finding #4)
 
 ## Verification Status
-| Check | Status | Notes |
-|-------|--------|-------|
-| TypeScript build (tsc -b) | PASSED | Zero errors |
-| Vite production build | PASSED | 2445 modules, 0 errors |
-| Python import check | PASSED | `from server.vocab_extractor import extract_vocabulary` OK |
-| Extractor functional test | PASSED | Correctly extracts ZYLOK, KRAVT, SYNTHOLINK, NEXVOL from sample text |
-| Parent words detection | PASSED | BRAVOL correctly identifies ZYLOK + KRAVT as parents |
-| Live end-to-end test | NOT YET | Needs backend + frontend running together |
+| Check | Status |
+|-------|--------|
+| TypeScript build (tsc -b) | PASSED |
+| Vite production build | PASSED (2445 modules, 0 errors) |
+| Python import check | PASSED |
+| Extractor functional test | PASSED (4 words extracted correctly) |
+| Parent words detection | PASSED (BRAVOL → [ZYLOK, KRAVT]) |
+| Live end-to-end test | NOT YET |
 
 ## Known Issues
-- **Extractor category false positive:** "meaning" in the context window can match `_CATEGORY_RE` and tag words as category="verb" incorrectly. Minor — acceptable for v1, can refine the regex window later.
-- **Node not on system PATH**: All npm/node commands must use full paths or `run_npm.cmd`
-- **D3 @types/d3 in dependencies not devDependencies**: Functional, cosmetic only
+- **Extractor category false positive:** "meaning" in context window can false-match as category="verb". Minor, acceptable for v1.
+- **Node not on system PATH:** Use full paths or `run_npm.cmd` for npm/node commands.
+- **SSE history buffer:** Capped at 500 events in-memory. Fine for 5-7 round experiments. DB replay fallback is a Phase 5 optimization.
+- **CORS localhost-only:** Intentional for dev. Move to env-based origins when deploying.
 
 ## Next Steps
-1. **Gemini Checkpoint 3 review** — have Gemini review Phase 3 implementation
-2. **Live end-to-end test** — start backend + frontend, run experiment, verify vocab extraction + dictionary page
-3. **Phase 4: Seed Lab + Presets** — preset YAML files, SeedLab page with cards + custom builder
+1. **Live end-to-end test** — start backend + frontend, run a real experiment, verify vocab extraction works in browser
+2. **Phase 4: Seed Lab + Presets**
+   - Preset YAML files (conlang, debate, story, cipher, emotion-math, philosophy)
+   - SeedLab page with preset cards + custom builder
+   - `server/routers/presets.py` — `GET /api/presets`
+   - Route: `/seedlab`
 
-## Key Decisions for Gemini to Review
-- **Regex over LLM for extraction**: Chose regex heuristics for v1 — free, instant, no API calls. LLM enrichment can be layered later for better meaning/category detection.
-- **Dictionary polling over SSE**: Dictionary page uses 10s REST polling instead of a second SSE connection. Simpler, and the page is typically viewed after experiments, not during.
-- **D3 via useRef + useEffect**: Standard React + D3 pattern. React owns the SVG element, D3 owns everything inside it imperatively. Avoids React/D3 DOM conflict.
+## Git State
+- **Branch:** master
+- **Latest commits:**
+  - `65a16bb` fix: harden litellm usage parsing and correct turn_id type (Gemini review)
+  - `b2f4407` feat: Phase 3 vocabulary extractor + dictionary
+- **Remote:** up to date with `origin/master`
+- **Untracked (pre-existing):** `ui/.gitignore`, `ui/README.md`
 
 ## Key References
 - **Phase 3 plan:** `~/.claude/plans/curious-brewing-lake.md`

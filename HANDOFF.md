@@ -3,66 +3,62 @@
 ## Current Session Status
 **Last Updated:** 2026-02-22
 **Active Agent:** Claude Code
-**Current Goal:** Phase 5 complete — ready for live E2E test then Phase 6
+**Current Goal:** Phase 6 complete — project shipped
 
 ## What's Done (Cumulative)
 - **Phase 1:** Backend core — FastAPI, relay engine, EventHub SSE, SQLite WAL, config/registry
-- **Phase 2:** React UI — Theater page, SSE streaming, start form, Shadcn components
-- **Phase 3:** Vocabulary extractor + dictionary — regex extraction, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation graph
-- **Phase 4:** Seed Lab + Presets — 6 preset YAML files, SeedLab landing page, Configure page, Settings placeholder, Theater simplified to pure live-view, nav bar
-- **Phase 5:** Gallery + Analytics — experiment gallery card grid, per-experiment analytics with D3 charts (vocab growth + latency), JSON/markdown export, `/stats` and `/turns` endpoints
-- **Gemini Checkpoints 1-4:** All review findings addressed (17 fixes total across 4 reviews)
-- **Post-Phase 4 audit:** Route ordering fix, unused imports cleanup, resilient preset loader, Tailwind dynamic class fix, Dictionary link text fix
-- **Tooling:** Enhanced `~/.claude/hooks/skill-suggester.py` with dynamic skill discovery
+- **Phase 2:** React UI — Theater page, SSE streaming, Shadcn components
+- **Phase 3:** Vocabulary extractor + dictionary — regex extraction, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation
+- **Phase 4:** Seed Lab + Presets — 6 preset YAMLs, SeedLab landing page, Configure page, Theater simplified to pure live-view, nav bar
+- **Phase 5:** Gallery + Analytics — experiment gallery, per-experiment analytics with D3 charts, JSON/markdown export
+- **Gemini Checkpoints 1-4:** 17 total fixes across all phases
+- **Phase 6:** Arena + Tournament mode, RadarChart, Settings page, "The Original" preset, README, audit hardening, two UI bug fixes
 
-## Session Summary (Phase 5 Implementation)
+## Session Summary (Phase 6 + Audit + Bug Fixes)
 
-### Gemini Checkpoint 4 Fixes (4 issues)
-1. **Critical — D3 Graph Tearing:** Rewrote `ConstellationGraph.tsx` to use incremental D3 `.data().join()` pattern. Simulation persists via `useRef`, new words animate in smoothly with `alpha(0.3)` reheat instead of full graph destruction.
-2. **Moderate — EventHub Buffer:** Bumped `max_history` and queue `maxsize` from 200→2000 in `event_hub.py`. Prevents late-joining clients from losing history and slow clients from being dropped.
-3. **Minor — Sequential Vocab Extraction:** Changed `await _extract_and_publish_vocab()` to `asyncio.create_task()` in `relay_engine.py`. Agent B starts thinking immediately instead of waiting for vocab DB writes.
-4. **Edge Case — Self-Referencing Parent Words:** Added `if p != word` filter in `vocab_extractor.py` to prevent circular edges in the D3 graph.
+### Phase 6 Features
+- **Tournament engine** (`server/tournament_engine.py`) — round-robin runner using `itertools.combinations`, sequential `run_relay()` calls, SSE lifecycle events (`tournament.match_started`, `tournament.match_complete`, `tournament.complete`, `tournament.error`)
+- **Tournament DB** — `tournaments` + `tournament_matches` tables; `get_tournament_leaderboard()` aggregates per-model stats; `get_model_radar_stats()` returns 5-axis radar data
+- **Arena page** — model multi-select checkbox grid (min 3), live pairing count ("4 models → 6 matches"), preset dropdown, sliders
+- **Tournament page** — SSE live updates + 10s polling, match card grid with status badges + Theater/Analytics links, leaderboard table, RadarChart overlay
+- **RadarChart** — D3 spider chart with concentric rings, filled polygons per model (30% fill), 5 axes: verbosity/speed/creativity/consistency/engagement
+- **Settings page** — checks env vars for 7 models across 5 providers, shows green/red status indicators
+- **"The Original" preset** — exact seed words (ZYLVOK/KRAXT/FLUMEI), system prompt framing the "human relay" setup, 15 rounds default
 
-### Phase 5 Features
-- **Backend:** `get_experiment_stats()` in `db.py` — pre-aggregated per-round latency/tokens, vocab growth curve, totals. `list_experiments()` extended with `offset`/`status` params. New `/stats` and `/turns` endpoints in `experiments.py`.
-- **Gallery page** (`/gallery`): Card grid mirroring SeedLab pattern. Status badges (running=green pulse, completed=purple, failed=red). Model pair names, round progress, elapsed time, preset tag. Quick-nav buttons to Theater/Dictionary. Empty state links to Seed Lab.
-- **Analytics page** (`/analytics/:experimentId`): Stats summary row (5 cards), D3 vocab growth line chart (purple accent), D3 latency comparison dual-line chart (indigo vs amber). Export buttons: "Download JSON" (blob download) and "Copy Markdown" (clipboard). Polls every 10s for running experiments.
-- **D3 Charts:** `VocabGrowthChart.tsx` and `LatencyChart.tsx` in `components/analytics/`. Follow ConstellationGraph's `useRef + useEffect + d3.select` pattern. Dark theme colors, axis labels, tooltips.
-- **Types + API:** 6 new TypeScript types, 3 new API client methods (`listExperiments`, `getExperimentStats`, `getExperimentTurns`). `ExperimentRecord` now includes `preset` field.
-- **Routing:** Gallery and Analytics routes added to `App.tsx`. "Gallery" NavLink added to `Layout.tsx` nav bar.
+### Audit Hardening (3-reviewer parallel audit)
+- **DB normalization:** Fixed zero-collapse bug (all-identical values → `1.0` not `0.0`) and consistency metric inversion (single sample = no variance = `1.0/0.01` not `0`)
+- **Tournament router:** asyncio task storage (`_active_tasks` set), `models` bounds (min 3 / max 10), `limit/offset` Query bounds, SSE self-close on terminal events
+- **Relay + experiments routers:** model allowlist validation, status filter validation, query bounds
+- **Error sanitization:** relay_engine and tournament_engine send generic messages to clients; raw exception strings go to server logs only
+
+### Bug Fixes (found while reviewing live experiments)
+- **LatencyChart CSS selector crash** — model names with dots (e.g. `llama-3.3-70b-versatile`) produced invalid CSS selectors in D3's `selectAll()`. Fixed: `label.replace(/[^a-zA-Z0-9_-]/g, '_')`
+- **Copy Markdown silent failure** — `navigator.clipboard.writeText()` fails when document lacks focus; silent `catch {}` gave no feedback. Fixed: `execCommand('copy')` fallback via hidden textarea + `Copied!`/`Failed` button state
 
 ## Verification Status
 | Check | Status |
 |-------|--------|
-| Python import check | PASSED (all backend modules) |
-| TypeScript check | PASSED (0 errors) |
-| Vite production build | PASSED (2453 modules, 0 errors) |
-| pytest | NOT INSTALLED in venv |
-| Live end-to-end test | NOT YET |
+| Python import check | PASSED — all 5 backend modules |
+| Vite production build | PASSED — 2456 modules, 0 errors |
+| Analytics page (gpt-4o-mini vs llama) | PASSED — charts render, no crash |
+| Copy Markdown clipboard | PASSED — execCommand fallback works |
+| Context leak audit | CLEAN — no unintended cross-model state |
+| Commits pushed | PASSED — `1ee18c0`, `a81f777` on master |
 
-## Known Issues
-- **`setup.ps1` / `start.ps1` missing:** Manual launch commands documented in CONTEXT.md instead.
-- **Pre-existing TS type warning:** `turn_id` string/number mismatch in `sse.ts` — from Phase 3, doesn't block build.
-- **Preset `defaults` not applied server-side:** Client sends its own values; Configure page pre-fills from preset defaults so they match in practice.
-- **SeedLab/Gallery cards not keyboard accessible:** Cards use `onClick` on `<div>` — missing `tabIndex`, `role="button"`, `onKeyDown`. Low-priority a11y fix.
-- **pytest not in venv:** `pip install pytest` needed before running backend tests.
-
-## Next Steps
-1. **Live end-to-end test** — start backend + frontend, run a real experiment from SeedLab → Configure → Theater → Gallery → Analytics flow
-2. **Phase 6: Arena Mode + Polish**
-   - Multi-model tournament runner
-   - Side-by-side comparison view
-   - Model personality radar chart
-   - README with screenshots, GitHub publish
+## Known Issues / Next Steps
+- **Side-by-side comparison view** (Phase 6b) — deferred; compare two experiments head-to-head
+- **pytest not in venv** — `pip install pytest` needed before running backend tests
+- **Tournament E2E not tested live** — requires API keys + real LLM calls; backend logic verified via code review
+- **Pre-existing TS type warnings** — `turn_id` string/number mismatch in `sse.ts`, unused `modelB` in `WordCard.tsx` — don't block build
 
 ## Git State
 - **Branch:** master
-- **Latest commit:** (pending — Phase 5 commit about to be created)
+- **Latest commits:**
+  - `a81f777` — `fix: LatencyChart CSS selector crash + copy markdown clipboard fallback`
+  - `1ee18c0` — `feat: Phase 6 Arena + Tournament mode + audit hardening`
+  - `9820eb5` — `feat: Phase 5 Gallery + Analytics + Gemini Checkpoint 4 fixes`
 
 ## Key References
+- **Phase 6 plan:** `~/.claude/plans/swift-discovering-beaver.md`
 - **Phase 5 plan:** `~/.claude/plans/idempotent-napping-fiddle.md`
-- **Phase 4 plan:** `~/.claude/plans/swirling-splashing-dahl.md`
-- **Phase 3 plan:** `~/.claude/plans/curious-brewing-lake.md`
-- **Phase 2 plan:** `~/.claude/plans/noble-brewing-fairy.md`
 - **Master plan:** `~/.claude/plans/partitioned-coalescing-barto.md`
-- **Gemini proposals:** `GEMINI_Feature_Specification_PIXEL.md`, `GEM_The_Virtual_Tabletop_expansion.md`

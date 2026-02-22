@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Phase 5 complete)
+**Last Updated:** 2026-02-22 (Phase 6 complete)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -11,8 +11,8 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - **LLM Routing:** litellm (9+ providers: Anthropic, Google, OpenAI, DeepSeek, Groq, Cerebras, Mistral, SambaNova, OpenRouter)
 - **Real-time:** Server-Sent Events (SSE)
 - **Frontend:** React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI v4
-- **Visualization:** D3.js 7 (vocabulary constellation + analytics charts)
-- **Database:** SQLite (WAL mode) — experiments, turns, vocabulary
+- **Visualization:** D3.js 7 (vocabulary constellation + analytics charts + radar chart)
+- **Database:** SQLite (WAL mode) — experiments, turns, vocabulary, tournaments, tournament_matches
 - **Testing:** pytest (backend) + vitest (frontend)
 
 ## 3. Current State
@@ -22,132 +22,119 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] Smoke test passed (1 round, Claude Sonnet + Gemini Flash, 44s)
 - [x] Full 5-round run completed — 40+ invented words with grammar in 95s
 - [x] JSON + Markdown dual transcript output
-- [x] CLI flags: `--model-a/b`, `--seed`, `--rounds`, `--temperature`, `--max-tokens`, `--delay`, `--interactive`, `--verbose`
-- [x] Full project plan at `~/.claude/plans/partitioned-coalescing-barto.md`
 
 ### Phase 1: Project Scaffold + Backend Core (DONE)
-- [x] Python venv + FastAPI skeleton (`server/app.py`)
-- [x] Relay engine extracted — standalone, zero Factory imports (`server/relay_engine.py`)
-- [x] EventHub SSE pub/sub — standalone (`server/event_hub.py`)
-- [x] SQLite schema + CRUD with hardened indexes/constraints (`server/db.py`)
-- [x] SSE streaming endpoint with keepalive heartbeat (`/api/relay/stream`)
-- [x] Config + model registry (`server/config.py`)
-- [x] Verified: 1-round relay (Gemini Flash + Llama 3.3 70B) in 5.4s, DB correct
-- [x] Gemini Checkpoint 1 complete — 4 fixes applied (keepalive bug, token tracking, null guard, atomic upsert)
+- [x] Python venv + FastAPI skeleton, relay engine, EventHub SSE, SQLite schema, config/model registry
+- [x] Gemini Checkpoint 1 — 4 fixes (keepalive bug, token tracking, null guard, atomic upsert)
 
 ### Phase 2: React UI Shell + Theater View (DONE)
-- [x] Scaffold React app (Vite 7 + React 19 + Tailwind 3.4 + Shadcn/UI v4)
-- [x] Conversation Theater — split columns, turn bubbles, thinking states
-- [x] Wire SSE client to stream turns live
-- [x] Start Experiment form (model selects, seed textarea, round slider)
-- [x] Build passes: 1875 modules, zero errors
-- [x] Gemini Checkpoint 2 — 5 fixes: Queue-based keepalive, O(n²) render fix, reconnect dedup, smart auto-scroll, aria-live a11y
+- [x] React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI scaffold
+- [x] Conversation Theater — split columns, turn bubbles, thinking states, SSE streaming
+- [x] Gemini Checkpoint 2 — 5 fixes (queue keepalive, O(n²) render, reconnect dedup, auto-scroll, a11y)
 
 ### Phase 3: Vocabulary Extractor + Dictionary (DONE)
-- [x] Regex-based vocabulary extractor — detects definitions, ALL_CAPS tokens, categories, parent word relationships
-- [x] `relay.vocab` SSE events published live after each turn (wired into relay loop)
-- [x] Experiments REST router — `GET /api/experiments/{id}`, `GET /api/experiments/{id}/vocabulary`
-- [x] VocabPanel inline strip in Theater — word count + recent words + "View dictionary" link
-- [x] Living dictionary page at `/dictionary/:experimentId` — WordCard grid + D3 constellation toggle
-- [x] D3 v7 force-directed constellation graph (nodes sized by usage, edges from parent_words, color by speaker, draggable)
-- [x] Gemini Checkpoint 3 bug fix: removed `system_prompt: ''` that was overriding server default (4/6 Gemini findings were already fixed in Checkpoint 2)
-- [x] Build passes: 2445 modules, zero errors
+- [x] Regex vocab extractor, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation
+- [x] Gemini Checkpoint 3 — removed `system_prompt: ''` override
 
 ### Phase 4: Seed Lab + Presets (DONE)
-- [x] 6 preset YAML files (conlang, debate, story, cipher, emotion-math, philosophy) in `server/presets/`
-- [x] Backend preset loader (`server/presets.py`) + REST router (`server/routers/presets.py`)
-- [x] Server-side preset resolution in `POST /api/relay/start` (authoritative source of truth)
-- [x] SeedLab landing page at `/` — preset card grid + custom experiment card
-- [x] Configure page at `/configure/:presetId` — full experiment setup (models, rounds, temperature, max tokens, seed, system prompt)
-- [x] Settings placeholder page at `/settings` (Phase 5/6)
-- [x] Theater simplified to pure live-view at `/theater/:matchId` (setup form removed)
-- [x] Nav bar added to Layout (BABEL brand + Seed Lab + Gallery + Settings links)
-- [x] Audit fixes: route ordering bug in experiments.py, unused imports, resilient preset loader, dynamic Tailwind class fix
-- [x] Build passes: 2449 modules, zero errors
+- [x] 6 preset YAMLs, SeedLab landing page, Configure page, Theater simplified to pure live-view, nav bar
+- [x] Audit fixes: route ordering, resilient preset loader, dynamic Tailwind class fix
 
 ### Phase 5: Gallery + Analytics (DONE)
-- [x] Experiment gallery at `/gallery` — card grid with status badges, model pairs, preset tags, quick-nav to Theater/Dictionary
-- [x] Analytics dashboard at `/analytics/:experimentId` — stats summary row, D3 vocab growth line chart, D3 latency comparison chart
-- [x] Export features — JSON download (experiment + turns + vocab blob) + markdown clipboard copy
-- [x] Backend: `GET /stats` and `/turns` endpoints, `list_experiments` with pagination/status filter
-- [x] Gemini Checkpoint 4 — 4 fixes: incremental D3 graph updates (no more tearing), EventHub buffer 200→2000, async vocab extraction, self-referencing parent word filter
-- [x] Build passes: 2453 modules, zero errors
+- [x] Gallery at `/gallery` — card grid, status badges, quick-nav to Theater/Dictionary
+- [x] Analytics at `/analytics/:experimentId` — stats row, D3 vocab growth + latency charts, JSON/markdown export
+- [x] Gemini Checkpoint 4 — 4 fixes (incremental D3 graph, EventHub buffer 200→2000, async vocab extraction, self-ref parent word filter)
 
-### Phase 6: Arena Mode + Polish
-- [ ] Multi-model tournament runner
-- [ ] Side-by-side comparison view
-- [ ] Model personality radar chart
-- [ ] README with screenshots, GitHub publish
+### Phase 6: Arena Mode + Polish (DONE)
+- [x] **Tournament engine** — round-robin runner, sequential match execution, SSE lifecycle events
+- [x] **Tournament DB** — `tournaments` + `tournament_matches` tables, leaderboard aggregation, per-model radar stats
+- [x] **Tournament router** — start/list/detail/leaderboard/stream endpoints; asyncio task storage; model allowlist; query bounds; SSE self-close
+- [x] **Arena page** at `/arena` — model multi-select (min 3, max 10), preset dropdown, live pairing count, tournament launcher
+- [x] **Tournament page** at `/tournament/:id` — live match grid, progress bar, leaderboard table, radar chart overlay
+- [x] **RadarChart** — D3 spider chart (verbosity/speed/creativity/consistency/engagement), multi-model polygon overlay
+- [x] **Settings page** at `/settings` — live API key status indicators + model registry table
+- [x] **"The Original" preset** — recreate viral Reddit Claude vs Gemini experiment (15 rounds, exact seed words)
+- [x] **Relay router** — model allowlist validation, `/models/status` endpoint
+- [x] **Audit hardening** — DB normalization zero-collapse fix, consistency metric inversion, error message sanitization, query bounds across all routers
+- [x] **README** — quick start, architecture, presets table, model support
+- [x] **Bug fixes** — LatencyChart CSS selector crash (dots in model names), copy markdown silent failure → execCommand fallback + Copied!/Failed feedback
+- [x] Build passes: 2456 modules, 0 errors
 
-### Future Expansions (Gemini Proposals)
-- [ ] **Pixel Sprites** — 8-bit reactive avatars synced to SSE state (idle/thinking/talking/error) with typewriter effect (`GEMINI_Feature_Specification_PIXEL.md`)
-- [ ] **Virtual Tabletop** — Asymmetric multi-agent RPG mode with human-in-the-loop via `asyncio.Event` pause/resume and `POST /inject` endpoint (`GEM_The_Virtual_Tabletop_expansion.md`)
+### Future Expansions
+- [ ] **Side-by-side comparison view** (Phase 6b) — compare two experiments head-to-head
+- [ ] **Pixel Sprites** — 8-bit reactive avatars synced to SSE state
+- [ ] **Virtual Tabletop** — asymmetric multi-agent RPG mode with human-in-the-loop
 
 ## 4. Architecture
 ```
 Babel/
   server/
-    app.py                     FastAPI app with lifespan, mounts relay + experiments + presets routers
-    config.py                  Settings, model registry
+    app.py                     FastAPI app — mounts relay, experiments, presets, tournaments routers
+    config.py                  Settings, model registry (7 models across 5 providers)
     presets.py                 YAML preset loader (resilient, logs malformed files)
-    relay_engine.py            Core relay loop + vocab extraction hook
+    relay_engine.py            Core relay loop — call_model, build_messages, vocab extraction
+    tournament_engine.py       Round-robin tournament runner — sequential matches, SSE events
     vocab_extractor.py         Regex-based invented word detection
-    db.py                      SQLite schema + queries (experiments, turns, vocabulary)
-    event_hub.py               SSE pub/sub (standalone, no Factory deps)
+    db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments)
+    event_hub.py               SSE pub/sub (standalone, match_id filtering)
     presets/
-      conlang.yaml             Build a symbolic language (default preset)
+      conlang.yaml             Build a symbolic language (default)
       debate.yaml              Two models argue opposing sides
       story.yaml               Collaborative story writing
       cipher.yaml              Build an encryption system
       emotion-math.yaml        Mathematical notation for emotions
       philosophy.yaml          Explore deep questions
+      original.yaml            Recreate viral Reddit experiment (15 rounds)
     routers/
-      relay.py                 POST /api/relay/start (+ preset resolution), GET /api/relay/stream (SSE)
-      experiments.py            GET /api/experiments (list, detail, vocabulary, stats, turns)
-      presets.py               GET /api/presets (list, detail)
+      relay.py                 POST /start (+ preset resolution + model validation), GET /stream (SSE), GET /models/status
+      experiments.py           GET list/detail/vocabulary/stats/turns/radar
+      presets.py               GET list/detail
+      tournaments.py           POST /start, GET list/detail/leaderboard/stream
   ui/
     src/
       pages/
-        SeedLab.tsx             Landing page — preset card grid + custom card
-        Configure.tsx           Full experiment config — models, sliders, seed, system prompt
-        Theater.tsx             Pure live-view — SSE stream, split columns, vocab panel
-        Dictionary.tsx          Cards grid + D3 constellation, polls for live updates
-        Gallery.tsx             Past experiments card grid with status badges
-        Analytics.tsx           Per-experiment stats, D3 charts, JSON/markdown export
-        Settings.tsx            Placeholder for Phase 6
+        SeedLab.tsx            Landing page — preset card grid + custom card
+        Configure.tsx          Experiment config — models, sliders, seed, system prompt
+        Theater.tsx            Pure live-view — SSE stream, split columns, vocab panel
+        Dictionary.tsx         WordCard grid + D3 constellation
+        Gallery.tsx            Past experiments card grid with status badges
+        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown export
+        Arena.tsx              Tournament setup — model multi-select, launcher
+        Tournament.tsx         Live match grid, leaderboard, radar chart
+        Settings.tsx           API key status + model registry
       components/
-        theater/                TurnBubble, ThinkingIndicator, RoundDivider,
-                                ConversationColumn, ExperimentHeader, VocabPanel
-        dictionary/             WordCard, ConstellationGraph (incremental D3 updates)
-        analytics/              VocabGrowthChart, LatencyChart (D3 line charts)
-        common/                 Layout (nav bar), ErrorBoundary
-        ui/                     9 Shadcn primitives
+        theater/               TurnBubble, ThinkingIndicator, RoundDivider, VocabPanel
+        dictionary/            WordCard, ConstellationGraph (incremental D3)
+        analytics/             VocabGrowthChart, LatencyChart, RadarChart (D3)
+        common/                Layout (nav bar), ErrorBoundary
+        ui/                    9 Shadcn primitives
       api/
-        types.ts                SSE events + REST types + Preset + Analytics types
-        client.ts               fetchJson + api object (10 endpoints)
-        sse.ts                  useSSE hook (EventSource, typed events)
-        hooks.ts                useExperimentState (event sourcing)
-  tests/                       pytest + vitest
+        types.ts               All REST + SSE types including tournament + radar types
+        client.ts              fetchJson + api object (15+ endpoints)
+        sse.ts                 useSSE hook (EventSource, typed events)
+        hooks.ts               useExperimentState (event sourcing)
 ```
 
 ## 5. Commands (PowerShell)
 ```powershell
-# Backend only
+# Backend
 & ".\.venv\Scripts\python.exe" -m uvicorn server.app:app --reload --port 8000
 
-# Frontend only (dev)
+# Frontend (dev)
 Set-Location ui && .\run_npm.cmd dev
 
-# Run tests
+# Tests
 & ".\.venv\Scripts\python.exe" -m pytest tests/ -v
 ```
 
 ## 6. "Don't Forget" Rules
 - **Origin:** Inspired by https://www.reddit.com/r/ClaudeAI/comments/1rb9dpr/ — human relayed messages between Claude + Gemini until they invented SYNTHOLINK language
-- **Standalone:** All backend code is self-contained. Factory patterns were adapted, not imported. Zero cross-repo dependencies.
-- **Factory UI patterns adapted:** ForceGraph.tsx → ConstellationGraph (D3 force sim), tailwind.config.js (dark arena theme), StatusCard → ExperimentHeader
+- **Standalone:** All backend code is self-contained. Zero cross-repo dependencies.
 - **SQLite:** aiosqlite with `journal_mode=WAL` + `foreign_keys=ON` + `synchronous=NORMAL`
-- **litellm model strings:** `anthropic/claude-sonnet-4-20250514`, `gemini/gemini-2.5-flash`, `deepseek/deepseek-chat`, `groq/llama-3.3-70b-versatile`
+- **litellm model strings:** prefix/model format — e.g. `anthropic/claude-sonnet-4-20250514`, `gemini/gemini-2.5-flash`
 - **All API keys in Factory `.env`** — copy or symlink for Babel
-- **15-round timeout:** Context window grows each round → later rounds exponentially slower. Cap at 5-7 for live UI, or summarize history after N rounds
+- **Model allowlist enforced server-side** — relay and tournament routers validate against `MODEL_REGISTRY`
+- **Tournament SSE uses `match_id=tournament_id`** — reuses EventHub filter unchanged; individual match events still use their own experiment IDs
+- **CSS selector safety** — D3 class names derived from model strings must be sanitized: `label.replace(/[^a-zA-Z0-9_-]/g, '_')`
+- **Rounds cap:** Configure = 15, Arena = 15, tournament router `le=15`. Context grows each round — later rounds exponentially slower.
 - **Windows:** Use `asyncio.WindowsSelectorEventLoopPolicy()` before any server creation

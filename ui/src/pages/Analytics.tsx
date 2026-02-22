@@ -44,6 +44,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
@@ -131,9 +132,38 @@ export default function Analytics() {
           lines.push(`- **${w.word}**${w.meaning ? `: ${w.meaning}` : ''} _(coined by ${w.coined_by}, round ${w.coined_round})_`)
         }
       }
-      await navigator.clipboard.writeText(lines.join('\n'))
+
+      const text = lines.join('\n')
+      let copied = false
+
+      // Try modern Clipboard API first
+      if (navigator.clipboard) {
+        try {
+          await navigator.clipboard.writeText(text)
+          copied = true
+        } catch {
+          // fall through to execCommand fallback
+        }
+      }
+
+      // Fallback: create a temporary textarea and use execCommand
+      if (!copied) {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        copied = document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+
+      setCopyStatus(copied ? 'success' : 'error')
+      setTimeout(() => setCopyStatus('idle'), 2000)
     } catch {
-      // silently fail
+      setCopyStatus('error')
+      setTimeout(() => setCopyStatus('idle'), 2000)
     } finally {
       setExporting(false)
     }
@@ -203,11 +233,17 @@ export default function Analytics() {
             <Button
               variant="outline"
               size="sm"
-              className="border-border-custom text-text-dim"
+              className={`border-border-custom ${copyStatus === 'success' ? 'text-green-400' : copyStatus === 'error' ? 'text-red-400' : 'text-text-dim'}`}
               onClick={handleCopyMarkdown}
               disabled={exporting}
             >
-              {exporting ? '...' : 'Copy Markdown'}
+              {exporting
+                ? '...'
+                : copyStatus === 'success'
+                  ? 'Copied!'
+                  : copyStatus === 'error'
+                    ? 'Failed — try again'
+                    : 'Copy Markdown'}
             </Button>
           </div>
         </div>

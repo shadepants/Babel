@@ -96,7 +96,9 @@ export function LatencyChart({ data, modelAName, modelBName, height = 250 }: Lat
         .attr('stroke-width', 2)
         .attr('d', line)
 
-      g.selectAll(`.dot-${label}`)
+      // Sanitize label for use as a CSS class (dots/digits break selectors)
+      const safeClass = label.replace(/[^a-zA-Z0-9_-]/g, '_')
+      g.selectAll(`.dot-${safeClass}`)
         .data(validData)
         .join('circle')
         .attr('cx', (d) => xScale(d.round))

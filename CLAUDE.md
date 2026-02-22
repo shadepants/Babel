@@ -13,10 +13,5 @@
 - **EventHub in-memory pub/sub** — subscribers filter by match_id
 - **SQLite WAL mode** — concurrent reads while relay writes
 
-## File Map (Phase 1)
-- `server/app.py` — FastAPI entry point, lifespan manages DB + EventHub
-- `server/config.py` — defaults, model registry, env loading
-- `server/db.py` — async SQLite with hardened schema (indexes, constraints, pragmas)
-- `server/event_hub.py` — SSE pub/sub (standalone, no Factory dependency)
-- `server/relay_engine.py` — core relay loop with RelayAgent, RelayEvent, retry
-- `server/routers/relay.py` — POST /api/relay/start, GET /api/relay/stream (SSE + keepalive)
+## Routes
+- `/` → SeedLab (preset grid), `/configure/:presetId` → Configure, `/theater/:matchId` → Theater, `/dictionary/:experimentId` → Dictionary, `/settings` → Settings placeholder

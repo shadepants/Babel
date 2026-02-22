@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Phase 3 complete)
+**Last Updated:** 2026-02-22 (Phase 4 complete)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -53,9 +53,17 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] Gemini Checkpoint 3 bug fix: removed `system_prompt: ''` that was overriding server default (4/6 Gemini findings were already fixed in Checkpoint 2)
 - [x] Build passes: 2445 modules, zero errors
 
-### Phase 4: Seed Lab + Presets
-- [ ] Preset YAML files (conlang, debate, story, cipher, emotion-math, philosophy)
-- [ ] SeedLab page with preset cards + custom builder
+### Phase 4: Seed Lab + Presets (DONE)
+- [x] 6 preset YAML files (conlang, debate, story, cipher, emotion-math, philosophy) in `server/presets/`
+- [x] Backend preset loader (`server/presets.py`) + REST router (`server/routers/presets.py`)
+- [x] Server-side preset resolution in `POST /api/relay/start` (authoritative source of truth)
+- [x] SeedLab landing page at `/` — preset card grid + custom experiment card
+- [x] Configure page at `/configure/:presetId` — full experiment setup (models, rounds, temperature, max tokens, seed, system prompt)
+- [x] Settings placeholder page at `/settings` (Phase 5/6)
+- [x] Theater simplified to pure live-view at `/theater/:matchId` (setup form removed)
+- [x] Nav bar added to Layout (BABEL brand + Seed Lab + Settings links)
+- [x] Audit fixes: route ordering bug in experiments.py, unused imports, resilient preset loader, dynamic Tailwind class fix
+- [x] Build passes: 2449 modules, zero errors
 
 ### Phase 5: Gallery + Analytics
 - [ ] Experiment gallery (past runs, card grid)
@@ -76,30 +84,41 @@ A standalone shareable web app where AI models talk to each other in real-time �
 ```
 Babel/
   server/
-    app.py                     FastAPI app with lifespan, mounts relay + experiments routers
+    app.py                     FastAPI app with lifespan, mounts relay + experiments + presets routers
     config.py                  Settings, model registry
+    presets.py                 YAML preset loader (resilient, logs malformed files)
     relay_engine.py            Core relay loop + vocab extraction hook
     vocab_extractor.py         Regex-based invented word detection
     db.py                      SQLite schema + queries (experiments, turns, vocabulary)
     event_hub.py               SSE pub/sub (standalone, no Factory deps)
+    presets/
+      conlang.yaml             Build a symbolic language (default preset)
+      debate.yaml              Two models argue opposing sides
+      story.yaml               Collaborative story writing
+      cipher.yaml              Build an encryption system
+      emotion-math.yaml        Mathematical notation for emotions
+      philosophy.yaml          Explore deep questions
     routers/
-      relay.py                 POST /api/relay/start, GET /api/relay/stream (SSE)
+      relay.py                 POST /api/relay/start (+ preset resolution), GET /api/relay/stream (SSE)
       experiments.py            GET /api/experiments (list, detail, vocabulary)
-      [planned] presets.py     GET /api/presets (seed lab, Phase 4)
+      presets.py               GET /api/presets (list, detail)
   ui/
     src/
       pages/
-        Theater.tsx             Start form → live split-column view + VocabPanel
+        SeedLab.tsx             Landing page — preset card grid + custom card
+        Configure.tsx           Full experiment config — models, sliders, seed, system prompt
+        Theater.tsx             Pure live-view — SSE stream, split columns, vocab panel
         Dictionary.tsx          Cards grid + D3 constellation, polls for live updates
+        Settings.tsx            Placeholder for Phase 5/6
       components/
         theater/                TurnBubble, ThinkingIndicator, RoundDivider,
                                 ConversationColumn, ExperimentHeader, VocabPanel
         dictionary/             WordCard, ConstellationGraph
-        common/                 Layout, ErrorBoundary
+        common/                 Layout (nav bar), ErrorBoundary
         ui/                     9 Shadcn primitives
       api/
-        types.ts                Discriminated union (6 SSE events) + REST types
-        client.ts               fetchJson + api object (5 endpoints)
+        types.ts                SSE events + REST types + Preset types
+        client.ts               fetchJson + api object (7 endpoints)
         sse.ts                  useSSE hook (EventSource, typed events)
         hooks.ts                useExperimentState (event sourcing)
   tests/                       pytest + vitest
@@ -107,12 +126,6 @@ Babel/
 
 ## 5. Commands (PowerShell)
 ```powershell
-# Setup (first time)
-.\setup.ps1
-
-# Launch (backend + frontend)
-.\start.ps1
-
 # Backend only
 & ".\.venv\Scripts\python.exe" -m uvicorn server.app:app --reload --port 8000
 

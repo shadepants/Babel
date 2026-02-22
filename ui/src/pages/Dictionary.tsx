@@ -60,7 +60,7 @@ export default function Dictionary() {
       <div className="min-h-screen bg-bg-deep flex flex-col items-center justify-center gap-4">
         <p className="text-danger">{error ?? 'Experiment not found'}</p>
         <Link to="/" className="text-accent hover:underline text-sm">
-          ← Back to Theater
+          ← Back to Seed Lab
         </Link>
       </div>
     )

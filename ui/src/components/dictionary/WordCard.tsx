@@ -48,7 +48,7 @@ export function WordCard({ word, modelA, modelB }: WordCardProps) {
         <div className="flex items-center gap-3">
           <span>Round {word.coined_round}</span>
           {word.usage_count > 1 && (
-            <span className={cn('text-xs', `text-${color}`)}>
+            <span className={cn('text-xs', color === 'model-a' ? 'text-model-a' : 'text-model-b')}>
               {word.usage_count}x used
             </span>
           )}

@@ -1,28 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
 
 /**
- * ScrambleText — cycles through geometric glyphs + random chars before
- * resolving to the real text, left-to-right stagger.
- * Triggers once on mount (i.e., each time the page is navigated to).
+ * ScrambleText — cycles through ASCII chars before resolving the real text
+ * left-to-right. Triggers once on mount (each route navigation).
+ *
+ * Only uses ASCII printable chars so no font-fallback flickering occurs
+ * regardless of which font the parent element uses.
  */
 
-const GLYPHS = '◈⬡◉✦⊕⟡⌬◇⊗⧖XZKQVBNMRPSTLDHFWYJGCAEIOUBCDEFGHIJKLMNOPQRSTUVWXYZ019284375!@#%'
+// Pure ASCII — safe in Orbitron, JetBrains Mono, Inter, any font
+const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&?*+-=/<>^~'
 
 export function ScrambleText({
   children,
-  duration = 1050,
+  duration = 1800,
   className,
 }: {
   children: string
   duration?: number
   className?: string
 }) {
-  const [display, setDisplay] = useState(() => {
-    // Start with scrambled — immediate scramble on first render
-    return children.split('').map((c) =>
+  // Start fully scrambled so the reveal begins immediately on mount
+  const [display, setDisplay] = useState(() =>
+    children.split('').map((c) =>
       c === ' ' ? ' ' : GLYPHS[Math.floor(Math.random() * GLYPHS.length)]
     ).join('')
-  })
+  )
 
   const frameRef   = useRef<number>()
   const mountedRef = useRef(true)
@@ -38,10 +41,9 @@ export function ScrambleText({
 
       const result = target.split('').map((char, i) => {
         if (char === ' ') return ' '
-        // stagger: char i resolves when progress passes its threshold
-        // first char resolves early, last char at ~75% of duration
-        const threshold = (i / Math.max(target.length - 1, 1)) * 0.72
-        if (progress >= threshold + 0.28) return char
+        // Left-to-right stagger: char i locks in as progress passes its threshold
+        const threshold = (i / Math.max(target.length - 1, 1)) * 0.68
+        if (progress >= threshold + 0.32) return char
         return GLYPHS[Math.floor(Math.random() * GLYPHS.length)]
       })
 

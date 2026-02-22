@@ -8,14 +8,14 @@ import { ScrambleText } from '@/components/common/ScrambleText'
 
 /** Map emoji to sci-fi geometric symbols */
 const SYMBOL_MAP: Record<string, string> = {
-  'ðŸ§ ': 'â—ˆ', 'âš™ï¸': 'âŠ•', 'ðŸŽ­': 'âœ¦', 'ðŸ“Š': 'â¬¡', 'ðŸŒ±': 'â—‰',
-  'ðŸ¤': 'âŸ¡', 'ðŸ”¬': 'âŒ¬', 'ðŸ’¡': 'â—‡', 'ðŸŽ¯': 'âŠ—', 'ðŸ¤–': 'â§–',
-  'ðŸŒ': 'â—‰', 'âš–ï¸': 'âŠ—', 'ðŸŽª': 'âœ¦', 'ðŸ”®': 'â—ˆ', 'ðŸ—ºï¸': 'â¬¡',
-  'ðŸŒ': 'â¬¡', 'ðŸ§¬': 'â—ˆ', 'âš¡': 'âŠ•', 'ðŸŒŠ': 'â—‰', 'ðŸ”¥': 'âœ¦',
+  'Ã°Å¸Â§Â ': 'Ã¢â€”Ë†', 'Ã¢Å¡â„¢Ã¯Â¸Â': 'Ã¢Å â€¢', 'Ã°Å¸Å½Â­': 'Ã¢Å“Â¦', 'Ã°Å¸â€œÅ ': 'Ã¢Â¬Â¡', 'Ã°Å¸Å’Â±': 'Ã¢â€”â€°',
+  'Ã°Å¸Â¤Â': 'Ã¢Å¸Â¡', 'Ã°Å¸â€Â¬': 'Ã¢Å’Â¬', 'Ã°Å¸â€™Â¡': 'Ã¢â€”â€¡', 'Ã°Å¸Å½Â¯': 'Ã¢Å â€”', 'Ã°Å¸Â¤â€“': 'Ã¢Â§â€“',
+  'Ã°Å¸Å’Â': 'Ã¢â€”â€°', 'Ã¢Å¡â€“Ã¯Â¸Â': 'Ã¢Å â€”', 'Ã°Å¸Å½Âª': 'Ã¢Å“Â¦', 'Ã°Å¸â€Â®': 'Ã¢â€”Ë†', 'Ã°Å¸â€”ÂºÃ¯Â¸Â': 'Ã¢Â¬Â¡',
+  'Ã°Å¸Å’Â': 'Ã¢Â¬Â¡', 'Ã°Å¸Â§Â¬': 'Ã¢â€”Ë†', 'Ã¢Å¡Â¡': 'Ã¢Å â€¢', 'Ã°Å¸Å’Å ': 'Ã¢â€”â€°', 'Ã°Å¸â€Â¥': 'Ã¢Å“Â¦',
 }
 
 /** Fallback symbols by index for unmapped emojis */
-const FALLBACK_SYMBOLS = ['â—ˆ', 'â¬¡', 'â—‰', 'âœ¦', 'âŠ•', 'âŸ¡', 'âŒ¬', 'â—‡', 'âŠ—', 'â§–']
+const FALLBACK_SYMBOLS = ['Ã¢â€”Ë†', 'Ã¢Â¬Â¡', 'Ã¢â€”â€°', 'Ã¢Å“Â¦', 'Ã¢Å â€¢', 'Ã¢Å¸Â¡', 'Ã¢Å’Â¬', 'Ã¢â€”â€¡', 'Ã¢Å â€”', 'Ã¢Â§â€“']
 
 function getSymbol(emoji: string, index: number): string {
   return SYMBOL_MAP[emoji] ?? FALLBACK_SYMBOLS[index % FALLBACK_SYMBOLS.length]
@@ -57,7 +57,7 @@ export default function SeedLab() {
           <ScrambleText>Seed Lab</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim tracking-wider">
-          <span className="text-accent/60">// </span>select experiment protocol â€” or define your own
+          <span className="text-accent/60">// </span>select experiment protocol Ã¢â‚¬â€ or define your own
         </p>
       </motion.div>
 
@@ -91,7 +91,7 @@ export default function SeedLab() {
                   {/* Symbol + tags row */}
                   <div className="flex items-start justify-between">
                     <span
-                      className="font-display text-xl leading-none text-accent/45 group-hover:text-accent/75 transition-colors select-none"
+                      className="font-mono text-xl leading-none text-accent/45 group-hover:text-accent/75 transition-colors select-none"
                       style={{ filter: 'drop-shadow(0 0 6px rgba(139,92,246,0.3))' }}
                     >
                       {getSymbol(preset.emoji, i)}
@@ -115,10 +115,10 @@ export default function SeedLab() {
                     </p>
                   </div>
 
-                  {/* Metadata â€” terminal data row */}
+                  {/* Metadata Ã¢â‚¬â€ terminal data row */}
                   <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-3 pt-1 border-t border-border-custom/40">
                     <span><span className="text-accent/50">RND</span> {String(preset.defaults.rounds).padStart(2, '0')}</span>
-                    <span className="text-accent/25">Â·</span>
+                    <span className="text-accent/25">Ã‚Â·</span>
                     <span className="truncate">
                       <span className="text-accent/50">A</span> {preset.suggested_models.a.split('/').pop()}
                       <span className="text-accent/25 mx-1">vs</span>
@@ -144,7 +144,7 @@ export default function SeedLab() {
             >
               <div className="neural-card-bar neural-card-bar--dim" />
               <div className="p-5 flex flex-col items-center justify-center min-h-[160px] space-y-3">
-                <span className="font-display text-3xl text-accent/35 group-hover:text-accent/75 transition-colors select-none">âœ¦</span>
+                <span className="font-mono text-3xl text-accent/35 group-hover:text-accent/75 transition-colors select-none">Ã¢Å“Â¦</span>
                 <div className="text-center space-y-1">
                   <h3 className="font-display text-sm font-bold tracking-wider text-text-dim group-hover:text-accent transition-colors uppercase">
                     Custom

@@ -59,8 +59,10 @@ def create_app() -> FastAPI:
 
     # Mount routers
     from server.routers.relay import router as relay_router
+    from server.routers.experiments import router as experiments_router
 
     app.include_router(relay_router, prefix="/api")
+    app.include_router(experiments_router, prefix="/api/experiments")
 
     return app
 

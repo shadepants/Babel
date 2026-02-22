@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 
 import litellm
 
+from server.vocab_extractor import extract_vocabulary
+
 if TYPE_CHECKING:
     from server.event_hub import EventHub
     from server.db import Database
@@ -114,6 +116,50 @@ def build_messages(
     return messages
 
 
+# ── Vocabulary Extraction Helper ────────────────────────────────────────
+
+
+async def _extract_and_publish_vocab(
+    content: str,
+    speaker: str,
+    round_num: int,
+    match_id: str,
+    hub: EventHub,
+    db: Database,
+    known_words: set[str],
+) -> None:
+    """Extract vocabulary from a turn, persist to DB, and publish SSE events."""
+    words = extract_vocabulary(content, known_words, speaker, round_num)
+    for word in words:
+        await db.upsert_word(
+            experiment_id=match_id,
+            word=word.word,
+            meaning=word.meaning,
+            coined_by=speaker,
+            coined_round=round_num,
+            category=word.category,
+            parent_words=word.parent_words or None,
+        )
+        known_words.add(word.word)
+
+        hub.publish(RelayEvent.VOCAB_UPDATE, {
+            "match_id": match_id,
+            "word": word.word,
+            "meaning": word.meaning,
+            "coined_by": speaker,
+            "coined_round": round_num,
+            "category": word.category,
+            "parent_words": word.parent_words,
+        })
+
+    if words:
+        logger.debug(
+            "Extracted %d words from %s round %d: %s",
+            len(words), speaker, round_num,
+            [w.word for w in words],
+        )
+
+
 # ── Main Relay Loop ─────────────────────────────────────────────────────
 
 async def run_relay(
@@ -134,6 +180,7 @@ async def run_relay(
     """
     turns: list[dict] = []
     seed_turn = {"speaker": "b", "content": seed}
+    known_words: set[str] = set()  # tracks invented words across rounds
     start_time = time.time()
 
     try:
@@ -170,6 +217,10 @@ async def run_relay(
                 "turn_id": turn_id_a,
             })
 
+            await _extract_and_publish_vocab(
+                content_a, agent_a.name, round_num, match_id, hub, db, known_words,
+            )
+
             # ── Agent B's turn ──
             hub.publish(RelayEvent.THINKING, {
                 "match_id": match_id,
@@ -201,6 +252,10 @@ async def run_relay(
                 "latency_s": round(latency_b, 1),
                 "turn_id": turn_id_b,
             })
+
+            await _extract_and_publish_vocab(
+                content_b, agent_b.name, round_num, match_id, hub, db, known_words,
+            )
 
             # ── Round complete ──
             hub.publish(RelayEvent.ROUND_COMPLETE, {

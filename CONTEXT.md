@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-22 (Phase 3 complete)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -43,10 +43,15 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] Build passes: 1875 modules, zero errors
 - [x] Gemini Checkpoint 2 — 5 fixes: Queue-based keepalive, O(n²) render fix, reconnect dedup, smart auto-scroll, aria-live a11y
 
-### Phase 3: Vocabulary Extractor + Dictionary
-- [ ] Parse turn content to auto-extract invented words
-- [ ] Living dictionary with WordCard components
-- [ ] D3 vocabulary constellation force graph
+### Phase 3: Vocabulary Extractor + Dictionary (DONE)
+- [x] Regex-based vocabulary extractor — detects definitions, ALL_CAPS tokens, categories, parent word relationships
+- [x] `relay.vocab` SSE events published live after each turn (wired into relay loop)
+- [x] Experiments REST router — `GET /api/experiments/{id}`, `GET /api/experiments/{id}/vocabulary`
+- [x] VocabPanel inline strip in Theater — word count + recent words + "View dictionary" link
+- [x] Living dictionary page at `/dictionary/:experimentId` — WordCard grid + D3 constellation toggle
+- [x] D3 v7 force-directed constellation graph (nodes sized by usage, edges from parent_words, color by speaker, draggable)
+- [x] Gemini Checkpoint 3 bug fix: removed `system_prompt: ''` that was overriding server default (4/6 Gemini findings were already fixed in Checkpoint 2)
+- [x] Build passes: 2445 modules, zero errors
 
 ### Phase 4: Seed Lab + Presets
 - [ ] Preset YAML files (conlang, debate, story, cipher, emotion-math, philosophy)
@@ -71,24 +76,32 @@ A standalone shareable web app where AI models talk to each other in real-time �
 ```
 Babel/
   server/
-    app.py                     FastAPI app with lifespan
+    app.py                     FastAPI app with lifespan, mounts relay + experiments routers
     config.py                  Settings, model registry
-    relay_engine.py            Core relay loop (from ai_relay.py)
-    vocabulary_extractor.py    Parse turns → extract invented words
-    analysis.py                Post-run analytics
-    db.py                      SQLite schema + queries
+    relay_engine.py            Core relay loop + vocab extraction hook
+    vocab_extractor.py         Regex-based invented word detection
+    db.py                      SQLite schema + queries (experiments, turns, vocabulary)
+    event_hub.py               SSE pub/sub (standalone, no Factory deps)
     routers/
       relay.py                 POST /api/relay/start, GET /api/relay/stream (SSE)
-      experiments.py           CRUD for saved experiments
-      presets.py               GET /api/presets (seed lab)
-      analysis.py              GET /api/analysis/{id}
-      models.py                GET /api/models (available providers)
+      experiments.py            GET /api/experiments (list, detail, vocabulary)
+      [planned] presets.py     GET /api/presets (seed lab, Phase 4)
   ui/
     src/
-      pages/                   Theater, SeedLab, Gallery, Arena, Analytics, Dictionary
-      components/              theater/, dictionary/, graphs/, arena/, analytics/, common/
-      api/                     client.ts, hooks.ts (usePolling, useSSE), types.ts
-  presets/                     YAML experiment presets
+      pages/
+        Theater.tsx             Start form → live split-column view + VocabPanel
+        Dictionary.tsx          Cards grid + D3 constellation, polls for live updates
+      components/
+        theater/                TurnBubble, ThinkingIndicator, RoundDivider,
+                                ConversationColumn, ExperimentHeader, VocabPanel
+        dictionary/             WordCard, ConstellationGraph
+        common/                 Layout, ErrorBoundary
+        ui/                     9 Shadcn primitives
+      api/
+        types.ts                Discriminated union (6 SSE events) + REST types
+        client.ts               fetchJson + api object (5 endpoints)
+        sse.ts                  useSSE hook (EventSource, typed events)
+        hooks.ts                useExperimentState (event sourcing)
   tests/                       pytest + vitest
 ```
 
@@ -113,7 +126,7 @@ Set-Location ui && .\run_npm.cmd dev
 ## 6. "Don't Forget" Rules
 - **Origin:** Inspired by https://www.reddit.com/r/ClaudeAI/comments/1rb9dpr/ — human relayed messages between Claude + Gemini until they invented SYNTHOLINK language
 - **Standalone:** All backend code is self-contained. Factory patterns were adapted, not imported. Zero cross-repo dependencies.
-- **Factory UI patterns to adapt for Phase 2:** ForceGraph.tsx (D3), PhaseProgress.tsx (rounds), tailwind.config.js (dark theme), StatusCard.tsx (metrics), usePolling hook
+- **Factory UI patterns adapted:** ForceGraph.tsx → ConstellationGraph (D3 force sim), tailwind.config.js (dark arena theme), StatusCard → ExperimentHeader
 - **SQLite:** aiosqlite with `journal_mode=WAL` + `foreign_keys=ON` + `synchronous=NORMAL`
 - **litellm model strings:** `anthropic/claude-sonnet-4-20250514`, `gemini/gemini-2.5-flash`, `deepseek/deepseek-chat`, `groq/llama-3.3-70b-versatile`
 - **All API keys in Factory `.env`** — copy or symlink for Babel

@@ -5,7 +5,7 @@ export interface RelayStartRequest {
   model_a: string;
   model_b: string;
   seed: string;
-  system_prompt: string;
+  system_prompt?: string;
   rounds: number;
   temperature: number;
   max_tokens: number;
@@ -82,10 +82,56 @@ export interface ErrorEvent extends BaseSSEEvent {
   message: string;
 }
 
+/** relay.vocab — a new or re-encountered invented word */
+export interface VocabEvent extends BaseSSEEvent {
+  type: 'relay.vocab';
+  word: string;
+  meaning: string | null;
+  coined_by: string;
+  coined_round: number;
+  category: string | null;
+  parent_words: string[];
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
   | TurnEvent
   | RoundCompleteEvent
   | MatchCompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | VocabEvent;
+
+// ── REST Response Types ───────────────────────────────────────
+
+/** Single vocabulary word from REST endpoint */
+export interface VocabWord {
+  id: number;
+  experiment_id: string;
+  word: string;
+  meaning: string | null;
+  coined_by: string;
+  coined_round: number;
+  category: string | null;
+  usage_count: number;
+  parent_words: string[] | null;
+}
+
+/** GET /api/experiments/:id/vocabulary response */
+export interface VocabResponse {
+  experiment_id: string;
+  words: VocabWord[];
+}
+
+/** Experiment record from REST endpoint */
+export interface ExperimentRecord {
+  id: string;
+  created_at: string;
+  model_a: string;
+  model_b: string;
+  seed: string;
+  rounds_planned: number;
+  rounds_completed: number;
+  status: string;
+  elapsed_seconds: number | null;
+}

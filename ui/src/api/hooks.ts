@@ -7,10 +7,11 @@
  * automatically (backend's include_history=true parameter).
  */
 import { useMemo } from 'react';
-import type { RelaySSEEvent, TurnEvent } from './types';
+import type { RelaySSEEvent, TurnEvent, VocabEvent } from './types';
 
 export interface ExperimentState {
   turns: TurnEvent[];
+  vocab: VocabEvent[];
   currentRound: number;
   totalRounds: number;
   thinkingSpeaker: string | null;
@@ -23,6 +24,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
   return useMemo(() => {
     const state: ExperimentState = {
       turns: [],
+      vocab: [],
       currentRound: 0,
       totalRounds: 0,
       thinkingSpeaker: null,
@@ -56,6 +58,15 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           state.errorMessage = event.message;
           state.thinkingSpeaker = null;
           break;
+        case 'relay.vocab': {
+          const idx = state.vocab.findIndex((v) => v.word === event.word);
+          if (idx >= 0) {
+            state.vocab[idx] = event; // re-encounter: update in place
+          } else {
+            state.vocab.push(event);
+          }
+          break;
+        }
       }
     }
 

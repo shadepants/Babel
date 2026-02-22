@@ -1,4 +1,10 @@
-import type { RelayStartRequest, RelayStartResponse, ModelsResponse } from './types';
+import type {
+  RelayStartRequest,
+  RelayStartResponse,
+  ModelsResponse,
+  VocabResponse,
+  ExperimentRecord,
+} from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -41,6 +47,14 @@ export const api = {
 
   /** Get available models from the registry */
   getModels: () => fetchJson<ModelsResponse>('/api/relay/models'),
+
+  /** Get experiment metadata */
+  getExperiment: (experimentId: string) =>
+    fetchJson<ExperimentRecord>(`/api/experiments/${experimentId}`),
+
+  /** Get vocabulary for an experiment */
+  getVocabulary: (experimentId: string) =>
+    fetchJson<VocabResponse>(`/api/experiments/${experimentId}/vocabulary`),
 
   /** Get event history (REST fallback for SSE) */
   getHistory: (matchId?: string, limit = 50) => {

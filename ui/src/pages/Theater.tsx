@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { ConversationColumn } from '@/components/theater/ConversationColumn'
 import { ExperimentHeader } from '@/components/theater/ExperimentHeader'
+import { VocabPanel } from '@/components/theater/VocabPanel'
 
 /** Default seed from server/config.py */
 const DEFAULT_SEED =
@@ -72,7 +73,6 @@ export default function Theater() {
         model_a: modelA,
         model_b: modelB,
         seed: seed.trim(),
-        system_prompt: '', // use server default
         rounds,
         temperature: 0.7,
         max_tokens: 1500,
@@ -202,6 +202,12 @@ export default function Theater() {
           {sseError}
         </div>
       )}
+
+      <VocabPanel
+        vocab={experiment.vocab}
+        matchId={matchId}
+        modelA={modelAName}
+      />
 
       {/* Split columns */}
       <div className="flex-1 grid grid-cols-2 gap-4 p-4 min-h-0">

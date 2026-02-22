@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Phase 6 complete)
+**Last Updated:** 2026-02-22 (Phase 7 UI/UX complete)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -59,6 +59,14 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] **README** — quick start, architecture, presets table, model support
 - [x] **Bug fixes** — LatencyChart CSS selector crash (dots in model names), copy markdown silent failure → execCommand fallback + Copied!/Failed feedback
 - [x] Build passes: 2456 modules, 0 errors
+
+### Phase 7: Sci-Fi Observatory UI/UX (DONE)
+- [x] **Design system** — Orbitron (display), Inter (UI), JetBrains Mono (conversation) fonts; amber/cyan model colors; CSS glow tokens
+- [x] **StarField** — tsParticles ambient star field, 160 particles, always-on behind all pages
+- [x] **Theater reactive canvas** — pulse rings + 12-dot vocab bursts per turn (TheaterCanvas.tsx), column glow on thinking, nav border transitions via data-active-model attribute
+- [x] **SeedLab animations** — Framer Motion staggered card entrances (100ms), heading fade-up, hover scale + accent glow
+- [x] **Backend** — 	urn_delay_seconds param (default 2.0s) in relay engine so animations are visible between turns
+- [x] **Framer Motion + tsParticles** installed (framer-motion 12.x, @tsparticles/react + @tsparticles/slim)
 
 ### Future Expansions
 - [ ] **Side-by-side comparison view** (Phase 6b) — compare two experiments head-to-head

@@ -3,7 +3,7 @@
 ## Current Session Status
 **Last Updated:** 2026-02-22
 **Active Agent:** Claude Code
-**Current Goal:** Phase 6 complete — project shipped
+**Current Goal:** Phase 7 UI/UX redesign — sci-fi observatory aesthetic
 
 ## What's Done (Cumulative)
 - **Phase 1:** Backend core — FastAPI, relay engine, EventHub SSE, SQLite WAL, config/registry
@@ -13,52 +13,71 @@
 - **Phase 5:** Gallery + Analytics — experiment gallery, per-experiment analytics with D3 charts, JSON/markdown export
 - **Gemini Checkpoints 1-4:** 17 total fixes across all phases
 - **Phase 6:** Arena + Tournament mode, RadarChart, Settings page, "The Original" preset, README, audit hardening, two UI bug fixes
+- **Phase 7:** Sci-fi observatory design system + reactive Theater canvas + SeedLab stagger animations
 
-## Session Summary (Phase 6 + Audit + Bug Fixes)
+## Session Summary (Phase 7 — UI/UX Overhaul)
 
-### Phase 6 Features
-- **Tournament engine** (`server/tournament_engine.py`) — round-robin runner using `itertools.combinations`, sequential `run_relay()` calls, SSE lifecycle events (`tournament.match_started`, `tournament.match_complete`, `tournament.complete`, `tournament.error`)
-- **Tournament DB** — `tournaments` + `tournament_matches` tables; `get_tournament_leaderboard()` aggregates per-model stats; `get_model_radar_stats()` returns 5-axis radar data
-- **Arena page** — model multi-select checkbox grid (min 3), live pairing count ("4 models → 6 matches"), preset dropdown, sliders
-- **Tournament page** — SSE live updates + 10s polling, match card grid with status badges + Theater/Analytics links, leaderboard table, RadarChart overlay
-- **RadarChart** — D3 spider chart with concentric rings, filled polygons per model (30% fill), 5 axes: verbosity/speed/creativity/consistency/engagement
-- **Settings page** — checks env vars for 7 models across 5 providers, shows green/red status indicators
-- **"The Original" preset** — exact seed words (ZYLVOK/KRAXT/FLUMEI), system prompt framing the "human relay" setup, 15 rounds default
+### Design System (Section 1)
+- **Typography** — Orbitron (display/wordmark), Inter (UI chrome), JetBrains Mono (conversation bubbles) loaded via Google Fonts in `ui/index.html`
+- **Color model** — Model A = amber `#F59E0B`, Model B = cyan `#06B6D4`; CSS vars `--glow-a/b`, `--color-active` drive reactive state
+- **Tailwind** — `font-display/ui/mono` families, `model-a/b` colors, `glow-a/b/accent` box-shadow tokens
+- **StarField** (`ui/src/components/common/StarField.tsx`) — tsParticles, 160 particles, 4 colors (white/lavender/cyan/amber), opacity 0.05–0.9, slow drift; mounted in `App.tsx` as fixed `-z-10` layer; Layout `bg-bg-deep` removed so stars show through
+- **BABEL wordmark** — Orbitron font-black, tracking-widest, accent glow via `textShadow`
 
-### Audit Hardening (3-reviewer parallel audit)
-- **DB normalization:** Fixed zero-collapse bug (all-identical values → `1.0` not `0.0`) and consistency metric inversion (single sample = no variance = `1.0/0.01` not `0`)
-- **Tournament router:** asyncio task storage (`_active_tasks` set), `models` bounds (min 3 / max 10), `limit/offset` Query bounds, SSE self-close on terminal events
-- **Relay + experiments routers:** model allowlist validation, status filter validation, query bounds
-- **Error sanitization:** relay_engine and tournament_engine send generic messages to clients; raw exception strings go to server logs only
+### Theater Reactive Effects (Section 2)
+- **TheaterCanvas** (`ui/src/components/theater/TheaterCanvas.tsx`) — canvas-based pulse rings (50→320px, fading) + 12-dot vocab bursts; Model A origin at 25% width, Model B at 75%
+- **Color bleed** — `Theater.tsx` sets `data-active-model` on `document.documentElement` + `--color-active` CSS var when speaker changes; CSS transitions nav border color in 0.8s
+- **Thinking glow** — `ConversationColumn.tsx` applies amber/cyan `box-shadow` to column border when `isThinking`; glassmorphism `bg-bg-card/40 backdrop-blur-sm`
+- **`turn_delay_seconds`** — new field in `RelayStartRequest` (default 2.0s, max 10s); passed through relay router to `run_relay()`; `asyncio.sleep()` between turns so animations breathe
 
-### Bug Fixes (found while reviewing live experiments)
-- **LatencyChart CSS selector crash** — model names with dots (e.g. `llama-3.3-70b-versatile`) produced invalid CSS selectors in D3's `selectAll()`. Fixed: `label.replace(/[^a-zA-Z0-9_-]/g, '_')`
-- **Copy Markdown silent failure** — `navigator.clipboard.writeText()` fails when document lacks focus; silent `catch {}` gave no feedback. Fixed: `execCommand('copy')` fallback via hidden textarea + `Copied!`/`Failed` button state
+### SeedLab Animations (Section 3)
+- **Framer Motion stagger** — heading fades up (500ms easeOut), then cards stagger in at 100ms intervals with `y: 22 → 0, opacity: 0 → 1`, cubic-bezier easing
+- **Hover** — `scale: 1.025` + accent purple glow `rgba(139, 92, 246, 0.30)`, 200ms; tap `scale: 0.98`
+- **Custom card** — last in stagger sequence, slightly dimmer hover glow
 
 ## Verification Status
-| Check | Status |
-|-------|--------|
-| Python import check | PASSED — all 5 backend modules |
-| Vite production build | PASSED — 2456 modules, 0 errors |
-| Analytics page (gpt-4o-mini vs llama) | PASSED — charts render, no crash |
-| Copy Markdown clipboard | PASSED — execCommand fallback works |
-| Context leak audit | CLEAN — no unintended cross-model state |
-| Commits pushed | PASSED — `1ee18c0`, `a81f777` on master |
+| Check | Status | Notes |
+|-------|--------|-------|
+| Dev server loads | PASSED | No console errors on `localhost:5173` |
+| StarField visible | PASSED | Stars drift behind all pages |
+| Orbitron wordmark | PASSED | BABEL in Orbitron with purple glow |
+| JetBrains Mono turns | PASSED | Conversation text in mono font |
+| SeedLab stagger | PASSED | Cards cascade in at 100ms intervals |
+| Theater canvas | NOT LIVE TESTED | Requires running experiment to see pulse rings |
+| Vite prod build | NOT RUN | Run `node .\node_modules\vite\bin\vite.js build` to verify |
+| Commits pushed | PASSED | `4ea4109` on master |
 
 ## Known Issues / Next Steps
-- **Side-by-side comparison view** (Phase 6b) — deferred; compare two experiments head-to-head
+- **Theater pulse rings** — not verified with a live experiment yet; canvas mounts correctly but animation only triggers on real SSE turn events
+- **Section 4 (future)** — per-page polish pass: Gallery, Analytics, Arena, Tournament, Dictionary pages not yet touched by UI/UX work
+- **Side-by-side comparison view** — long-term deferred (Phase 6b idea)
 - **pytest not in venv** — `pip install pytest` needed before running backend tests
-- **Tournament E2E not tested live** — requires API keys + real LLM calls; backend logic verified via code review
 - **Pre-existing TS type warnings** — `turn_id` string/number mismatch in `sse.ts`, unused `modelB` in `WordCard.tsx` — don't block build
 
 ## Git State
 - **Branch:** master
 - **Latest commits:**
+  - `4ea4109` — `feat(ui): sci-fi observatory design system + Theater/SeedLab animations`
+  - `80313a0` — `docs: update CONTEXT.md and HANDOFF.md for Phase 6 completion`
   - `a81f777` — `fix: LatencyChart CSS selector crash + copy markdown clipboard fallback`
-  - `1ee18c0` — `feat: Phase 6 Arena + Tournament mode + audit hardening`
-  - `9820eb5` — `feat: Phase 5 Gallery + Analytics + Gemini Checkpoint 4 fixes`
+
+## Key Files Changed This Session
+| File | What changed |
+|------|-------------|
+| `ui/index.html` | Google Fonts (Orbitron, Inter, JetBrains Mono) |
+| `ui/src/index.css` | CSS vars, model colors, glow tokens, nav border transition |
+| `ui/tailwind.config.js` | Font families, amber/cyan colors, glow shadows |
+| `ui/src/App.tsx` | Mounts `<StarField />` |
+| `ui/src/components/common/StarField.tsx` | NEW — tsParticles star field |
+| `ui/src/components/common/Layout.tsx` | Orbitron wordmark, transparent bg, backdrop-blur nav |
+| `ui/src/components/theater/TheaterCanvas.tsx` | NEW — canvas pulse rings + vocab bursts |
+| `ui/src/components/theater/ConversationColumn.tsx` | Thinking glow, glassmorphism |
+| `ui/src/components/theater/TurnBubble.tsx` | JetBrains Mono, model-color glow |
+| `ui/src/pages/Theater.tsx` | Mounts canvas, sets data-active-model, color bleed |
+| `ui/src/pages/SeedLab.tsx` | Framer Motion stagger animations |
+| `server/relay_engine.py` | `turn_delay_seconds` param |
+| `server/routers/relay.py` | `turn_delay_seconds` field + pass-through |
 
 ## Key References
-- **Phase 6 plan:** `~/.claude/plans/swift-discovering-beaver.md`
-- **Phase 5 plan:** `~/.claude/plans/idempotent-napping-fiddle.md`
+- **Phase 7 plan:** `~/.claude/plans/swift-discovering-beaver.md`
 - **Master plan:** `~/.claude/plans/partitioned-coalescing-barto.md`

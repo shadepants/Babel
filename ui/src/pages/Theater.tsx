@@ -29,9 +29,10 @@ export default function Theater() {
   )
   const [preset, setPreset] = useState<string | null>(null)
 
-  // DB fallback: turns + scores loaded when SSE history is gone (e.g. server restart)
-  const [dbTurns, setDbTurns]   = useState<TurnEvent[]>([])
-  const [dbScores, setDbScores] = useState<Record<number, ScoreEvent>>({})
+  // DB fallback: turns + scores + verdict loaded when SSE history is gone (e.g. server restart)
+  const [dbTurns, setDbTurns]     = useState<TurnEvent[]>([])
+  const [dbScores, setDbScores]   = useState<Record<number, ScoreEvent>>({})
+  const [dbVerdict, setDbVerdict] = useState<{ winner: string; winner_model: string; reasoning: string } | null>(null)
 
   // Track which speaker is currently "talking" (typewriter active)
   const [talkingSpeaker, setTalkingSpeaker] = useState<string | null>(null)
@@ -44,7 +45,7 @@ export default function Theater() {
         if (!modelBName) setModelBName(exp.model_b.split('/').pop() ?? exp.model_b)
         setPreset(exp.preset ?? null)
 
-        // For completed/stopped experiments, pre-load turns from DB so Theater
+        // For completed/stopped experiments, pre-load turns/scores/verdict from DB so Theater
         // is never empty when SSE history has been wiped (e.g. server restart).
         if (exp.status === 'completed' || exp.status === 'stopped' || exp.status === 'error') {
           api.getExperimentTurns(matchId)
@@ -80,6 +81,15 @@ export default function Theater() {
               setDbScores(map)
             })
             .catch(console.error)
+          if (exp.winner && exp.verdict_reasoning) {
+            setDbVerdict({
+              winner: exp.winner,
+              winner_model: exp.winner === 'model_a' ? exp.model_a
+                : exp.winner === 'model_b' ? exp.model_b
+                : 'tie',
+              reasoning: exp.verdict_reasoning,
+            })
+          }
         }
       })
       .catch(console.error)
@@ -89,8 +99,9 @@ export default function Theater() {
   const experiment = useExperimentState(events)
 
   // SSE takes precedence; DB data fills in when SSE history is unavailable
-  const effectiveTurns  = experiment.turns.length  > 0 ? experiment.turns  : dbTurns
-  const effectiveScores = Object.keys(experiment.scores).length > 0 ? experiment.scores : dbScores
+  const effectiveTurns   = experiment.turns.length  > 0 ? experiment.turns  : dbTurns
+  const effectiveScores  = Object.keys(experiment.scores).length > 0 ? experiment.scores : dbScores
+  const effectiveVerdict = experiment.verdict ?? dbVerdict
 
   // Derived: last turn + last vocab for canvas
   const lastTurn  = effectiveTurns.length > 0
@@ -114,19 +125,25 @@ export default function Theater() {
     ? lastTurn.turn_id
     : null
 
+  // BABEL glitch on turn arrival (live only)
+  useEffect(() => {
+    if (experiment.status !== 'running' || !lastTurn) return
+    window.dispatchEvent(new CustomEvent('babel-glitch'))
+  }, [lastTurn?.turn_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sprite status derivation -- verdict overrides all
-  const statusA: SpriteStatus = experiment.verdict
-    ? experiment.verdict.winner === 'model_a' ? 'winner'
-    : experiment.verdict.winner === 'tie'     ? 'idle'
+  const statusA: SpriteStatus = effectiveVerdict
+    ? effectiveVerdict.winner === 'model_a' ? 'winner'
+    : effectiveVerdict.winner === 'tie'     ? 'idle'
     : 'loser'
     : experiment.status === 'error'            ? 'error'
     : experiment.thinkingSpeaker === modelAName ? 'thinking'
     : talkingSpeaker === modelAName             ? 'talking'
     : 'idle'
 
-  const statusB: SpriteStatus = experiment.verdict
-    ? experiment.verdict.winner === 'model_b' ? 'winner'
-    : experiment.verdict.winner === 'tie'     ? 'idle'
+  const statusB: SpriteStatus = effectiveVerdict
+    ? effectiveVerdict.winner === 'model_b' ? 'winner'
+    : effectiveVerdict.winner === 'tie'     ? 'idle'
     : 'loser'
     : experiment.status === 'error'            ? 'error'
     : experiment.thinkingSpeaker === modelBName ? 'thinking'
@@ -227,26 +244,26 @@ export default function Theater() {
       </div>
 
       {/* Verdict -- typewriter reveal for the reasoning text */}
-      {experiment.verdict && (
+      {effectiveVerdict && (
         <div className="px-6 py-4 border-t border-accent/25 bg-bg-card/60">
           <div className="max-w-3xl mx-auto space-y-2">
             <div className="neural-section-label">// final_verdict</div>
             <div className="font-display font-black tracking-widest text-base">
-              {experiment.verdict.winner === 'tie' ? (
+              {effectiveVerdict.winner === 'tie' ? (
                 <span className="text-accent">TIE</span>
               ) : (
                 <>
                   <span className="font-mono text-[10px] text-text-dim/60 font-normal tracking-wider uppercase">
                     winner:{' '}
                   </span>
-                  <span className={experiment.verdict.winner === 'model_a' ? 'text-model-a' : 'text-model-b'}>
-                    {experiment.verdict.winner === 'model_a' ? modelAName : modelBName}
+                  <span className={effectiveVerdict.winner === 'model_a' ? 'text-model-a' : 'text-model-b'}>
+                    {effectiveVerdict.winner === 'model_a' ? modelAName : modelBName}
                   </span>
                 </>
               )}
             </div>
             <p className="font-mono text-xs text-text-dim/70 leading-relaxed">
-              <TypewriterText text={experiment.verdict.reasoning} active speedMs={6} />
+              <TypewriterText text={effectiveVerdict.reasoning} active speedMs={6} />
             </p>
           </div>
         </div>

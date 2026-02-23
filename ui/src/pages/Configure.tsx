@@ -16,11 +16,13 @@ import {
 
 import { getSymbol } from '@/lib/symbols'
 import { getPrefs } from '@/lib/prefs'
+import { getPresetGlow } from '@/lib/presetColors'
 
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const isCustom = presetId === 'custom'
+  const formAccentColor = isCustom ? null : getPresetGlow(presetId)
 
   // -- Data loading --
   const [preset, setPreset] = useState<Preset | null>(null)
@@ -48,6 +50,9 @@ export default function Configure() {
   const [judgeModel, setJudgeModel] = useState<string>('auto')
   const [enableScoring, setEnableScoring] = useState(false)
   const [enableVerdict, setEnableVerdict] = useState(false)
+
+  // -- Memory --
+  const [enableMemory, setEnableMemory] = useState(false)
 
   // Preset defaults — for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
@@ -164,6 +169,7 @@ export default function Configure() {
         turn_delay_seconds: turnDelay,
         enable_scoring: enableScoring,
         enable_verdict: enableVerdict,
+        enable_memory: enableMemory,
         ...(judgeModel && judgeModel !== 'auto' ? { judge_model: judgeModel } : {}),
       }
       if (!isCustom && presetId) {
@@ -251,7 +257,10 @@ export default function Configure() {
       </div>
 
       {/* Configuration Form */}
-      <div className="neural-card">
+      <div
+        className="neural-card"
+        style={formAccentColor ? { borderTop: '2px solid ' + formAccentColor.replace(/,\s*[\d.]+\)$/, ', 0.70)') } : undefined}
+      >
         <div className="neural-card-bar" />
         <div className="p-6 space-y-6">
 
@@ -499,6 +508,28 @@ export default function Configure() {
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
               // scoring fires async &mdash; relay loop never pauses
+            </p>
+          </div>
+
+          {/* Memory */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// memory</div>
+
+            <button
+              type="button"
+              onClick={() => setEnableMemory(!enableMemory)}
+              className="flex items-center gap-3 group w-full text-left"
+            >
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${enableMemory ? 'bg-accent/70' : 'bg-border-custom'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableMemory ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                Enable memory
+              </span>
+            </button>
+
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // inject vocab from past sessions with this model pair
             </p>
           </div>
 

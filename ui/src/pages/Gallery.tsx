@@ -5,6 +5,9 @@ import type { ExperimentRecord } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { formatDuration } from '@/lib/format'
+import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
+import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
+import { getPresetGlow } from '@/lib/presetColors'
 
 /** Extract a short display name from a litellm model string like "anthropic/claude-sonnet-4-..." */
 function modelDisplayName(model: string): string {
@@ -34,6 +37,23 @@ function dotStatusClass(status: string) {
   if (status === 'completed') return 'status-dot status-dot--completed'
   if (status === 'failed') return 'status-dot status-dot--failed'
   return 'status-dot status-dot--pending'
+}
+
+/** Derive sprite outcome states from experiment winner field */
+function spriteStatuses(exp: ExperimentRecord): { a: SpriteStatus; b: SpriteStatus } {
+  if (exp.status === 'failed') return { a: 'error', b: 'error' }
+  if (exp.winner === 'model_a') return { a: 'winner', b: 'loser' }
+  if (exp.winner === 'model_b') return { a: 'loser', b: 'winner' }
+  if (exp.winner === 'tie') return { a: 'idle', b: 'idle' }
+  return { a: 'idle', b: 'idle' }
+}
+
+/** Build an inline style with a colored left border for preset rows */
+function presetBorderStyle(preset: string | null | undefined): { borderLeft: string } | undefined {
+  const glow = getPresetGlow(preset)
+  if (!glow) return undefined
+  // Boost alpha from ~0.30 to 0.65 so it reads as a border, not just a tint
+  return { borderLeft: '3px solid ' + glow.replace(/,\s*[\d.]+\)$/, ', 0.65)') }
 }
 
 const PAGE_SIZE = 20
@@ -99,11 +119,11 @@ export default function Gallery() {
             <button
               key={filter}
               onClick={() => { setStatusFilter(filter); setPage(0) }}
-              className={`font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border transition-colors ${
+              className={
                 statusFilter === filter
-                  ? 'bg-accent/15 border-accent/60 text-accent'
-                  : 'bg-transparent border-border-custom text-text-dim hover:border-accent/35'
-              }`}
+                  ? 'font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border bg-accent/15 border-accent/60 text-accent'
+                  : 'font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border bg-transparent border-border-custom text-text-dim hover:border-accent/35'
+              }
             >
               {filter}
             </button>
@@ -145,101 +165,107 @@ export default function Gallery() {
             <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-text-dim/50 w-32" />
           </div>
 
-          {experiments.map((exp) => (
-            <div
-              key={exp.id}
-              className={rowStatusClass(exp.status)}
-              onClick={() => navigate(`/analytics/${exp.id}`)}
-            >
-              <div className="px-4 py-3 flex items-center gap-4">
-                {/* Status dot */}
-                <div className={dotStatusClass(exp.status)} />
+          {experiments.map((exp) => {
+            const statuses = spriteStatuses(exp)
+            return (
+              <div
+                key={exp.id}
+                className={rowStatusClass(exp.status)}
+                style={presetBorderStyle(exp.preset)}
+                onClick={() => navigate(`/analytics/${exp.id}`)}
+              >
+                <div className="px-4 py-3 flex items-center gap-4">
+                  {/* Status dot */}
+                  <div className={dotStatusClass(exp.status)} />
 
-                {/* Model pairing + metadata */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
-                      {modelDisplayName(exp.model_a)}
-                    </span>
-                    <span className="font-mono text-[10px] text-text-dim/60">vs</span>
-                    <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
-                      {modelDisplayName(exp.model_b)}
-                    </span>
-                    {exp.preset && (
-                      <span className="font-mono text-[9px] tracking-wider text-accent/55 border border-accent/20 px-1.5 py-0.5 rounded-sm uppercase">
-                        {exp.preset}
+                  {/* Model pairing + metadata */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <SpriteAvatar status={statuses.a} color="model-a" size={28} />
+                      <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
+                        {modelDisplayName(exp.model_a)}
                       </span>
-                    )}
-                    {exp.judge_model && (
-                      <span className="font-mono text-[9px] tracking-wider text-text-dim/40">
-                        // judged
+                      <span className="font-mono text-[10px] text-text-dim/60">vs</span>
+                      <SpriteAvatar status={statuses.b} color="model-b" size={28} />
+                      <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
+                        {modelDisplayName(exp.model_b)}
                       </span>
-                    )}
+                      {exp.preset && (
+                        <span className="font-mono text-[9px] tracking-wider text-accent/55 border border-accent/20 px-1.5 py-0.5 rounded-sm uppercase">
+                          {exp.preset}
+                        </span>
+                      )}
+                      {exp.judge_model && (
+                        <span className="font-mono text-[9px] tracking-wider text-text-dim/40">
+                          // judged
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5">
+                      <span>{formatDate(exp.created_at)}</span>
+                      <span className="text-accent/25">&middot;</span>
+                      <span>{formatDuration(exp.elapsed_seconds)}</span>
+                    </div>
                   </div>
-                  <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5">
-                    <span>{formatDate(exp.created_at)}</span>
-                    <span className="text-accent/25">&middot;</span>
-                    <span>{formatDuration(exp.elapsed_seconds)}</span>
+
+                  {/* Round progress */}
+                  <div className="shrink-0 text-right">
+                    <span className="font-mono text-[10px] text-text-dim/70">
+                      <span className="text-accent/60">RND</span>{' '}
+                      {String(exp.rounds_completed).padStart(2, '0')}/
+                      {String(exp.rounds_planned).padStart(2, '0')}
+                    </span>
                   </div>
-                </div>
 
-                {/* Round progress */}
-                <div className="shrink-0 text-right">
-                  <span className="font-mono text-[10px] text-text-dim/70">
-                    <span className="text-accent/60">RND</span>{' '}
-                    {String(exp.rounds_completed).padStart(2, '0')}/
-                    {String(exp.rounds_planned).padStart(2, '0')}
-                  </span>
-                </div>
-
-                {/* Action buttons */}
-                <div
-                  className="flex gap-1.5 shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {exp.status === 'running' && (
-                    <button
-                      className="neural-btn neural-btn--active"
-                      onClick={() => navigate(`/theater/${exp.id}`)}
-                    >
-                      Theater
-                    </button>
-                  )}
-                  <button
-                    className="neural-btn"
-                    onClick={() => navigate(`/dictionary/${exp.id}`)}
+                  {/* Action buttons */}
+                  <div
+                    className="flex gap-1.5 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    Dict
-                  </button>
-                  {exp.status !== 'running' && (
-                    confirmDelete === exp.id ? (
+                    {exp.status === 'running' && (
                       <button
-                        className="neural-btn text-danger border-danger/40 hover:bg-danger/10"
-                        onClick={async () => {
-                          try {
-                            await api.deleteExperiment(exp.id)
-                            setConfirmDelete(null)
-                            fetchExperiments()
-                          } catch (err) {
-                            console.error('Delete failed:', err)
-                          }
-                        }}
+                        className="neural-btn neural-btn--active"
+                        onClick={() => navigate(`/theater/${exp.id}`)}
                       >
-                        Confirm
+                        Theater
                       </button>
-                    ) : (
-                      <button
-                        className="neural-btn text-danger/50 border-danger/20"
-                        onClick={() => setConfirmDelete(exp.id)}
-                      >
-                        Del
-                      </button>
-                    )
-                  )}
+                    )}
+                    <button
+                      className="neural-btn"
+                      onClick={() => navigate(`/dictionary/${exp.id}`)}
+                    >
+                      Dict
+                    </button>
+                    {exp.status !== 'running' && (
+                      confirmDelete === exp.id ? (
+                        <button
+                          className="neural-btn text-danger border-danger/40 hover:bg-danger/10"
+                          onClick={async () => {
+                            try {
+                              await api.deleteExperiment(exp.id)
+                              setConfirmDelete(null)
+                              fetchExperiments()
+                            } catch (err) {
+                              console.error('Delete failed:', err)
+                            }
+                          }}
+                        >
+                          Confirm
+                        </button>
+                      ) : (
+                        <button
+                          className="neural-btn text-danger/50 border-danger/20"
+                          onClick={() => setConfirmDelete(exp.id)}
+                        >
+                          Del
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {/* Pagination */}
           <div className="flex items-center justify-between pt-2">

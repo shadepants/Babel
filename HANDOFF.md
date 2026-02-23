@@ -1,62 +1,53 @@
-# Babel --- Session Handoff
+# AI Agent Handoff Protocol
 
-**Last updated:** 2026-02-23 (session 4)
-**Session work:** Full 8-bit Theater revamp (sprites, typewriter, ArenaStage); bug fix for empty Theater on revisit (DB fallback)
+## Current Session Status
+**Last Updated:** 2026-02-23
+**Active Agent:** Claude Code
+**Current Goal:** Planning session &mdash; brainstormed and phased upgrade roadmap
 
----
+## Changes This Session
 
-## What Changed This Session
-
-### Theater 8-bit Revamp
-- [x] **`ui/src/index.css`** --- sprite keyframes appended: sprite-float, sprite-shake, sprite-scan, sprite-talk, sprite-cursor-blink, sprite-win-pulse; `.arena-scanlines` utility class
-- [x] **`ui/src/components/theater/SpriteAvatar.tsx`** (NEW) --- pure SVG pixel-art avatar; 6 states: idle (float+blink), thinking (scan bar), talking (eye pulse), error (red X+shake), winner (gold glow+bounce), loser (red dim+shake); amber=model-a / cyan=model-b
-- [x] **`ui/src/components/theater/TypewriterText.tsx`** (NEW) --- character-by-character reveal; only active on latest live turn; past turns render instantly; blinking cursor
-- [x] **`ui/src/components/theater/ArenaStage.tsx`** (NEW) --- HUD bracket framing, `// ARENA` label, sprite side-by-side with VS divider, preset-tinted background gradient, STATUS_LABELS per state
-- [x] **`ui/src/components/theater/TurnBubble.tsx`** --- rewritten: left-stripe terminal styling, scanline texture, `[R.N]` round tag, TypewriterText for latest turn
-- [x] **`ui/src/components/theater/ConversationColumn.tsx`** --- simplified header to 2px gradient accent bar (ArenaStage shows names); added `latestTurnId` prop
-- [x] **`ui/src/pages/Theater.tsx`** --- ArenaStage inserted, `talkingSpeaker` state + timeout, `latestTurnId`, sprite status derivation, verdict beat with TypewriterText
-
-### Bug Fix: Theater Empty on Revisit
-- [x] **`ui/src/pages/Theater.tsx`** --- DB fallback: when `api.getExperiment` returns a completed/stopped experiment, also fetches `api.getExperimentTurns` + `api.getExperimentScores`; converts TurnRecord/TurnScore to TurnEvent/ScoreEvent format; `effectiveTurns` and `effectiveScores` prefer SSE data, fall back to DB when SSE history is empty (e.g. server restart)
-  - **Root cause:** EventHub history is in-memory only; server restart wipes it; Theater previously had no fallback
-  - **Note:** Verdict (winner + reasoning) is NOT persisted to DB --- if server restarts before verdict arrives, it stays gone. Turns and scores are always recoverable.
-
----
+### No code changes &mdash; planning only
+- [x] Reviewed priority list of remaining work (smoke tests + Phase 6b deferred)
+- [x] Brainstormed upgrades small&rarr;large across 6 categories
+- [x] Created phase plans 11&ndash;16 in `~/.claude/plans/wise-sleeping-key.md`
+- [x] Updated `CONTEXT.md` &mdash; added Roadmap section with Phases 11&ndash;16 table
 
 ## Verification Status
 
-**Frontend:** Vite dev server running on port 5173.
-**Backend:** Was not running during this session's browser verification (user confirmed it works when backend is up).
+| Check | Status | Notes |
+|-------|--------|-------|
+| TypeScript `tsc --noEmit` | PASSED | 0 errors (carried from last session) |
+| Verdict persistence (manual) | SKIPPED | Requires live experiment with enable_verdict=true |
+| DB fallback after restart | SKIPPED | Requires server restart + Theater reload |
+| Gallery sprites visible | SKIPPED | Visual smoke test needed |
+| Analytics sprites visible | SKIPPED | Visual smoke test needed |
+| Configure preset border | SKIPPED | Visual smoke test needed |
+| BABEL glitch on turn arrival | SKIPPED | Requires live experiment |
+| SSE reconnect / Last-Event-ID | SKIPPED | Manual: disable network mid-run, re-enable, verify replay |
 
-Theater revamp visually confirmed via Playwright screenshot:
-- ArenaStage renders with HUD brackets, `// ARENA` label, amber/red loser sprite left, cyan winner sprite right
-- Verdict section renders: `// FINAL_VERDICT`, winner label, reasoning paragraph
-- DB fallback: no TypeScript errors; compiled clean
+## Phase Roadmap Summary
 
----
+| Phase | Theme | Effort |
+|-------|-------|--------|
+| **11** | Quick Wins &amp; Polish | ~1 day |
+| **12** | Spectator &amp; Shareability | 2&ndash;3 d |
+| **13** | Interactive Experiments | 3&ndash;4 d |
+| **14** | Cross-Experiment Intelligence | 4&ndash;5 d |
+| **15** | New Conversation Structures | 5&ndash;7 d |
+| **16** | Depth &amp; Legacy | 1&ndash;3 wk |
 
-## Open Items (priority order)
+Full specs: `~/.claude/plans/wise-sleeping-key.md`
 
-1. [ ] **Task 004** --- Backboard.io memory spike: persistent model memory across experiments (`tasks/004-backboard-memory-spike.md`)
-2. [ ] **Browser smoke test** --- Last-Event-ID reconnect: start The Original (15 rounds), DevTools Network -> Offline mid-stream, re-enable, confirm only missed turns replay
-3. [ ] **Verdict persistence** --- Verdict (winner + reasoning) lost on server restart; not stored in DB. Low priority but noted.
-4. [ ] **Deferred Theater cohesion** --- Sprites in Gallery/Analytics mini icons; typewriter in Configure estimate bar; BABEL glitch intensification during live match; preset color threading full app (Option C)
-5. [ ] **Side-by-side comparison view** --- Phase 6b, deferred (8-12h estimate)
+## Next Steps
 
----
+1. [ ] **Manual smoke tests** &mdash; run a live experiment; verify Gallery sprites, Analytics sprites, Configure border, verdict persistence, BABEL glitch
+2. [ ] **SSE reconnect test** &mdash; disable network mid-experiment, re-enable, confirm only missed turns replay
+3. [ ] **Phase 11** &mdash; Quick Wins (~1 day): Remix button, tab title live state, hover timestamps, vocab inline linking, model A&harr;B swap, experiment nickname
+4. [ ] **Phase 12** &mdash; Spectator &amp; Shareability: `/watch/:id` route, Share button, highlight reel, speed control
 
-## Notes for Next Session
-
-**If server hangs on start:**
-1. Zombie Python processes. Open Task Manager (Ctrl+Shift+Esc) -&gt; Details -&gt; kill all python.exe. PowerShell cannot kill these.
-2. `server/app.py` already has `LITELLM_LOCAL_MODEL_COST_MAP=True` patch --- no code change needed.
-
-**Theater architecture:**
-- SSE = single source of truth for live experiments; DB fallback kicks in for completed experiments when SSE history is gone
-- `talkingSpeaker` uses a timeout (`min(8000, len*10+300)ms`) keyed on `lastTurn.turn_id` --- no callback threading needed
-- `latestTurnId` is null for completed experiments (typewriter only fires live)
-- Sprite `clipPath` IDs are `face-clip-model-a` / `face-clip-model-b` to avoid SVG ID collision when both render simultaneously
-
-**Preset color map (ArenaStage.tsx):**
-- `PRESET_GLOW` record maps preset id -&gt; rgba color for arena gradient
-- Add new presets here when new YAMLs are added
+## Key Patterns (carry forward)
+- **SSE-first / DB-fallback**: `effectiveX = sse.x ?? dbX` &mdash; turns, scores, verdict all follow this
+- **Decoupled event bus**: `window.dispatchEvent(new CustomEvent('babel-glitch'))` &mdash; no prop drilling
+- **Shared color util**: `ui/src/lib/presetColors.ts` &mdash; single source of truth for preset glow colors
+- **Idempotent migrations**: always use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pattern in db.py

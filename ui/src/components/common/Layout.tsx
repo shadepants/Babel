@@ -44,10 +44,19 @@ export function Layout() {
       scheduleTimeout = setTimeout(runGlitch, 9000 + Math.random() * 13000)
     }
 
+    // Also trigger immediately when Theater dispatches a turn-arrival event
+    const handleBabelGlitch = () => {
+      clearTimeout(frameTimeout)
+      clearTimeout(scheduleTimeout)
+      runGlitch()
+    }
+    window.addEventListener('babel-glitch', handleBabelGlitch)
+
     scheduleGlitch()
     return () => {
       clearTimeout(frameTimeout)
       clearTimeout(scheduleTimeout)
+      window.removeEventListener('babel-glitch', handleBabelGlitch)
     }
   }, [])
 

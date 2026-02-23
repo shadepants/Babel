@@ -60,6 +60,7 @@ class RelayStartRequest(BaseModel):
     judge_model: str | None = Field(default=None, description="litellm model string for the judge (None = use server default)")
     enable_scoring: bool = Field(default=DEFAULT_SCORING_ENABLED, description="Fire-and-forget per-turn scoring via judge model")
     enable_verdict: bool = Field(default=DEFAULT_VERDICT_ENABLED, description="Final verdict from judge after all rounds")
+    enable_memory: bool = Field(default=False, description="Inject past session vocabulary as memory context")
 
 
 class RelayStartResponse(BaseModel):
@@ -167,6 +168,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
             judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
             enable_scoring=body.enable_scoring,
             enable_verdict=body.enable_verdict,
+            enable_memory=body.enable_memory,
         )
     )
     _running_relays[match_id] = (task, cancel_event)

@@ -15,6 +15,7 @@ export interface RelayStartRequest {
   judge_model?: string | null;
   enable_scoring?: boolean;
   enable_verdict?: boolean;
+  enable_memory?: boolean;
 }
 
 /** POST /api/relay/start response */
@@ -193,6 +194,8 @@ export interface ExperimentRecord {
   judge_model?: string | null;
   enable_scoring?: boolean;
   enable_verdict?: boolean;
+  winner?: string | null;
+  verdict_reasoning?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

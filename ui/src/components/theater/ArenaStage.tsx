@@ -1,5 +1,6 @@
 import { SpriteAvatar } from './SpriteAvatar'
 import type { SpriteStatus } from './SpriteAvatar'
+import { getPresetGlow } from '@/lib/presetColors'
 
 interface ArenaStageProps {
   modelAName: string
@@ -10,20 +11,6 @@ interface ArenaStageProps {
   preset?: string | null
 }
 
-/** Maps preset id to a subtle directional gradient color (left side of arena). */
-const PRESET_GLOW: Record<string, string> = {
-  'conlang':            'rgba(88, 28, 135, 0.30)',
-  'debate':             'rgba(127, 29, 29, 0.32)',
-  'story':              'rgba(6,  78, 59, 0.28)',
-  'cipher':             'rgba(120, 53, 15, 0.30)',
-  'emotion-math':       'rgba(131, 24, 67, 0.28)',
-  'philosophy':         'rgba(19, 78, 74, 0.28)',
-  'original':           'rgba(113, 63, 18, 0.35)',
-  'collab-svg':         'rgba(30, 58, 138, 0.30)',
-  'prisoners-dilemma':  'rgba(124, 45, 18, 0.35)',
-  'syntax-virus':       'rgba(20, 83, 45, 0.30)',
-  'taboo-artifact':     'rgba(49, 46, 129, 0.28)',
-}
 
 const STATUS_LABELS: Record<SpriteStatus, string> = {
   idle:    '[ STANDBY ]',
@@ -40,7 +27,7 @@ const STATUS_LABELS: Record<SpriteStatus, string> = {
  * Preset-specific gradient tints the background.
  */
 export function ArenaStage({ modelAName, modelBName, statusA, statusB, preset }: ArenaStageProps) {
-  const glowColor = preset ? (PRESET_GLOW[preset] ?? 'rgba(88, 28, 135, 0.25)') : 'rgba(88, 28, 135, 0.20)'
+  const glowColor = preset ? (getPresetGlow(preset) ?? 'rgba(88, 28, 135, 0.25)') : 'rgba(88, 28, 135, 0.20)'
 
   const bgStyle = {
     background: `linear-gradient(135deg, ${glowColor} 0%, rgba(10, 15, 30, 0.85) 45%, rgba(10, 15, 30, 0.85) 55%, ${glowColor.replace('model-a', 'model-b')} 100%)`,

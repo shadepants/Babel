@@ -108,7 +108,20 @@ CREATE TABLE IF NOT EXISTS turn_scores (
     scored_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_turn_scores_turn ON turn_scores(turn_id);
+CREATE INDEX IF NOT EXISTS idx_turn_scores_turn
+    ON turn_scores(turn_id);
+
+CREATE TABLE IF NOT EXISTS model_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_a TEXT NOT NULL,
+    model_b TEXT NOT NULL,
+    experiment_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_pair ON model_memory(model_a, model_b);
 """
 
 
@@ -163,6 +176,8 @@ class Database:
             ("judge_model", "TEXT"),
             ("enable_scoring", "INTEGER DEFAULT 0"),
             ("enable_verdict", "INTEGER DEFAULT 0"),
+            ("winner", "TEXT"),
+            ("verdict_reasoning", "TEXT"),
         ]:
             try:
                 await self._db.execute(
@@ -269,6 +284,20 @@ class Database:
             await self.db.execute(
                 f"UPDATE experiments SET {', '.join(parts)} WHERE id = ?",
                 params,
+            )
+            await self.db.commit()
+
+    async def save_verdict(
+        self,
+        experiment_id: str,
+        winner: str,
+        verdict_reasoning: str,
+    ) -> None:
+        """Persist the final verdict for an experiment."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                "UPDATE experiments SET winner = ?, verdict_reasoning = ? WHERE id = ?",
+                (winner, verdict_reasoning, experiment_id),
             )
             await self.db.commit()
 
@@ -761,6 +790,59 @@ class Database:
         # Sort by total vocab coined (winner = first)
         entries.sort(key=lambda e: e["total_vocab_coined"], reverse=True)
         return entries
+
+    # ── Memory ───────────────────────────────────────────────────────────
+
+    async def create_memory(
+        self, model_a: str, model_b: str, experiment_id: str, summary: str
+    ) -> None:
+        """Persist a memory entry for a model pair after an experiment completes."""
+        pair = sorted([model_a, model_b])
+        now = datetime.now(timezone.utc).isoformat()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO model_memory (model_a, model_b, experiment_id, summary, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (pair[0], pair[1], experiment_id, summary, now),
+            )
+            await self.db.commit()
+
+    async def get_memories_for_pair(
+        self, model_a: str, model_b: str, limit: int = 5
+    ) -> list[dict]:
+        """Fetch recent memories for a model pair, newest first."""
+        pair = sorted([model_a, model_b])
+        cursor = await self.db.execute(
+            """SELECT * FROM model_memory
+               WHERE model_a = ? AND model_b = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (pair[0], pair[1], limit),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def generate_memory_summary(self, experiment_id: str) -> str:
+        """Build a concise memory string from an experiment's vocab + preset.
+
+        Format: '<preset>, <N> rounds: coined: word1 (meaning), word2, ...'
+        Returns empty string if the experiment is missing or had no vocab.
+        """
+        exp = await self.get_experiment(experiment_id)
+        if not exp:
+            return ""
+        vocab = await self.get_vocabulary(experiment_id)
+        preset = exp.get("preset") or "custom"
+        rounds_done = exp.get("rounds_completed") or 0
+        if not vocab:
+            return f"{preset}, {rounds_done} rounds (no vocab coined)"
+        words = vocab[:8]
+        word_parts: list[str] = []
+        for w in words:
+            meaning = w.get("meaning") or ""
+            if meaning:
+                word_parts.append(f'{w["word"]} ({meaning[:25]})')
+            else:
+                word_parts.append(w["word"])
+        return f'{preset}, {rounds_done} rounds: coined: {", ".join(word_parts)}'
 
     async def get_model_radar_stats(self, experiment_id: str) -> list[dict]:
         """Compute radar chart axes for both models in one experiment.

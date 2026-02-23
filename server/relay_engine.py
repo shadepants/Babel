@@ -149,6 +149,7 @@ async def final_verdict(
     agent_b: "RelayAgent",
     judge_model: str,
     hub: "EventHub",
+    db: "Database",
 ) -> None:
     """Ask the judge model to declare a winner and publish relay.verdict event.
 
@@ -185,7 +186,8 @@ async def final_verdict(
             ),
             **result,
         })
-        logger.info("Verdict for %s: %s", match_id, result["winner"])
+        await db.save_verdict(match_id, result["winner"], result["reasoning"])
+        logger.info("Verdict saved for %s: %s", match_id, result["winner"])
     except Exception as exc:
         logger.warning("Verdict failed for %s: %s", match_id, exc)
 
@@ -322,6 +324,7 @@ async def run_relay(
     judge_model: str | None = None,
     enable_scoring: bool = False,
     enable_verdict: bool = False,
+    enable_memory: bool = False,
 ) -> None:
     """Run an AI-to-AI relay conversation.
 
@@ -335,6 +338,23 @@ async def run_relay(
     start_time = time.time()
 
     try:
+        # ── Memory injection ─────────────────────────────────────────────
+        if enable_memory:
+            memories = await db.get_memories_for_pair(agent_a.model, agent_b.model, limit=5)
+            if memories:
+                oldest_first = list(reversed(memories))
+                lines = [f"Session {i}: {m['summary']}" for i, m in enumerate(oldest_first, 1)]
+                memory_block = (
+                    "[MEMORY: previous sessions with this partner]\n"
+                    + "\n".join(lines)
+                    + "\n[END MEMORY]\n\n"
+                )
+                system_prompt = memory_block + system_prompt
+                logger.info(
+                    "Injecting %d memories for (%s, %s)",
+                    len(memories), agent_a.model, agent_b.model,
+                )
+
         for round_num in range(1, rounds + 1):
             # ── Check cancellation ──
             if cancel_event and cancel_event.is_set():
@@ -470,9 +490,18 @@ async def run_relay(
 
         if enable_verdict and judge_model:
             _verdict_task = asyncio.create_task(
-                final_verdict(match_id, turns, agent_a, agent_b, judge_model, hub)
+                final_verdict(match_id, turns, agent_a, agent_b, judge_model, hub, db)
             )
             _verdict_task.add_done_callback(_log_task_exception)
+
+        if enable_memory:
+            async def _save_memory() -> None:
+                summary = await db.generate_memory_summary(match_id)
+                if summary:
+                    await db.create_memory(agent_a.model, agent_b.model, match_id, summary)
+                    logger.info("Memory saved for %s: %.80s", match_id, summary)
+            _mem_task = asyncio.create_task(_save_memory())
+            _mem_task.add_done_callback(_log_task_exception)
 
     except Exception as e:
         elapsed = time.time() - start_time

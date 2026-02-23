@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 4 &mdash; Theater 8-bit revamp + DB fallback fix)
+**Last Updated:** 2026-02-23 (session 5 &mdash; Task 004 memory, verdict persistence, Theater cohesion)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -12,7 +12,7 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - **Real-time:** Server-Sent Events (SSE)
 - **Frontend:** React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI v4
 - **Visualization:** D3.js 7 (vocabulary constellation + analytics charts + radar chart)
-- **Database:** SQLite (WAL mode) &mdash; experiments, turns, vocabulary, tournaments, tournament_matches
+- **Database:** SQLite (WAL mode) &mdash; experiments, turns, vocabulary, tournaments, tournament_matches, model_memory
 - **Testing:** pytest (backend) + vitest (frontend)
 
 ## 3. Current State
@@ -126,24 +126,54 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **TurnBubble.tsx** &mdash; rewritten: left-stripe terminal styling, scanline texture, `[R.N]` round tag, TypewriterText for latest turn
 - [x] **ConversationColumn.tsx** &mdash; header replaced by 2px gradient accent bar; `latestTurnId` prop added
 - [x] **Theater.tsx** &mdash; ArenaStage row, `talkingSpeaker` state + timeout, `latestTurnId`, sprite status derivation, verdict beat with TypewriterText reveal
-- [x] **Bug fix: Theater empty on revisit** &mdash; when `api.getExperiment` returns completed/stopped, also fetches `api.getExperimentTurns` + `api.getExperimentScores`; converts DB records to SSE event format; `effectiveTurns`/`effectiveScores` prefer SSE, fall back to DB (root cause: EventHub history is in-memory, lost on server restart)
+- [x] **Bug fix: Theater empty on revisit** &mdash; DB fallback for completed experiments (turns + scores); `effectiveTurns`/`effectiveScores` prefer SSE, fall back to DB
+
+### Task 004: DIY Model Memory (DONE)
+- [x] **`server/db.py`** &mdash; `model_memory` table (pair-keyed on sorted model names); `create_memory()`, `get_memories_for_pair()`, `generate_memory_summary()` (deterministic vocab-based, no extra LLM call)
+- [x] **`server/relay_engine.py`** &mdash; `enable_memory` param; memory injected into system prompts at start; saved as background task after verdict
+- [x] **`server/routers/relay.py`** &mdash; `enable_memory: bool` in `RelayStartRequest`
+- [x] **`ui/src/api/types.ts`** &mdash; `enable_memory?: boolean` on `RelayStartRequest`
+- [x] **`ui/src/pages/Configure.tsx`** &mdash; Memory toggle UI section
+- [x] **`tasks/004-backboard-memory-spike-results.md`** &mdash; spike results doc (backboard.io scored 10/25; DIY chosen: free, private, deterministic)
+
+### Session 5: Verdict Persistence + Theater Cohesion (DONE)
+- [x] **Verdict persistence** &mdash; `winner` + `verdict_reasoning` columns added to experiments table (idempotent migration); `save_verdict()` in db.py
+- [x] **`server/relay_engine.py`** &mdash; `final_verdict()` now takes `db` param; calls `save_verdict()` after hub publish; logs "Verdict saved for [match_id]"
+- [x] **`ui/src/api/types.ts`** &mdash; `winner?: string | null` + `verdict_reasoning?: string | null` on `ExperimentRecord`
+- [x] **`ui/src/pages/Theater.tsx`** &mdash; `dbVerdict` state; loaded from `exp.winner`/`exp.verdict_reasoning` in DB fallback block; `effectiveVerdict = experiment.verdict ?? dbVerdict`; used throughout sprites + render
+- [x] **`ui/src/lib/presetColors.ts`** (NEW) &mdash; extracted `PRESET_GLOW` map + `getPresetGlow()` helper; shared by ArenaStage, Gallery, Configure
+- [x] **`ui/src/components/theater/ArenaStage.tsx`** &mdash; removed local `PRESET_GLOW`; imports from `@/lib/presetColors`
+- [x] **`ui/src/pages/Gallery.tsx`** &mdash; mini `SpriteAvatar` (size 28) beside each model name; outcome-aware sprite states; preset left border stripe via `getPresetGlow`
+- [x] **`ui/src/pages/Analytics.tsx`** &mdash; mini `SpriteAvatar` (size 40) flanking model names in header; outcome-aware states
+- [x] **`ui/src/pages/Configure.tsx`** &mdash; preset `borderTop` accent on config form card via `getPresetGlow` (alpha boosted to 0.70)
+- [x] **`ui/src/components/common/Layout.tsx`** &mdash; listens for `CustomEvent('babel-glitch')` on window; fires `runGlitch()` immediately
+- [x] **`ui/src/pages/Theater.tsx`** &mdash; dispatches `babel-glitch` event on each turn arrival (live experiments only)
+- [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 
 ### Next Up
-- [x] **Task 002** &mdash; configurable judge model; Configure page dropdown; DONE
-- [x] **Task 001** &mdash; round-by-round scoring via judge model; score badges in Theater + D3 chart in Analytics; DONE
-- [x] **Configure page** &mdash; `turn_delay_seconds` slider; DONE
-- [x] **Settings page polish** &mdash; in-app API key configuration, model latency/cost info
-- [ ] **Task 004** &mdash; Backboard.io memory spike: persistent model memory across experiments (time-boxed investigation)
 - [ ] **Browser smoke test** &mdash; Last-Event-ID reconnect: disable network mid-experiment, re-enable &rarr; confirm only missed turns replay
-- [ ] **Verdict persistence** &mdash; verdict (winner + reasoning) not stored in DB; lost on server restart (low priority)
-- [ ] **Theater cohesion backlog** &mdash; sprites in Gallery/Analytics mini icons; typewriter in Configure estimate bar; BABEL glitch during live match; preset color threading full app (Option C)
-- [ ] **Side-by-side comparison view** (Phase 6b) &mdash; compare two experiments head-to-head (8&ndash;12 h, defer)
+- [ ] **Visual smoke tests** &mdash; Gallery sprites, Analytics sprites, Configure preset border, BABEL glitch on turn arrival (all SKIPPED last session)
 
-### Tracked Tasks (tasks/ directory)
+### Roadmap &mdash; Phases 11&ndash;16
+Full specs in `~/.claude/plans/wise-sleeping-key.md`
+
+| Phase | Theme | Effort | Key Features |
+|-------|-------|--------|--------------|
+| **11** | Quick Wins &amp; Polish | ~1 day | Remix button, tab title live state, hover timestamps, vocab linking, model swap, experiment nickname |
+| **12** | Spectator &amp; Shareability | 2&ndash;3 d | `/watch/:id` spectator mode, Share button, highlight reel, speed control mid-run |
+| **13** | Interactive Experiments | 3&ndash;4 d | Pause/resume, inject human turn, observer/narrator model (3rd column) |
+| **14** | Cross-Experiment Intelligence | 4&ndash;5 d | Vocab burst timeline, experiment forking, cross-run vocabulary provenance |
+| **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
+| **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
+
+**Recommended next:** Phase 11 (1 day, immediate QoL) &rarr; Phase 12 (shareability, highest viral leverage)
+
+### Tracked Tasks
+ (tasks/ directory)
 - [x] **[001] Round-by-round scoring** &mdash; per-turn evaluation via judge model; score badges in Theater + trends in Analytics &rarr; DONE
 - [x] **[002] Configurable judge model** &mdash; separate referee model for scoring + final verdicts; Configure page dropdown &rarr; DONE
 - [x] **[003] Per-participant temperature** &mdash; independent temperature sliders per model in Configure; stored in DB &rarr; `tasks/003-per-participant-temperature.md` &#10003; DONE
-- [ ] **[004] Backboard.io memory spike** &mdash; time-boxed investigation: persistent model memory across experiments &rarr; `tasks/004-backboard-memory-spike.md`
+- [x] **[004] Backboard.io memory spike** &mdash; DIY SQLite memory system implemented; spike results doc written &rarr; `tasks/004-backboard-memory-spike-results.md` &#10003; DONE
 - [x] **[005] Conversation CSV export** &mdash; Download CSV button in Analytics &rarr; DONE (no separate task file; implemented inline)
 
 ## 4. Architecture
@@ -156,7 +186,7 @@ Babel/
     relay_engine.py            Core relay loop &mdash; call_model, build_messages, vocab extraction
     tournament_engine.py       Round-robin tournament runner &mdash; sequential matches, SSE events
     vocab_extractor.py         Regex-based invented word detection
-    db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments)
+    db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments, model_memory)
     event_hub.py               SSE pub/sub (standalone, match_id filtering)
     presets/
       conlang.yaml             Build a symbolic language (default)
@@ -179,11 +209,11 @@ Babel/
     src/
       pages/
         SeedLab.tsx            Landing page &mdash; preset card grid + tag filter + custom card
-        Configure.tsx          Experiment config &mdash; per-model temp sliders, estimate bar, launch
-        Theater.tsx            Pure live-view &mdash; SSE stream, split columns, vocab panel
+        Configure.tsx          Experiment config &mdash; per-model temp sliders, estimate bar, memory toggle, launch
+        Theater.tsx            Live-view + DB fallback &mdash; SSE stream, sprites, verdict, glitch dispatch
         Dictionary.tsx         WordCard grid + D3 constellation
-        Gallery.tsx            Past experiments card grid with status badges
-        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export
+        Gallery.tsx            Past experiments log rows; mini sprites + preset stripe
+        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export; sprites in header
         Arena.tsx              Tournament setup &mdash; model multi-select, launcher
         Tournament.tsx         Live match grid, leaderboard, radar chart
         Tournaments.tsx        Tournament history list at /tournaments
@@ -192,7 +222,7 @@ Babel/
         theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas
         dictionary/            WordCard, ConstellationGraph (incremental D3)
         analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
-        common/                Layout (nav+transitions+glitch), StarField (canvas neural net),
+        common/                Layout (nav+transitions+glitch+babel-glitch listener), StarField (canvas neural net),
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
         ui/                    9 Shadcn primitives
       api/
@@ -200,6 +230,11 @@ Babel/
         client.ts              fetchJson + api object (15+ endpoints)
         sse.ts                 useSSE hook (EventSource, typed events)
         hooks.ts               useExperimentState (event sourcing)
+      lib/
+        presetColors.ts        PRESET_GLOW map + getPresetGlow() helper (shared by ArenaStage, Gallery, Configure)
+        format.ts              formatDuration helper
+        symbols.ts             SYMBOL_MAP (emoji &rarr; geometric Unicode)
+        prefs.ts               localStorage preferences
 ```
 
 ## 5. Commands (PowerShell)
@@ -232,6 +267,11 @@ Set-Location ui && .\run_npm.cmd dev
 - **StarField:** Pure canvas &mdash; not tsParticles. tintColor prop accepts "R,G,B" string. AppInner (inside BrowserRouter) reads route and passes tint.
 - **Background task errors:** `_log_task_exception` callback attached to all `asyncio.create_task()` calls in relay_engine.py &mdash; silently swallowed exceptions now appear in logs.
 - **Per-participant temperature:** `temperature_a` and `temperature_b` stored in experiments table (DEFAULT 0.7). `RelayStartRequest` requires both fields. Tournament mode still uses single temperature (both agents share same value).
-- **Theater DB fallback:** EventHub history is in-memory; server restart wipes it. Theater.tsx fetches `api.getExperimentTurns` + `api.getExperimentScores` for completed experiments as fallback. Verdict (winner + reasoning) is NOT persisted &mdash; still lost on restart.
-- **Theater sprites:** `SpriteAvatar` clipPath IDs are `face-clip-model-a` / `face-clip-model-b` (unique per color to avoid SVG collision). `talkingSpeaker` uses a timeout keyed on `lastTurn.turn_id` &mdash; no callback threading needed. `latestTurnId` is null for completed experiments (typewriter only fires live).
+- **Theater DB fallback:** EventHub history is in-memory; server restart wipes it. Theater.tsx fetches turns + scores + verdict for completed experiments. `effectiveTurns`, `effectiveScores`, `effectiveVerdict` prefer SSE, fall back to DB.
+- **Verdict persistence:** `winner` + `verdict_reasoning` stored in experiments table. `save_verdict()` called in `final_verdict()` after hub publish. `dbVerdict` state in Theater.tsx reconstructed from `exp.winner` / `exp.verdict_reasoning`.
+- **Theater sprites:** `SpriteAvatar` clipPath IDs are `face-clip-model-a` / `face-clip-model-b` (unique per color to avoid SVG collision). `talkingSpeaker` uses a timeout keyed on `lastTurn.turn_id`. `latestTurnId` is null for completed experiments (typewriter only fires live).
 - **Judge / scoring:** `judge_model` stored in experiments table (DEFAULT: config.JUDGE_MODEL = gemini-2.5-flash). `enable_scoring` fires `score_turn()` after each turn (fire-and-forget). `enable_verdict` fires `final_verdict()` at end. Both are opt-in toggles in Configure. `turn_scores` table holds per-turn scores. Scoring fails gracefully &mdash; turns complete even if judge call errors.
+- **Preset colors:** `ui/src/lib/presetColors.ts` is the single source of truth for `PRESET_GLOW` map and `getPresetGlow()`. ArenaStage.tsx no longer has its own copy. Gallery + Configure import from here. When adding a new preset YAML, add its color here too.
+- **BABEL glitch event:** Theater dispatches `window.dispatchEvent(new CustomEvent('babel-glitch'))` on each live turn arrival. Layout.tsx listens for it and fires `runGlitch()` immediately (clears pending schedule first). This is a decoupled CustomEvent pattern &mdash; no prop drilling.
+- **Model memory:** `model_memory` table keyed on `(model_a, model_b)` canonical sorted pair. `generate_memory_summary()` is deterministic (vocab-based, no LLM call). `enable_memory` toggle in Configure. Memory injected at experiment start; saved as background task after verdict/completion.
+- **Serena regex DOTALL gotcha:** `.*` in Serena replace_content regex (DOTALL mode) matches newlines &mdash; can greedily consume the rest of the file. Use literal mode or specific anchor text instead of `.*` at line boundaries.

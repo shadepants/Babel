@@ -11,6 +11,8 @@ import { RadarChart } from '@/components/analytics/RadarChart'
 import { RoundScoreChart } from '@/components/analytics/RoundScoreChart'
 import { formatDuration } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
+import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
+import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 
 const MODEL_A_COLOR = '#F59E0B'
 const MODEL_B_COLOR = '#06B6D4'
@@ -250,18 +252,30 @@ export default function Analytics() {
   const modelA = modelDisplayName(experiment.model_a)
   const modelB = modelDisplayName(experiment.model_b)
 
+  // Sprite outcome states from winner field
+  const spriteA: SpriteStatus = experiment.winner === 'model_a' ? 'winner'
+    : experiment.winner === 'model_b' ? 'loser'
+    : experiment.status === 'failed' ? 'error'
+    : 'idle'
+  const spriteB: SpriteStatus = experiment.winner === 'model_b' ? 'winner'
+    : experiment.winner === 'model_a' ? 'loser'
+    : experiment.status === 'failed' ? 'error'
+    : 'idle'
+
   return (
     <div className="flex-1 p-6 max-w-5xl mx-auto space-y-8">
       {/* Header */}
       <div className="space-y-2">
         <Link to="/gallery" className="text-xs text-text-dim hover:text-accent">
-          ← Gallery
+          &#8592; Gallery
         </Link>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">
+            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3 flex-wrap">
+              <SpriteAvatar status={spriteA} color="model-a" size={40} />
               <span className="text-model-a">{modelA}</span>
               <span className="text-text-dim font-normal"> vs </span>
+              <SpriteAvatar status={spriteB} color="model-b" size={40} />
               <span className="text-model-b">{modelB}</span>
             </h1>
             <div className="flex items-center gap-3 mt-1">

@@ -10,7 +10,9 @@ Extracted from Factory/experiments/ai_relay.py with these changes:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -40,6 +42,51 @@ class RelayEvent:
     ROUND_COMPLETE = "relay.round"    # Both models finished a round
     MATCH_COMPLETE = "relay.done"     # All rounds finished
     ERROR = "relay.error"             # Something went wrong
+    SCORE = "relay.score"             # Judge scored a turn (async, fire-and-forget)
+    VERDICT = "relay.verdict"         # Judge declared final winner
+
+
+# ── Task Exception Logging ──────────────────────────────────────────────
+
+def _log_task_exception(task: asyncio.Task) -> None:  # type: ignore[type-arg]
+    """Callback for fire-and-forget tasks — surfaces silently swallowed errors."""
+    if not task.cancelled() and task.exception():
+        logger.error("Background task failed: %s", task.exception())
+
+
+# ── JSON Parse Helpers ─────────────────────────────────────────────────
+
+def _parse_score_json(raw: str) -> dict:
+    """Extract score JSON from LLM response. Returns 0.5 defaults on any failure."""
+    defaults = {"creativity": 0.5, "coherence": 0.5, "engagement": 0.5, "novelty": 0.5}
+    try:
+        m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+        if not m:
+            return defaults
+        data = json.loads(m.group())
+        return {
+            key: max(0.0, min(1.0, float(data.get(key, 0.5))))
+            for key in ("creativity", "coherence", "engagement", "novelty")
+        }
+    except Exception:
+        return defaults
+
+
+def _parse_verdict_json(raw: str) -> dict:
+    """Extract verdict JSON from LLM response. Returns tie on any failure."""
+    defaults = {"winner": "tie", "reasoning": "Unable to determine winner."}
+    try:
+        m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+        if not m:
+            return defaults
+        data = json.loads(m.group())
+        winner = data.get("winner", "tie")
+        if winner not in ("model_a", "model_b", "tie"):
+            winner = "tie"
+        reasoning = str(data.get("reasoning", ""))[:500]
+        return {"winner": winner, "reasoning": reasoning}
+    except Exception:
+        return defaults
 
 
 # ── Agent Config ────────────────────────────────────────────────────────
@@ -52,6 +99,95 @@ class RelayAgent:
     temperature: float = 0.7
     max_tokens: int = 1500
     request_timeout: int = 60
+
+
+# ── Scoring / Verdict Functions ────────────────────────────────────────
+
+async def score_turn(
+    turn_id: int,
+    content: str,
+    judge_model: str,
+    match_id: str,
+    hub: "EventHub",
+    db: "Database",
+) -> None:
+    """Score a single turn via the judge model and publish relay.score event.
+
+    Fire-and-forget — relay loop never awaits this directly.
+    Logs a warning on failure; never raises.
+    """
+    prompt = (
+        "Score this AI-to-AI conversation turn on 4 dimensions (0.0 to 1.0 each). "
+        "Return JSON only, no prose:\n"
+        '{"creativity": ..., "coherence": ..., "engagement": ..., "novelty": ...}\n\n'
+        f"Turn:\n{content[:2000]}"  # cap to avoid huge prompts
+    )
+    agent = RelayAgent(
+        name="judge",
+        model=judge_model,
+        temperature=0.2,
+        max_tokens=80,
+        request_timeout=20,
+    )
+    try:
+        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        scores = _parse_score_json(raw)
+        await db.insert_turn_score(turn_id=turn_id, **scores)
+        hub.publish(RelayEvent.SCORE, {
+            "match_id": match_id,
+            "turn_id": turn_id,
+            **scores,
+        })
+    except Exception as exc:
+        logger.warning("Scoring failed for turn %d: %s", turn_id, exc)
+
+
+async def final_verdict(
+    match_id: str,
+    turns: list[dict],
+    agent_a: "RelayAgent",
+    agent_b: "RelayAgent",
+    judge_model: str,
+    hub: "EventHub",
+) -> None:
+    """Ask the judge model to declare a winner and publish relay.verdict event.
+
+    Fire-and-forget — called after MATCH_COMPLETE.
+    Logs a warning on failure; never raises.
+    """
+    lines = []
+    for i, t in enumerate(turns):
+        speaker_label = agent_a.name if t["speaker"] == "a" else agent_b.name
+        lines.append(f"[{speaker_label}]: {t['content'][:500]}")
+    transcript = "\n\n".join(lines)
+
+    prompt = (
+        f"Read this AI-to-AI conversation. Model A is '{agent_a.name}' ({agent_a.model}), "
+        f"model B is '{agent_b.name}' ({agent_b.model}). "
+        'Declare a winner and explain why in 1-2 sentences. Return JSON only:\n'
+        '{"winner": "model_a" or "model_b" or "tie", "reasoning": "..."}\n\n'
+        f"Transcript:\n{transcript[:6000]}"
+    )
+    agent = RelayAgent(
+        name="judge",
+        model=judge_model,
+        temperature=0.3,
+        max_tokens=200,
+        request_timeout=30,
+    )
+    try:
+        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        result = _parse_verdict_json(raw)
+        hub.publish(RelayEvent.VERDICT, {
+            "match_id": match_id,
+            "winner_model": agent_a.model if result["winner"] == "model_a" else (
+                agent_b.model if result["winner"] == "model_b" else "tie"
+            ),
+            **result,
+        })
+        logger.info("Verdict for %s: %s", match_id, result["winner"])
+    except Exception as exc:
+        logger.warning("Verdict failed for %s: %s", match_id, exc)
 
 
 # ── LLM Call with Retry ─────────────────────────────────────────────────
@@ -134,9 +270,10 @@ async def _extract_and_publish_vocab(
     hub: EventHub,
     db: Database,
     known_words: set[str],
+    preset: str | None = None,
 ) -> None:
     """Extract vocabulary from a turn, persist to DB, and publish SSE events."""
-    words = extract_vocabulary(content, known_words, speaker, round_num)
+    words = extract_vocabulary(content, known_words, speaker, round_num, preset=preset)
     for word in words:
         await db.upsert_word(
             experiment_id=match_id,
@@ -146,6 +283,7 @@ async def _extract_and_publish_vocab(
             coined_round=round_num,
             category=word.category,
             parent_words=word.parent_words or None,
+            confidence=word.confidence,
         )
         known_words.add(word.word)
 
@@ -179,6 +317,11 @@ async def run_relay(
     hub: EventHub,
     db: Database,
     turn_delay_seconds: float = 2.0,
+    cancel_event: asyncio.Event | None = None,
+    preset: str | None = None,
+    judge_model: str | None = None,
+    enable_scoring: bool = False,
+    enable_verdict: bool = False,
 ) -> None:
     """Run an AI-to-AI relay conversation.
 
@@ -193,6 +336,23 @@ async def run_relay(
 
     try:
         for round_num in range(1, rounds + 1):
+            # ── Check cancellation ──
+            if cancel_event and cancel_event.is_set():
+                elapsed = time.time() - start_time
+                await db.update_experiment_status(
+                    match_id, "stopped",
+                    rounds_completed=round_num - 1,
+                    elapsed_seconds=round(elapsed, 1),
+                )
+                hub.publish(RelayEvent.MATCH_COMPLETE, {
+                    "match_id": match_id,
+                    "rounds": round_num - 1,
+                    "elapsed_s": round(elapsed, 1),
+                    "stopped": True,
+                })
+                logger.info("Relay %s stopped by user after %d rounds", match_id, round_num - 1)
+                return
+
             # ── Agent A's turn ──
             hub.publish(RelayEvent.THINKING, {
                 "match_id": match_id,
@@ -225,9 +385,17 @@ async def run_relay(
                 "turn_id": turn_id_a,
             })
 
-            asyncio.create_task(_extract_and_publish_vocab(
+            if enable_scoring and judge_model and turn_id_a:
+                _score_a = asyncio.create_task(
+                    score_turn(turn_id_a, content_a, judge_model, match_id, hub, db)
+                )
+                _score_a.add_done_callback(_log_task_exception)
+
+            _task_a = asyncio.create_task(_extract_and_publish_vocab(
                 content_a, agent_a.name, round_num, match_id, hub, db, known_words,
+                preset=preset,
             ))
+            _task_a.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Agent B's turn ──
@@ -262,9 +430,17 @@ async def run_relay(
                 "turn_id": turn_id_b,
             })
 
-            asyncio.create_task(_extract_and_publish_vocab(
+            if enable_scoring and judge_model and turn_id_b:
+                _score_b = asyncio.create_task(
+                    score_turn(turn_id_b, content_b, judge_model, match_id, hub, db)
+                )
+                _score_b.add_done_callback(_log_task_exception)
+
+            _task_b = asyncio.create_task(_extract_and_publish_vocab(
                 content_b, agent_b.name, round_num, match_id, hub, db, known_words,
+                preset=preset,
             ))
+            _task_b.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Round complete ──
@@ -291,6 +467,12 @@ async def run_relay(
             "elapsed_s": round(elapsed, 1),
         })
         logger.info("Relay %s completed: %d rounds in %.1fs", match_id, rounds, elapsed)
+
+        if enable_verdict and judge_model:
+            _verdict_task = asyncio.create_task(
+                final_verdict(match_id, turns, agent_a, agent_b, judge_model, hub)
+            )
+            _verdict_task.add_done_callback(_log_task_exception)
 
     except Exception as e:
         elapsed = time.time() - start_time

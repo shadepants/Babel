@@ -4,6 +4,9 @@ Scans turn content for invented vocabulary using two strategies:
 1. Explicit definitions: "WORD = meaning", "WORD: meaning", "propose WORD to mean ..."
 2. ALL_CAPS tokens (3+ chars) not in a common-word blocklist
 
+Pass 1 matches are high-confidence; Pass 2 (ALL_CAPS catch-all) is low-confidence
+and can be disabled for non-conlang presets to reduce false positives.
+
 Returns ExtractedWord dataclasses ready for db.upsert_word() and SSE publishing.
 """
 
@@ -22,6 +25,7 @@ class ExtractedWord:
     meaning: str | None = None
     category: str | None = None        # "noun" | "verb" | "prefix" | "grammar" | ...
     parent_words: list[str] = field(default_factory=list)
+    confidence: str = "high"           # "high" (Pass 1) or "low" (Pass 2)
 
 
 # ── Patterns ─────────────────────────────────────────────────────
@@ -42,6 +46,25 @@ _PROPOSE_RE = re.compile(
     r"[\"']?([A-Z][A-Z0-9\-]{2,})[\"']?"  # the word
     r"\s*(?:to\s+mean|means?|as|=|for)\s*"
     r"(.+?)(?:[.,;!\n]|$)",            # meaning
+    re.IGNORECASE,
+)
+
+# Pattern 1c: WORD (meaning 'definition') or WORD (a word for 'X')
+_PARENTHETICAL_RE = re.compile(
+    r"([A-Z][A-Z0-9\-]{2,})"          # the word
+    r"\s*\(\s*"                        # opening paren
+    r"(?:meaning|a\s+word\s+for|literally|i\.?e\.?|from)\s+"
+    r"[\"']?(.+?)[\"']?"              # definition inside parens
+    r"\s*\)",                          # closing paren
+    re.IGNORECASE,
+)
+
+# Pattern 1d: "I'll use/call/name WORD to mean/for X"
+_INLINE_DEF_RE = re.compile(
+    r"(?:I(?:'ll|'d|'ve)?\s+(?:call|use|name|coin|introduce))\s+"
+    r"[\"']?([A-Z][A-Z0-9\-]{2,})[\"']?"
+    r"\s+(?:to\s+mean|for|as)\s+"
+    r"(.+?)(?:[.,;!\n]|$)",
     re.IGNORECASE,
 )
 
@@ -87,6 +110,18 @@ _BLOCKLIST = frozenset({
     "WORDS", "VOCABULARY", "TRANSLATION", "EXAMPLE",
     "HELLO", "GOODBYE", "PLEASE", "THANK", "THANKS",
     "NOTE", "ROUND", "RULES", "RULE", "PROPOSE", "DEFINE",
+    # Additional false-positive blocklist (common in non-conlang presets)
+    "TRUE", "FALSE", "NULL", "STEP", "CASE", "POINT",
+    "EDIT", "IDEA", "FACT", "REAL", "SURE", "BEST",
+    "DOES", "DONE", "WILL", "SAID", "SAYS", "FORM",
+    "MOVE", "PLAN", "TYPE", "DATA", "GOAL", "ROLE",
+    "SIDE", "VIEW", "HELP", "LEFT", "PLAY", "ABLE",
+    "FULL", "HEAD", "MIND", "OPEN", "LEAD", "TERM",
+})
+
+# Presets where ALL_CAPS catch-all (Pass 2) is useful — conlang / vocab-heavy modes
+_CONLANG_PRESETS = frozenset({
+    "conlang", "emoji-to-language", "code-breaker", None,  # None = custom (allow by default)
 })
 
 
@@ -98,6 +133,7 @@ def extract_vocabulary(
     known_words: set[str],
     speaker: str,
     round_num: int,
+    preset: str | None = None,
 ) -> list[ExtractedWord]:
     """Parse a single turn's text for invented vocabulary.
 
@@ -107,14 +143,17 @@ def extract_vocabulary(
             Used to detect parent_words references and re-encounters.
         speaker: Display name of the model that produced this turn.
         round_num: Current round number.
+        preset: Preset name (e.g. "conlang", "debate", "story").
+            Non-conlang presets disable Pass 2 (ALL_CAPS catch-all)
+            to reduce false positives.
 
     Returns:
         List of ExtractedWord entries. May be empty.
     """
     found: dict[str, ExtractedWord] = {}  # word → ExtractedWord, deduped
 
-    # ── Pass 1: Explicit definitions (highest confidence) ──
-    for regex in (_DEFINITION_RE, _PROPOSE_RE):
+    # ── Pass 1: Explicit definitions (high confidence) ──
+    for regex in (_DEFINITION_RE, _PROPOSE_RE, _PARENTHETICAL_RE, _INLINE_DEF_RE):
         for match in regex.finditer(content):
             word = match.group(1).upper().strip("-")
             meaning = match.group(2).strip()[:200]
@@ -130,21 +169,35 @@ def extract_vocabulary(
                     meaning=meaning if meaning else None,
                     category=category,
                     parent_words=parents,
+                    confidence="high",
                 )
 
-    # ── Pass 2: ALL_CAPS tokens not yet captured ──
-    for match in _ALLCAPS_RE.finditer(content):
-        word = match.group(1).upper().strip("-")
-        if word in _BLOCKLIST or word in found or len(word) < 3:
-            continue
+    # ── Pass 2: ALL_CAPS tokens not yet captured (low confidence) ──
+    # Only run for conlang-style presets; skip for debate/story/philosophy
+    # to avoid flagging emphatic English words as invented vocabulary.
+    use_pass2 = preset in _CONLANG_PRESETS
+    # For non-conlang presets, still allow re-encounters of known words
+    if use_pass2 or known_words:
+        for match in _ALLCAPS_RE.finditer(content):
+            word = match.group(1).upper().strip("-")
+            if word in _BLOCKLIST or word in found or len(word) < 3:
+                continue
 
-        # Check if this is a re-encounter of a known word
-        if word in known_words:
-            found[word] = ExtractedWord(word=word)
-        else:
-            # New word without explicit definition
-            category = _detect_category(content, match.start(), match.end())
-            found[word] = ExtractedWord(word=word, category=category)
+            # Non-conlang presets: only allow re-encounters, not new discoveries
+            if not use_pass2 and word not in known_words:
+                continue
+
+            # For Pass 2, require minimum 4 chars to reduce noise
+            if word not in known_words and len(word) < 4:
+                continue
+
+            if word in known_words:
+                found[word] = ExtractedWord(word=word, confidence="low")
+            else:
+                category = _detect_category(content, match.start(), match.end())
+                found[word] = ExtractedWord(
+                    word=word, category=category, confidence="low",
+                )
 
     return list(found.values())
 

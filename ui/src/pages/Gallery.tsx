@@ -4,20 +4,12 @@ import { api } from '@/api/client'
 import type { ExperimentRecord } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ScrambleText } from '@/components/common/ScrambleText'
+import { formatDuration } from '@/lib/format'
 
 /** Extract a short display name from a litellm model string like "anthropic/claude-sonnet-4-..." */
 function modelDisplayName(model: string): string {
   const after = model.split('/').pop() ?? model
   return after.replace(/-\d{8}$/, '')
-}
-
-/** Format elapsed seconds as "Xm Ys" or "Ys" */
-function formatElapsed(seconds: number | null): string {
-  if (seconds == null) return '—'
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  return `${m}m ${s}s`
 }
 
 /** Format ISO date string to compact form */
@@ -44,30 +36,79 @@ function dotStatusClass(status: string) {
   return 'status-dot status-dot--pending'
 }
 
+const PAGE_SIZE = 20
+const STATUS_FILTERS = ['all', 'running', 'completed', 'failed'] as const
+type StatusFilter = typeof STATUS_FILTERS[number]
+
 export default function Gallery() {
   const navigate = useNavigate()
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [page, setPage] = useState(0)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  useEffect(() => {
-    api.listExperiments()
+  const fetchExperiments = () => {
+    setLoading(true)
+    const params: { limit: number; offset: number; status?: string } = {
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    }
+    if (statusFilter !== 'all') params.status = statusFilter
+    api.listExperiments(params)
       .then((res) => setExperiments(res.experiments))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load experiments'))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => {
+    fetchExperiments()
+  }, [page, statusFilter])
+
+  // Auto-poll if there are running experiments
+  useEffect(() => {
+    const hasRunning = experiments.some((e) => e.status === 'running')
+    if (!hasRunning) return
+    const interval = setInterval(fetchExperiments, 15_000)
+    return () => clearInterval(interval)
+  }, [experiments])
 
   return (
     <div className="flex-1 p-6 max-w-4xl mx-auto space-y-8">
 
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="font-display font-black tracking-widest text-2xl text-text-primary">
-          <ScrambleText>Gallery</ScrambleText>
-        </h1>
-        <p className="font-mono text-xs text-text-dim tracking-wider">
-          <span className="text-accent/60">// </span>experiment archive &mdash; {experiments.length} records
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display font-black tracking-widest text-2xl text-text-primary">
+              <ScrambleText>Gallery</ScrambleText>
+            </h1>
+            <p className="font-mono text-xs text-text-dim tracking-wider">
+              <span className="text-accent/60">// </span>experiment archive
+            </p>
+          </div>
+          <button onClick={fetchExperiments} className="neural-btn" disabled={loading}>
+            {loading ? '...' : 'Refresh'}
+          </button>
+        </div>
+
+        {/* Status filter tabs */}
+        <div className="flex gap-1.5">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => { setStatusFilter(filter); setPage(0) }}
+              className={`font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border transition-colors ${
+                statusFilter === filter
+                  ? 'bg-accent/15 border-accent/60 text-accent'
+                  : 'bg-transparent border-border-custom text-text-dim hover:border-accent/35'
+              }`}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Loading */}
@@ -129,11 +170,16 @@ export default function Gallery() {
                         {exp.preset}
                       </span>
                     )}
+                    {exp.judge_model && (
+                      <span className="font-mono text-[9px] tracking-wider text-text-dim/40">
+                        // judged
+                      </span>
+                    )}
                   </div>
                   <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5">
                     <span>{formatDate(exp.created_at)}</span>
                     <span className="text-accent/25">&middot;</span>
-                    <span>{formatElapsed(exp.elapsed_seconds)}</span>
+                    <span>{formatDuration(exp.elapsed_seconds)}</span>
                   </div>
                 </div>
 
@@ -165,10 +211,56 @@ export default function Gallery() {
                   >
                     Dict
                   </button>
+                  {exp.status !== 'running' && (
+                    confirmDelete === exp.id ? (
+                      <button
+                        className="neural-btn text-danger border-danger/40 hover:bg-danger/10"
+                        onClick={async () => {
+                          try {
+                            await api.deleteExperiment(exp.id)
+                            setConfirmDelete(null)
+                            fetchExperiments()
+                          } catch (err) {
+                            console.error('Delete failed:', err)
+                          }
+                        }}
+                      >
+                        Confirm
+                      </button>
+                    ) : (
+                      <button
+                        className="neural-btn text-danger/50 border-danger/20"
+                        onClick={() => setConfirmDelete(exp.id)}
+                      >
+                        Del
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
             </div>
           ))}
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="neural-btn disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              &larr; Prev
+            </button>
+            <span className="font-mono text-[10px] text-text-dim tracking-wider">
+              Page {page + 1}
+            </span>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={experiments.length < PAGE_SIZE}
+              className="neural-btn disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next &rarr;
+            </button>
+          </div>
         </div>
       )}
     </div>

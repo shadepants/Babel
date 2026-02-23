@@ -5,21 +5,7 @@ import { api } from '@/api/client'
 import type { Preset } from '@/api/types'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { ScrambleText } from '@/components/common/ScrambleText'
-
-/** Map emoji to sci-fi geometric symbols */
-const SYMBOL_MAP: Record<string, string> = {
-  '🧠': '◈', '⚙️': '⊕', '🎭': '✦', '📊': '⬡', '🌱': '◉',
-  '🤝': '⟡', '🔬': '⌬', '💡': '◇', '🎯': '⊗', '🤖': '⧖',
-  '🌍': '◉', '⚖️': '⊗', '🎪': '✦', '🔮': '◈', '🗺️': '⬡',
-  '🌐': '⬡', '🧬': '◈', '⚡': '⊕', '🌊': '◉', '🔥': '✦',
-}
-
-/** Fallback symbols by index for unmapped emojis */
-const FALLBACK_SYMBOLS = ['◈', '⬡', '◉', '✦', '⊕', '⟡', '⌬', '◇', '⊗', '⧖']
-
-function getSymbol(emoji: string, index: number): string {
-  return SYMBOL_MAP[emoji] ?? FALLBACK_SYMBOLS[index % FALLBACK_SYMBOLS.length]
-}
+import { getSymbol } from '@/lib/symbols'
 
 const gridVariants = {
   hidden: {},
@@ -41,6 +27,7 @@ export default function SeedLab() {
   const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTag, setActiveTag] = useState<string | null>(null)
 
   useEffect(() => {
     api.getPresets()
@@ -48,6 +35,9 @@ export default function SeedLab() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load presets'))
       .finally(() => setLoading(false))
   }, [])
+
+  const allTags = Array.from(new Set(presets.flatMap((p) => p.tags))).sort()
+  const visiblePresets = activeTag ? presets.filter((p) => p.tags.includes(activeTag)) : presets
 
   return (
     <div className="flex-1 p-6 max-w-5xl mx-auto space-y-8">
@@ -64,6 +54,34 @@ export default function SeedLab() {
       {loading && <p className="text-center font-mono text-xs text-text-dim animate-pulse-slow">initializing...</p>}
       {error && <p className="text-center text-danger font-mono text-xs">{error}</p>}
 
+      {!loading && !error && allTags.length > 0 && (
+        <div className="flex flex-wrap gap-2 justify-center">
+          <button
+            onClick={() => setActiveTag(null)}
+            className={`font-mono text-[10px] tracking-wider px-2.5 py-1 rounded-sm border transition-colors ${
+              activeTag === null
+                ? 'border-accent/60 text-accent bg-accent/10'
+                : 'border-border-custom/50 text-text-dim/60 hover:border-accent/40 hover:text-accent/70'
+            }`}
+          >
+            all
+          </button>
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+              className={`font-mono text-[10px] tracking-wider px-2.5 py-1 rounded-sm border transition-colors ${
+                activeTag === tag
+                  ? 'border-accent/60 text-accent bg-accent/10'
+                  : 'border-border-custom/50 text-text-dim/60 hover:border-accent/40 hover:text-accent/70'
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {!loading && !error && (
         <motion.div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
@@ -71,7 +89,7 @@ export default function SeedLab() {
           initial="hidden"
           animate="show"
         >
-          {presets.map((preset, i) => (
+          {visiblePresets.map((preset, i) => (
             <motion.div
               key={preset.id}
               variants={cardVariants}

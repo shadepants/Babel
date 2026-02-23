@@ -1,79 +1,65 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-23
 **Active Agent:** Claude Code
-**Current Goal:** Phase 9 complete — neural UI living background enhancements
-
-## What's Done (Cumulative)
-- **Phases 1–6:** Full backend + frontend — relay engine, Theater, Dictionary, Gallery, Analytics, Arena, Tournament, Settings
-- **Phase 7:** Sci-fi observatory design system — Orbitron/Inter/JetBrains Mono fonts, StarField (tsParticles), Theater reactive canvas, SeedLab stagger animations
-- **Phase 8:** Full neural design system — NoiseOverlay, HudBrackets, BABEL shimmer, neural CSS classes, emoji → geometric symbols across all pages, neural terminal panels
-- **Phase 9:** Living neural network — StarField rewritten to pure canvas (depth layers, mouse parallax, cascade pulses, route-aware tint), ScrambleText, AnimatePresence page transitions, BABEL glitch, synaptic bloom, activity trails, gamma burst events
-- **Encoding fix:** Rewrote all 5 pages via win_write to fix PowerShell UTF-8 double-encoding artifacts
+**Current Goal:** Closed out Tasks 001+002; all tracked tasks complete
 
 ## Changes This Session
-- [x] ScrambleText duration bumped 1800ms → 2000ms (~10% slower per user request)
-- [x] Configure.tsx — full rewrite fixing SYMBOL_MAP, geometric symbols (`font-mono`), HTML entities for all non-ASCII
-- [x] Settings.tsx — rewrite fixing garbled `←` and `—` chars
-- [x] Arena.tsx, Gallery.tsx, SeedLab.tsx — rewritten (encoding fix, carried over from previous context)
-- [x] StarField: synaptic bloom (#3) — screen-blend halo on pulse arrival, accumulates, decays ~5.5s
-- [x] StarField: activity trails (#5) — edges record heat=1.0 while pulse in transit, decay ~1.4s, glow thicker+brighter
-- [x] StarField: gamma burst events (#7) — 12-node synchronized fire every 15–40s with expanding ring visual
 
-## Brainstorm Backlog (remaining ideas, not yet implemented)
-These were discussed but not built this session — good candidates for future polish:
-1. **Resting potential / threshold firing** — nodes accumulate charge, auto-fire when threshold crossed
-2. **Directed axon bundles** — grouped parallel edges travelling same direction
-3. **Inhibitory nodes** — ~8% of nodes suppress neighbors on pulse receipt (red-violet tint)
-4. **Breathing mesh** — slow sine-wave pressure ripple through node field every ~8s
-5. **Depth-aware glow halos** — far-layer nodes get softer/larger persistent draw
-6. **Node specialization** — sensory/motor/interneuron color types, mixed-color pulse transmission
-7. **Entropy/noise drift** — node positions drift on Perlin-style noise field over time
+### Task 001: Round-by-Round Scoring
+- [x] **server/db.py** -- `turn_scores` table; `insert_turn_score()`, `get_turn_scores()` methods
+- [x] **server/relay_engine.py** -- `score_turn()` async fn; `final_verdict()` async fn; `relay.score` + `relay.verdict` SSE event types
+- [x] **server/routers/experiments.py** -- `GET /experiments/{id}/scores` endpoint
+- [x] **ui/src/api/types.ts** -- `TurnScore`, `ScoreEvent`, `VerdictEvent` types
+- [x] **ui/src/api/hooks.ts** -- `scores: Record<number, ScoreEvent>` + `verdict: VerdictEvent | null` in experiment state; handles `relay.score` + `relay.verdict` SSE events
+- [x] **ui/src/components/theater/TurnBubble.tsx** -- score badge (4 ScorePill items: creativity/coherence/engagement/novelty)
+- [x] **ui/src/components/theater/ConversationColumn.tsx** -- passes `score={scores[turn.turn_id]}` to each TurnBubble
+- [x] **ui/src/components/analytics/RoundScoreChart.tsx** -- NEW: D3 line chart, 4 series (amber/cyan/emerald/purple)
+- [x] **ui/src/pages/Analytics.tsx** -- `RoundScoreChart` rendered when `enable_scoring` is true; scores fetched via `api.getExperimentScores()`
+- [x] **ui/src/pages/Theater.tsx** -- final verdict card rendered at bottom when experiment completes
+
+### Task 002: Configurable Judge Model
+- [x] **server/config.py** -- `JUDGE_MODEL = "gemini/gemini-2.5-flash"` default
+- [x] **server/db.py** -- idempotent `ALTER TABLE` migration for `judge_model TEXT` column; stored in experiments
+- [x] **server/relay_engine.py** -- `score_turn(judge_model)` + `final_verdict(judge_model)` use the configured judge
+- [x] **server/routers/relay.py** -- `RelayStartRequest` accepts `judge_model`, `enable_scoring`, `enable_verdict` params
+- [x] **ui/src/pages/Configure.tsx** -- Referee section: judge model dropdown + Enable Scoring toggle + Enable Verdict toggle
+- [x] **ui/src/pages/Gallery.tsx** -- `// judged` badge on experiments that have a judge model
+- [x] **ui/src/pages/Analytics.tsx** -- Referee stat card showing judge model name
+
+### Bonus Work
+- [x] **ui/src/components/analytics/TokenChart.tsx** -- NEW: D3 grouped bar chart (tokens per round per model)
+- [x] **ui/src/pages/Tournaments.tsx** -- NEW: tournament history list at `/tournaments`
+- [x] **ui/src/pages/Arena.tsx** -- "Past Tournaments ->" link to /tournaments
+- [x] **ui/src/pages/Settings.tsx** -- In-app API key config (set/change per provider) + cost tier labels
+- [x] **tasks/001-round-scoring.md** -- Status updated to Done
+- [x] **tasks/002-judge-model-config.md** -- Status updated to Done
+
+### Commit
+- [x] Committed as `df35ad0` -- "feat(scoring): judge model, per-turn scoring, verdict + analytics charts"
 
 ## Verification Status
+
 | Check | Status | Notes |
 |-------|--------|-------|
-| ScrambleText duration | DONE | 2000ms default confirmed in source |
-| Configure encoding | DONE | Rewritten with win_write + HTML entities |
-| Settings encoding | DONE | Rewritten with win_write + HTML entities |
-| Bloom / trails / burst | COMMITTED | Not live-tested — requires browser session |
-| Vite prod build | NOT RUN | Run `node .\node_modules\vite\bin\vite.js build` to verify |
+| TypeScript compile | PASSED | Exit 0, zero errors |
+| Staging | VERIFIED | 27 files, 1599 insertions |
+| Commit | VERIFIED | df35ad0 on fix/gemini-audit-hardening |
+| Task files | UPDATED | 001 + 002 marked [x] Done |
+| CONTEXT.md | UPDATED | Settings polish checked; new components in arch table |
 
-## Next Steps (Priority Order)
-1. [ ] **Settings page polish** — in-app API key configuration (read/write `.env` or env vars), model latency/cost info display, maybe a "test connection" button per provider
-2. [ ] **Configure page polish** — add `turn_delay_seconds` slider (currently hardcoded default), preset tag filtering on SeedLab, show estimated cost/time before launching an experiment
-3. [ ] **Experiment settings** — per-experiment system prompt preview, save/load custom preset configurations, possibly export a preset to YAML
-4. [ ] **Neural background backlog** — pick from brainstorm list above (breathing mesh + depth halos are lowest effort / highest visual impact)
-5. [ ] **Side-by-side comparison view** — compare two past experiments head-to-head (long-deferred Phase 6b)
+## Remaining Tasks (Next Up)
 
-## Git State
-- **Branch:** master
-- **Latest commits:**
-  - `ebcefdd` — `feat(ui): synaptic bloom + edge trails + gamma burst events`
-  - `37eeb58` — `fix(ui): restore encoding + slow scramble to 2000ms`
-  - `3c010b3` — `fix(ui): symbol rendering artifacts + slow down scramble text`
-  - `e059982` — `feat(ui): Phase 9 — living neural network + text scramble + page transitions`
-  - `2ac8ec3` — `feat(ui): Phase 8 — full neural design system across all pages`
+1. [ ] **Task 004** -- Model memory spike: evaluate Backboard.io (2-4h research) OR go straight to DIY SQLite approach (~4-6h coding)
+   - DIY spec is in `tasks/004-backboard-memory-spike.md` (Alternative section)
+   - Files: `server/db.py` (model_memory table), `server/relay_engine.py` (inject memory into system prompt), `ui/src/pages/Configure.tsx` (enable memory toggle)
+2. [ ] **Browser SSE smoke test** -- Open Theater page, Network tab, confirm `id: 1`, `id: 2` per event frame; then test Last-Event-ID reconnect replay (no code needed)
+3. [ ] **Side-by-side comparison** (Phase 6b) -- Compare two experiments head-to-head; 8-12h, deferred
+4. [ ] **Merge fix/gemini-audit-hardening -> master** -- Branch has accumulated all phases 7-9 + tasks 001-003 + 005
 
-## Key Files (Phase 8–9)
-| File | What it does |
-|------|-------------|
-| `ui/src/components/common/StarField.tsx` | Pure canvas neural net — depth layers, parallax, cascade pulses, bloom, trails, burst |
-| `ui/src/components/common/ScrambleText.tsx` | ASCII scramble → reveal L→R on mount, 2000ms |
-| `ui/src/components/common/NoiseOverlay.tsx` | CSS grain texture overlay |
-| `ui/src/components/common/HudBrackets.tsx` | Corner bracket decoration for cards |
-| `ui/src/components/common/Layout.tsx` | AnimatePresence transitions + BABEL glitch every 9–22s |
-| `ui/src/App.tsx` | AppInner reads useLocation() → routeTint() → StarField tintColor prop |
-| `ui/src/index.css` | neural-card, neural-row, status-dot, neural-btn, neural-provider, neural-section-label |
-| `ui/src/pages/SeedLab.tsx` | Geometric symbols, ScrambleText h1, HudBrackets |
-| `ui/src/pages/Gallery.tsx` | Terminal log rows with neural-row classes |
-| `ui/src/pages/Arena.tsx` | Neural terminal panel, section labels |
-| `ui/src/pages/Configure.tsx` | SYMBOL_MAP, geometric symbols (font-mono), section labels |
-| `ui/src/pages/Settings.tsx` | Left-stripe neural-provider panels per API provider |
-
-## Key Encoding Rules (CRITICAL — don't repeat the bug)
-- **Never** use PowerShell `Get-Content` + `WriteAllText` to patch UTF-8 files — it double-encodes all multi-byte chars
-- **Always** use `win_write` MCP tool for full file writes
-- **Always** use HTML entities in JSX for non-ASCII: `&larr;` `&mdash;` `&middot;` `&#9671;` `&#10022;` `&#8594;`
-- **Always** use `font-mono` (JetBrains Mono) on spans containing Unicode geometric symbols — Orbitron has no coverage for them
+## Architecture Notes for Next Agent
+- **Judge scoring:** `turn_scores` table has `(turn_id, creativity, coherence, engagement, novelty, scored_at)`. Keyed by `turn_id` (integer PK of turns table). `experiment.enable_scoring` guards chart render. Old experiments without scoring return empty scores array -- handled gracefully.
+- **Verdict:** `relay.verdict` SSE event carries `{winner: "model_a"|"model_b"|"tie", reasoning: string}`. Theater page stores it in `experiment.verdict` state and renders at bottom.
+- **TokenChart:** Renders in Analytics below LatencyChart when turn stats are available. Shows tokens per turn per model as grouped bars.
+- **Tournaments page:** At `/tournaments`, linked from Arena. Simple list, no SSE -- static fetch of `GET /api/tournaments`.

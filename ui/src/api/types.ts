@@ -7,9 +7,14 @@ export interface RelayStartRequest {
   seed: string;
   system_prompt?: string;
   rounds: number;
-  temperature: number;
+  temperature_a: number;
+  temperature_b: number;
   max_tokens: number;
+  turn_delay_seconds?: number;
   preset?: string;
+  judge_model?: string | null;
+  enable_scoring?: boolean;
+  enable_verdict?: boolean;
 }
 
 /** POST /api/relay/start response */
@@ -93,6 +98,24 @@ export interface VocabEvent extends BaseSSEEvent {
   parent_words: string[];
 }
 
+/** relay.score — judge scored a single turn (fires async after turn event) */
+export interface ScoreEvent extends BaseSSEEvent {
+  type: 'relay.score';
+  turn_id: number;
+  creativity: number;
+  coherence: number;
+  engagement: number;
+  novelty: number;
+}
+
+/** relay.verdict — judge declared a final winner after all rounds */
+export interface VerdictEvent extends BaseSSEEvent {
+  type: 'relay.verdict';
+  winner: 'model_a' | 'model_b' | 'tie';
+  winner_model: string;  // litellm model string of the winner, or 'tie'
+  reasoning: string;
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
@@ -100,7 +123,9 @@ export type RelaySSEEvent =
   | RoundCompleteEvent
   | MatchCompleteEvent
   | ErrorEvent
-  | VocabEvent;
+  | VocabEvent
+  | ScoreEvent
+  | VerdictEvent;
 
 // ── Preset Types ─────────────────────────────────────────────
 
@@ -142,6 +167,7 @@ export interface VocabWord {
   category: string | null;
   usage_count: number;
   parent_words: string[] | null;
+  confidence: string | null;
 }
 
 /** GET /api/experiments/:id/vocabulary response */
@@ -162,6 +188,27 @@ export interface ExperimentRecord {
   rounds_completed: number;
   status: string;
   elapsed_seconds: number | null;
+  temperature_a?: number;
+  temperature_b?: number;
+  judge_model?: string | null;
+  enable_scoring?: boolean;
+  enable_verdict?: boolean;
+}
+
+/** Single turn score from GET /api/experiments/:id/scores */
+export interface TurnScore {
+  turn_id: number;
+  creativity: number;
+  coherence: number;
+  engagement: number;
+  novelty: number;
+  scored_at: string;
+}
+
+/** GET /api/experiments/:id/scores response */
+export interface TurnScoresResponse {
+  experiment_id: string;
+  scores: TurnScore[];
 }
 
 /** GET /api/experiments/ response */
@@ -374,6 +421,13 @@ export interface ModelStatusInfo {
   model: string;
   provider: string;
   available: boolean;
+  env_var: string;
+  key_preview: string | null;  // first4...last4 of loaded key, null if not set
+}
+
+/** GET /api/relay/env-status response */
+export interface EnvStatusResponse {
+  env_file_found: boolean;
 }
 
 export interface ModelStatusResponse {

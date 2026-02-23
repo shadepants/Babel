@@ -120,19 +120,70 @@ export default function Theater() {
           turns={experiment.turns}
           thinkingSpeaker={experiment.thinkingSpeaker}
           color="model-a"
+          scores={experiment.scores}
         />
         <ConversationColumn
           speakerName={modelBName}
           turns={experiment.turns}
           thinkingSpeaker={experiment.thinkingSpeaker}
           color="model-b"
+          scores={experiment.scores}
         />
       </div>
 
-      {experiment.status === 'completed' && (
-        <div className="px-4 py-3 border-t border-border-custom text-center">
+      {experiment.verdict && (
+        <div className="px-6 py-4 border-t border-accent/30 bg-bg-card/50">
+          <div className="max-w-3xl mx-auto space-y-2">
+            <div className="neural-section-label">// final_verdict</div>
+            <div className="font-display font-black tracking-widest text-base">
+              {experiment.verdict.winner === 'tie' ? (
+                <span className="text-accent">TIE</span>
+              ) : (
+                <>
+                  <span className="font-mono text-[10px] text-text-dim/60 font-normal tracking-wider uppercase">winner: </span>
+                  <span className={experiment.verdict.winner === 'model_a' ? 'text-model-a' : 'text-model-b'}>
+                    {experiment.verdict.winner === 'model_a' ? modelAName : modelBName}
+                  </span>
+                </>
+              )}
+            </div>
+            <p className="font-mono text-xs text-text-dim/75 leading-relaxed">
+              {experiment.verdict.reasoning}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {experiment.status === 'running' && (
+        <div className="px-4 py-2 border-t border-border-custom text-center">
+          <Button
+            variant="outline"
+            className="font-mono text-xs text-danger border-danger/30 hover:bg-danger/10"
+            onClick={async () => {
+              if (matchId) {
+                try {
+                  await api.stopExperiment(matchId)
+                } catch (err) {
+                  console.error('Failed to stop:', err)
+                }
+              }
+            }}
+          >
+            Stop Experiment
+          </Button>
+        </div>
+      )}
+
+      {(experiment.status === 'completed' || experiment.status === 'stopped') && (
+        <div className="px-4 py-3 border-t border-border-custom flex items-center justify-center gap-3">
+          <Link to={`/analytics/${matchId}`}>
+            <Button variant="outline" className="font-mono text-xs">Analytics</Button>
+          </Link>
+          <Link to={`/dictionary/${matchId}`}>
+            <Button variant="outline" className="font-mono text-xs">Dictionary</Button>
+          </Link>
           <Link to="/">
-            <Button variant="outline">New Experiment</Button>
+            <Button variant="outline" className="font-mono text-xs">New Experiment</Button>
           </Link>
         </div>
       )}

@@ -207,8 +207,20 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
       }
 
       // ── update nodes ─────────────────────────────────────────────────────
+      // Breathing mesh: slow sine-wave pressure ripple (~8s period)
+      const breathPhase = (now * 0.000785)  // ~8s full cycle
+      const breathCx = w / 2
+      const breathCy = h / 2
+
       for (const n of nodes) {
-        n.x += n.vx; n.y += n.vy
+        // Breathing: gentle radial push from center
+        const bdx = n.x - breathCx
+        const bdy = n.y - breathCy
+        const bDist = Math.sqrt(bdx * bdx + bdy * bdy) || 1
+        const breathForce = Math.sin(breathPhase - bDist * 0.003) * 0.04 * (1 - n.depth * 0.5)
+        n.x += n.vx + (bdx / bDist) * breathForce
+        n.y += n.vy + (bdy / bDist) * breathForce
+
         if (n.x < -10) n.x = w + 10
         if (n.x > w + 10) n.x = -10
         if (n.y < -10) n.y = h + 10
@@ -355,6 +367,17 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
         const col = COLORS[n.colorIdx]
         const nx  = n.x + pxB * n.depth
         const ny  = n.y + pyB * n.depth
+
+        // Depth-aware glow halos: far-layer nodes get a persistent soft bloom
+        if (n.depth < 0.5) {
+          const glowR = 18 + (1 - n.depth) * 28  // far nodes → larger glow
+          const glowA = 0.04 + (1 - n.depth) * 0.03  // far → more visible
+          const grd = ctx.createRadialGradient(nx, ny, 0, nx, ny, glowR)
+          grd.addColorStop(0, `rgba(${col},${glowA.toFixed(3)})`)
+          grd.addColorStop(1, `rgba(${col},0)`)
+          ctx.beginPath(); ctx.arc(nx, ny, glowR, 0, Math.PI * 2)
+          ctx.fillStyle = grd; ctx.fill()
+        }
 
         if (n.flare > 0.05) {
           const grd = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 5.5)

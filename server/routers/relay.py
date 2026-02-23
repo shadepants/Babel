@@ -21,8 +21,11 @@ from server.config import (
     DEFAULT_MODEL_B,
     DEFAULT_ROUNDS,
     DEFAULT_SEED,
+    DEFAULT_SCORING_ENABLED,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TEMPERATURE,
+    DEFAULT_VERDICT_ENABLED,
+    JUDGE_MODEL,
     MODEL_REGISTRY,
     get_display_name,
 )
@@ -37,6 +40,9 @@ router = APIRouter(prefix="/relay", tags=["relay"])
 
 KEEPALIVE_INTERVAL = 15  # seconds
 
+# In-memory registry of running relay tasks and their cancel events
+_running_relays: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
+
 
 # ── Request / Response Models ───────────────────────────────────────────
 
@@ -46,10 +52,14 @@ class RelayStartRequest(BaseModel):
     seed: str = Field(default=DEFAULT_SEED, description="Starting message / seed vocabulary")
     system_prompt: str = Field(default=DEFAULT_SYSTEM_PROMPT, description="System prompt for both agents")
     rounds: int = Field(default=DEFAULT_ROUNDS, ge=1, le=15, description="Number of conversation rounds")
-    temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    temperature_a: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    temperature_b: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=100, le=4096)
     preset: str | None = Field(default=None, description="Preset name (if from Seed Lab)")
     turn_delay_seconds: float = Field(default=2.0, ge=0.0, le=10.0, description="Seconds to pause between turns")
+    judge_model: str | None = Field(default=None, description="litellm model string for the judge (None = use server default)")
+    enable_scoring: bool = Field(default=DEFAULT_SCORING_ENABLED, description="Fire-and-forget per-turn scoring via judge model")
+    enable_verdict: bool = Field(default=DEFAULT_VERDICT_ENABLED, description="Final verdict from judge after all rounds")
 
 
 class RelayStartResponse(BaseModel):
@@ -89,6 +99,11 @@ async def start_relay(body: RelayStartRequest, request: Request):
         if model not in _ALLOWED_MODELS:
             raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
 
+    # Resolve judge model — use request value if provided, else fall back to server default
+    resolved_judge = body.judge_model or JUDGE_MODEL
+    if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
+        raise HTTPException(400, f"Judge model '{resolved_judge}' is not in the allowed registry")
+
     # Resolve preset if specified (server is authoritative source of truth)
     seed = body.seed
     system_prompt = body.system_prompt
@@ -101,7 +116,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
 
     # Create experiment record
     config = {
-        "temperature": body.temperature,
+        "temperature_a": body.temperature_a,
+        "temperature_b": body.temperature_b,
         "max_tokens": body.max_tokens,
     }
     match_id = await db.create_experiment(
@@ -112,24 +128,30 @@ async def start_relay(body: RelayStartRequest, request: Request):
         rounds_planned=body.rounds,
         preset=body.preset,
         config=config,
+        temperature_a=body.temperature_a,
+        temperature_b=body.temperature_b,
+        judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+        enable_scoring=body.enable_scoring,
+        enable_verdict=body.enable_verdict,
     )
 
     # Build agents
     agent_a = RelayAgent(
         name=get_display_name(body.model_a),
         model=body.model_a,
-        temperature=body.temperature,
+        temperature=body.temperature_a,
         max_tokens=body.max_tokens,
     )
     agent_b = RelayAgent(
         name=get_display_name(body.model_b),
         model=body.model_b,
-        temperature=body.temperature,
+        temperature=body.temperature_b,
         max_tokens=body.max_tokens,
     )
 
     # Launch relay as background task (doesn't block the response)
-    asyncio.create_task(
+    cancel_event = asyncio.Event()
+    task = asyncio.create_task(
         run_relay(
             match_id=match_id,
             agent_a=agent_a,
@@ -140,8 +162,18 @@ async def start_relay(body: RelayStartRequest, request: Request):
             hub=hub,
             db=db,
             turn_delay_seconds=body.turn_delay_seconds,
+            cancel_event=cancel_event,
+            preset=body.preset,
+            judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+            enable_scoring=body.enable_scoring,
+            enable_verdict=body.enable_verdict,
         )
     )
+    _running_relays[match_id] = (task, cancel_event)
+
+    def _cleanup_task(t: asyncio.Task):
+        _running_relays.pop(match_id, None)
+    task.add_done_callback(_cleanup_task)
 
     logger.info(
         "Relay started: %s — %s vs %s, %d rounds",
@@ -155,6 +187,23 @@ async def start_relay(body: RelayStartRequest, request: Request):
         rounds=body.rounds,
         status="running",
     )
+
+
+@router.post("/{match_id}/stop")
+async def stop_relay(match_id: str, request: Request):
+    """Stop a running experiment. Sets cancel flag checked between rounds."""
+    entry = _running_relays.get(match_id)
+    if not entry:
+        # Check if it exists but already finished
+        db = _get_db(request)
+        exp = await db.get_experiment(match_id)
+        if not exp:
+            raise HTTPException(404, "Experiment not found")
+        raise HTTPException(409, f"Experiment is not running (status: {exp['status']})")
+
+    _task, cancel_event = entry
+    cancel_event.set()
+    return {"match_id": match_id, "status": "stopping"}
 
 
 @router.get("/stream")
@@ -177,6 +226,9 @@ async def relay_stream(
         };
     """
     hub = _get_hub(request)
+    # Support selective replay: browser sends Last-Event-ID header on reconnect
+    raw_last_id = request.headers.get("last-event-id")
+    last_event_id: int | None = int(raw_last_id) if raw_last_id and raw_last_id.isdigit() else None
 
     async def generate_with_keepalive():
         """Stream events with periodic keepalive comments.
@@ -193,6 +245,7 @@ async def relay_stream(
                 async for evt in hub.subscribe(
                     match_id=match_id,
                     include_history=include_history,
+                    last_event_id=last_event_id,
                 ):
                     await q.put(evt)
             except Exception:
@@ -207,7 +260,7 @@ async def relay_stream(
                     event = await asyncio.wait_for(q.get(), timeout=KEEPALIVE_INTERVAL)
                     if event is None:
                         break  # Subscription ended
-                    yield f"data: {event.to_sse_data()}\n\n"
+                    yield f"id: {event.event_id}\ndata: {event.to_sse_data()}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         except asyncio.CancelledError:
@@ -277,12 +330,110 @@ async def check_model_status():
     for name, model in MODEL_REGISTRY.items():
         provider = get_provider(model)
         env_var = provider_keys.get(provider)
-        available = bool(os.environ.get(env_var, "")) if env_var else False
+        key_val = os.environ.get(env_var, "") if env_var else ""
+        available = bool(key_val)
+        # C6: Show first4...last4 of the loaded key so the user can verify it
+        key_preview: str | None = None
+        if key_val:
+            key_preview = f"{key_val[:4]}...{key_val[-4:]}" if len(key_val) >= 8 else "****"
         results.append({
             "name": name,
             "model": model,
             "provider": provider,
             "available": available,
+            "env_var": env_var or "unknown",
+            "key_preview": key_preview,
         })
 
     return {"models": results}
+
+
+@router.get("/env-status")
+async def get_env_status():
+    """Check whether a .env file exists at the project root (C5)."""
+    import os
+    env_path = os.path.join(os.getcwd(), ".env")
+    return {"env_file_found": os.path.isfile(env_path)}
+
+
+@router.post("/models/test/{provider}")
+async def test_provider_connection(provider: str):
+    """Test a provider's API key by making a tiny LLM call.
+
+    Returns {ok: true, latency_ms: N} on success or {ok: false, error: str} on failure.
+    """
+    import time
+    import litellm
+
+    # Find the first model for this provider
+    model_str = None
+    for _name, model in MODEL_REGISTRY.items():
+        if model.startswith(f"{provider}/"):
+            model_str = model
+            break
+    if not model_str:
+        raise HTTPException(404, f"No models found for provider '{provider}'")
+
+    try:
+        start = time.time()
+        await litellm.acompletion(
+            model=model_str,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=1,
+            temperature=0,
+        )
+        latency_ms = round((time.time() - start) * 1000)
+        return {"ok": True, "provider": provider, "latency_ms": latency_ms}
+    except Exception as e:
+        return {"ok": False, "provider": provider, "error": str(e)}
+
+
+# ── API Key Management ──────────────────────────────────────────────────
+
+_ALLOWED_ENV_VARS: frozenset[str] = frozenset({
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "SAMBANOVA_API_KEY",
+    "OPENROUTER_API_KEY",
+    "CEREBRAS_API_KEY",
+})
+
+
+class SetKeyRequest(BaseModel):
+    env_var: str
+    value: str
+
+
+@router.post("/keys")
+async def set_api_key(body: SetKeyRequest):
+    """Write an API key to .env and update os.environ immediately.
+
+    The key takes effect for new LLM calls without restarting the server.
+    Only env vars in the provider allowlist are accepted.
+    """
+    import os
+    from pathlib import Path
+
+    if body.env_var not in _ALLOWED_ENV_VARS:
+        raise HTTPException(400, f"Unknown env var '{body.env_var}'. Must be one of: {sorted(_ALLOWED_ENV_VARS)}")
+    value = body.value.strip()
+    if not value:
+        raise HTTPException(400, "Key value cannot be empty")
+
+    # Write to .env so the key persists after restart
+    env_path = Path(os.getcwd()) / ".env"
+    try:
+        from dotenv import set_key
+        set_key(str(env_path), body.env_var, value, quote_mode="never")
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to write .env: {exc}") from exc
+
+    # Update current process immediately — no restart required
+    os.environ[body.env_var] = value
+
+    preview = f"{value[:4]}...{value[-4:]}" if len(value) >= 8 else "****"
+    return {"ok": True, "env_var": body.env_var, "key_preview": preview}

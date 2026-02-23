@@ -3,77 +3,51 @@
 ## Current Session Status
 **Last Updated:** 2026-02-22
 **Active Agent:** Claude Code
-**Current Goal:** Phase 9 complete — neural UI living background enhancements
-
-## What's Done (Cumulative)
-- **Phases 1–6:** Full backend + frontend — relay engine, Theater, Dictionary, Gallery, Analytics, Arena, Tournament, Settings
-- **Phase 7:** Sci-fi observatory design system — Orbitron/Inter/JetBrains Mono fonts, StarField (tsParticles), Theater reactive canvas, SeedLab stagger animations
-- **Phase 8:** Full neural design system — NoiseOverlay, HudBrackets, BABEL shimmer, neural CSS classes, emoji → geometric symbols across all pages, neural terminal panels
-- **Phase 9:** Living neural network — StarField rewritten to pure canvas (depth layers, mouse parallax, cascade pulses, route-aware tint), ScrambleText, AnimatePresence page transitions, BABEL glitch, synaptic bloom, activity trails, gamma burst events
-- **Encoding fix:** Rewrote all 5 pages via win_write to fix PowerShell UTF-8 double-encoding artifacts
+**Current Goal:** Gemini audit hardening — fix real DB contention and SSE reconnection gaps; correct Gemini's false positives
 
 ## Changes This Session
-- [x] ScrambleText duration bumped 1800ms → 2000ms (~10% slower per user request)
-- [x] Configure.tsx — full rewrite fixing SYMBOL_MAP, geometric symbols (`font-mono`), HTML entities for all non-ASCII
-- [x] Settings.tsx — rewrite fixing garbled `←` and `—` chars
-- [x] Arena.tsx, Gallery.tsx, SeedLab.tsx — rewritten (encoding fix, carried over from previous context)
-- [x] StarField: synaptic bloom (#3) — screen-blend halo on pulse arrival, accumulates, decays ~5.5s
-- [x] StarField: activity trails (#5) — edges record heat=1.0 while pulse in transit, decay ~1.4s, glow thicker+brighter
-- [x] StarField: gamma burst events (#7) — 12-node synchronized fire every 15–40s with expanding ring visual
 
-## Brainstorm Backlog (remaining ideas, not yet implemented)
-These were discussed but not built this session — good candidates for future polish:
-1. **Resting potential / threshold firing** — nodes accumulate charge, auto-fire when threshold crossed
-2. **Directed axon bundles** — grouped parallel edges travelling same direction
-3. **Inhibitory nodes** — ~8% of nodes suppress neighbors on pulse receipt (red-violet tint)
-4. **Breathing mesh** — slow sine-wave pressure ripple through node field every ~8s
-5. **Depth-aware glow halos** — far-layer nodes get softer/larger persistent draw
-6. **Node specialization** — sensory/motor/interneuron color types, mixed-color pulse transmission
-7. **Entropy/noise drift** — node positions drift on Perlin-style noise field over time
+### Gemini Audit Fixes (all 5 backend files modified, uncommitted → now committed)
+- [x] **server/db.py** — Added `asyncio.Lock` (`self._write_lock`); wrapped all 7 write methods (`create_experiment`, `update_experiment_status`, `delete_experiment`, `add_turn`, `upsert_word`, `create_tournament`, `update_tournament_status`, `update_tournament_match`) with `async with self._write_lock:` to prevent interleaved commits from concurrent vocab extraction tasks
+- [x] **server/relay_engine.py** — Added `_log_task_exception` callback helper; attached to both `asyncio.create_task(_extract_and_publish_vocab(...))` calls so silently swallowed background task errors now surface in logs
+- [x] **server/event_hub.py** — Added `event_id: int = 0` field to `SSEEvent` dataclass; added `_next_id` auto-increment counter to `EventHub`; added `last_event_id: int | None = None` param to `subscribe()` with selective history replay (skips events ≤ last_event_id)
+- [x] **server/routers/relay.py** — Reads `Last-Event-ID` request header; emits `id: {event_id}\n` per SSE frame so browsers can reconnect and replay only missed events
+- [x] **server/routers/tournaments.py** — Same Last-Event-ID + `id:` treatment as relay.py
+- [x] **CONTEXT.md** — Updated: added Gemini audit hardening section, write lock and SSE event ID rules in "Don't Forget", updated Last Updated date
+
+### Gemini False Positives (no changes needed — already correct)
+- Finding 2 (zombie experiment): Already handled — `except Exception` at relay_engine.py:318 sets status='failed'; tournament_engine.py:154 also catches relay failures
+- Finding 3 (vocab blocklist O(n)): Already a `frozenset` at vocab_extractor.py:83 — O(1) lookup; all regexes module-level compiled
+
+### Priority/Complexity Review (research only, no code changes)
+- Produced full matrix of all pending tasks (Task 001–005, Configure polish, Settings, comparison view)
+- Recommended Sprint 1: Task 003 (per-participant temperature, 2–3h) + Configure page polish (2–3h)
 
 ## Verification Status
+
 | Check | Status | Notes |
 |-------|--------|-------|
-| ScrambleText duration | DONE | 2000ms default confirmed in source |
-| Configure encoding | DONE | Rewritten with win_write + HTML entities |
-| Settings encoding | DONE | Rewritten with win_write + HTML entities |
-| Bloom / trails / burst | COMMITTED | Not live-tested — requires browser session |
-| Vite prod build | NOT RUN | Run `node .\node_modules\vite\bin\vite.js build` to verify |
+| Python imports | PASSED | `from server.db import Database; from server.event_hub import EventHub; from server.relay_engine import run_relay, _log_task_exception` all import cleanly |
+| pytest | SKIPPED | No `tests/` directory exists in repo yet |
+| DB write lock logic | REVIEWED | Lock initialized in `connect()` (not `__init__`) to avoid "lock used before connect" edge case |
+| SSE id: fields | NOT BROWSER-TESTED | Requires running server + Network tab inspection |
+| Last-Event-ID replay | NOT BROWSER-TESTED | Requires network disconnect/reconnect test during live experiment |
 
-## Next Steps (Priority Order)
-1. [ ] **Settings page polish** — in-app API key configuration (read/write `.env` or env vars), model latency/cost info display, maybe a "test connection" button per provider
-2. [ ] **Configure page polish** — add `turn_delay_seconds` slider (currently hardcoded default), preset tag filtering on SeedLab, show estimated cost/time before launching an experiment
-3. [ ] **Experiment settings** — per-experiment system prompt preview, save/load custom preset configurations, possibly export a preset to YAML
-4. [ ] **Neural background backlog** — pick from brainstorm list above (breathing mesh + depth halos are lowest effort / highest visual impact)
-5. [ ] **Side-by-side comparison view** — compare two past experiments head-to-head (long-deferred Phase 6b)
+## Next Steps
 
-## Git State
-- **Branch:** master
-- **Latest commits:**
-  - `ebcefdd` — `feat(ui): synaptic bloom + edge trails + gamma burst events`
-  - `37eeb58` — `fix(ui): restore encoding + slow scramble to 2000ms`
-  - `3c010b3` — `fix(ui): symbol rendering artifacts + slow down scramble text`
-  - `e059982` — `feat(ui): Phase 9 — living neural network + text scramble + page transitions`
-  - `2ac8ec3` — `feat(ui): Phase 8 — full neural design system across all pages`
+1. [ ] **Sprint 1A — Task 003:** Per-participant temperature settings (2–3h, lowest effort, high value)
+   - Add `temperature_a: float` and `temperature_b: float` columns to experiments table
+   - Expose sliders in Configure page
+   - Pass per-agent temp to litellm calls in relay_engine.py
+2. [ ] **Sprint 1B — Configure page polish:** turn_delay slider (0–5s), preset filtering, cost estimate display (2–3h)
+3. [ ] **Task 002:** Judge model configuration (4–6h) — prerequisite for Task 001
+4. [ ] **Task 001:** Round-by-round scoring with judge model (8–10h) — depends on Task 002
+5. [ ] **Task 005:** Conversation export (CSV/JSON) — low complexity (2–3h), good standalone sprint
+6. [ ] **Browser smoke test** SSE event IDs: open Theater page → Network tab → confirm `id: 1`, `id: 2`, ... per event frame
+7. [ ] **Browser smoke test** Last-Event-ID: disable network mid-experiment, re-enable → confirm only missed turns replay
 
-## Key Files (Phase 8–9)
-| File | What it does |
-|------|-------------|
-| `ui/src/components/common/StarField.tsx` | Pure canvas neural net — depth layers, parallax, cascade pulses, bloom, trails, burst |
-| `ui/src/components/common/ScrambleText.tsx` | ASCII scramble → reveal L→R on mount, 2000ms |
-| `ui/src/components/common/NoiseOverlay.tsx` | CSS grain texture overlay |
-| `ui/src/components/common/HudBrackets.tsx` | Corner bracket decoration for cards |
-| `ui/src/components/common/Layout.tsx` | AnimatePresence transitions + BABEL glitch every 9–22s |
-| `ui/src/App.tsx` | AppInner reads useLocation() → routeTint() → StarField tintColor prop |
-| `ui/src/index.css` | neural-card, neural-row, status-dot, neural-btn, neural-provider, neural-section-label |
-| `ui/src/pages/SeedLab.tsx` | Geometric symbols, ScrambleText h1, HudBrackets |
-| `ui/src/pages/Gallery.tsx` | Terminal log rows with neural-row classes |
-| `ui/src/pages/Arena.tsx` | Neural terminal panel, section labels |
-| `ui/src/pages/Configure.tsx` | SYMBOL_MAP, geometric symbols (font-mono), section labels |
-| `ui/src/pages/Settings.tsx` | Left-stripe neural-provider panels per API provider |
-
-## Key Encoding Rules (CRITICAL — don't repeat the bug)
-- **Never** use PowerShell `Get-Content` + `WriteAllText` to patch UTF-8 files — it double-encodes all multi-byte chars
-- **Always** use `win_write` MCP tool for full file writes
-- **Always** use HTML entities in JSX for non-ASCII: `&larr;` `&mdash;` `&middot;` `&#9671;` `&#10022;` `&#8594;`
-- **Always** use `font-mono` (JetBrains Mono) on spans containing Unicode geometric symbols — Orbitron has no coverage for them
+## Architecture Notes for Next Agent
+- `EventHub` is in-memory only — event IDs reset on server restart. This is intentional (experiments are transient).
+- `_write_lock` is `None` until `db.connect()` is called. Write methods use `# type: ignore[union-attr]` to suppress the Optional type error. If you add new write methods, follow the same pattern.
+- The `subscribe()` `last_event_id` param defaults to `None` for full history replay — existing callers that don't pass it get unchanged behavior.
+- SSE routers parse `Last-Event-ID` header defensively: only used if it's a digit string, otherwise falls back to full replay.

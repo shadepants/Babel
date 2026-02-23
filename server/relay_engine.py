@@ -42,6 +42,14 @@ class RelayEvent:
     ERROR = "relay.error"             # Something went wrong
 
 
+# ── Task Exception Logging ──────────────────────────────────────────────
+
+def _log_task_exception(task: asyncio.Task) -> None:  # type: ignore[type-arg]
+    """Callback for fire-and-forget tasks — surfaces silently swallowed errors."""
+    if not task.cancelled() and task.exception():
+        logger.error("Background task failed: %s", task.exception())
+
+
 # ── Agent Config ────────────────────────────────────────────────────────
 
 @dataclass
@@ -134,9 +142,10 @@ async def _extract_and_publish_vocab(
     hub: EventHub,
     db: Database,
     known_words: set[str],
+    preset: str | None = None,
 ) -> None:
     """Extract vocabulary from a turn, persist to DB, and publish SSE events."""
-    words = extract_vocabulary(content, known_words, speaker, round_num)
+    words = extract_vocabulary(content, known_words, speaker, round_num, preset=preset)
     for word in words:
         await db.upsert_word(
             experiment_id=match_id,
@@ -146,6 +155,7 @@ async def _extract_and_publish_vocab(
             coined_round=round_num,
             category=word.category,
             parent_words=word.parent_words or None,
+            confidence=word.confidence,
         )
         known_words.add(word.word)
 
@@ -179,6 +189,8 @@ async def run_relay(
     hub: EventHub,
     db: Database,
     turn_delay_seconds: float = 2.0,
+    cancel_event: asyncio.Event | None = None,
+    preset: str | None = None,
 ) -> None:
     """Run an AI-to-AI relay conversation.
 
@@ -193,6 +205,23 @@ async def run_relay(
 
     try:
         for round_num in range(1, rounds + 1):
+            # ── Check cancellation ──
+            if cancel_event and cancel_event.is_set():
+                elapsed = time.time() - start_time
+                await db.update_experiment_status(
+                    match_id, "stopped",
+                    rounds_completed=round_num - 1,
+                    elapsed_seconds=round(elapsed, 1),
+                )
+                hub.publish(RelayEvent.MATCH_COMPLETE, {
+                    "match_id": match_id,
+                    "rounds": round_num - 1,
+                    "elapsed_s": round(elapsed, 1),
+                    "stopped": True,
+                })
+                logger.info("Relay %s stopped by user after %d rounds", match_id, round_num - 1)
+                return
+
             # ── Agent A's turn ──
             hub.publish(RelayEvent.THINKING, {
                 "match_id": match_id,
@@ -225,9 +254,11 @@ async def run_relay(
                 "turn_id": turn_id_a,
             })
 
-            asyncio.create_task(_extract_and_publish_vocab(
+            _task_a = asyncio.create_task(_extract_and_publish_vocab(
                 content_a, agent_a.name, round_num, match_id, hub, db, known_words,
+                preset=preset,
             ))
+            _task_a.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Agent B's turn ──
@@ -262,9 +293,11 @@ async def run_relay(
                 "turn_id": turn_id_b,
             })
 
-            asyncio.create_task(_extract_and_publish_vocab(
+            _task_b = asyncio.create_task(_extract_and_publish_vocab(
                 content_b, agent_b.name, round_num, match_id, hub, db, known_words,
+                preset=preset,
             ))
+            _task_b.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
             # ── Round complete ──

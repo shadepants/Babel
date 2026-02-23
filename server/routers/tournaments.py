@@ -39,8 +39,15 @@ _ALLOWED_MODELS: frozenset[str] = frozenset(MODEL_REGISTRY.values())
 # Keep references to active tournament tasks so GC can't collect them mid-run
 _active_tasks: set[asyncio.Task] = set()
 
+# In-memory registry of running tournament tasks and their cancel events
+_running_tournaments: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
+
 # Terminal SSE event types — stream closes after receiving one of these
-_TERMINAL_EVENTS = frozenset({TournamentEvent.COMPLETE, TournamentEvent.ERROR})
+_TERMINAL_EVENTS = frozenset({
+    TournamentEvent.COMPLETE,
+    TournamentEvent.CANCELLED,
+    TournamentEvent.ERROR,
+})
 
 
 # ── Request / Response Models ───────────────────────────────────────────
@@ -123,9 +130,15 @@ async def start_tournament(body: TournamentStartRequest, request: Request):
     )
 
     # Store task reference so GC cannot collect it before it completes
-    task = asyncio.create_task(run_tournament(tournament_id, hub, db))
+    cancel_event = asyncio.Event()
+    task = asyncio.create_task(run_tournament(tournament_id, hub, db, cancel_event))
     _active_tasks.add(task)
-    task.add_done_callback(_active_tasks.discard)
+    _running_tournaments[tournament_id] = (task, cancel_event)
+
+    def _cleanup_tournament(t: asyncio.Task):
+        _active_tasks.discard(t)
+        _running_tournaments.pop(tournament_id, None)
+    task.add_done_callback(_cleanup_tournament)
 
     tournament = await db.get_tournament(tournament_id)
 
@@ -141,6 +154,22 @@ async def start_tournament(body: TournamentStartRequest, request: Request):
         models=body.models,
         status="pending",
     )
+
+
+@router.post("/{tournament_id}/cancel")
+async def cancel_tournament(tournament_id: str, request: Request):
+    """Cancel a running tournament. Stops the current match and skips remaining."""
+    entry = _running_tournaments.get(tournament_id)
+    if not entry:
+        db = _get_db(request)
+        tournament = await db.get_tournament(tournament_id)
+        if not tournament:
+            raise HTTPException(404, "Tournament not found")
+        raise HTTPException(409, f"Tournament is not running (status: {tournament['status']})")
+
+    _task, cancel_event = entry
+    cancel_event.set()
+    return {"tournament_id": tournament_id, "status": "cancelling"}
 
 
 @router.get("/")
@@ -192,6 +221,9 @@ async def tournament_stream(
     so clients don't need to disconnect manually.
     """
     hub = _get_hub(request)
+    # Support selective replay: browser sends Last-Event-ID header on reconnect
+    raw_last_id = request.headers.get("last-event-id")
+    last_event_id: int | None = int(raw_last_id) if raw_last_id and raw_last_id.isdigit() else None
 
     async def generate_with_keepalive():
         q: asyncio.Queue = asyncio.Queue()
@@ -201,6 +233,7 @@ async def tournament_stream(
                 async for evt in hub.subscribe(
                     match_id=tournament_id,
                     include_history=include_history,
+                    last_event_id=last_event_id,
                 ):
                     await q.put(evt)
             except Exception:
@@ -215,7 +248,7 @@ async def tournament_stream(
                     event = await asyncio.wait_for(q.get(), timeout=KEEPALIVE_INTERVAL)
                     if event is None:
                         break
-                    yield f"data: {event.to_sse_data()}\n\n"
+                    yield f"id: {event.event_id}\ndata: {event.to_sse_data()}\n\n"
                     # Self-close on terminal events
                     if event.event_type in _TERMINAL_EVENTS:
                         break

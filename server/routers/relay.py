@@ -37,6 +37,9 @@ router = APIRouter(prefix="/relay", tags=["relay"])
 
 KEEPALIVE_INTERVAL = 15  # seconds
 
+# In-memory registry of running relay tasks and their cancel events
+_running_relays: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
+
 
 # ── Request / Response Models ───────────────────────────────────────────
 
@@ -129,7 +132,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
     )
 
     # Launch relay as background task (doesn't block the response)
-    asyncio.create_task(
+    cancel_event = asyncio.Event()
+    task = asyncio.create_task(
         run_relay(
             match_id=match_id,
             agent_a=agent_a,
@@ -140,8 +144,15 @@ async def start_relay(body: RelayStartRequest, request: Request):
             hub=hub,
             db=db,
             turn_delay_seconds=body.turn_delay_seconds,
+            cancel_event=cancel_event,
+            preset=body.preset,
         )
     )
+    _running_relays[match_id] = (task, cancel_event)
+
+    def _cleanup_task(t: asyncio.Task):
+        _running_relays.pop(match_id, None)
+    task.add_done_callback(_cleanup_task)
 
     logger.info(
         "Relay started: %s — %s vs %s, %d rounds",
@@ -155,6 +166,23 @@ async def start_relay(body: RelayStartRequest, request: Request):
         rounds=body.rounds,
         status="running",
     )
+
+
+@router.post("/{match_id}/stop")
+async def stop_relay(match_id: str, request: Request):
+    """Stop a running experiment. Sets cancel flag checked between rounds."""
+    entry = _running_relays.get(match_id)
+    if not entry:
+        # Check if it exists but already finished
+        db = _get_db(request)
+        exp = await db.get_experiment(match_id)
+        if not exp:
+            raise HTTPException(404, "Experiment not found")
+        raise HTTPException(409, f"Experiment is not running (status: {exp['status']})")
+
+    _task, cancel_event = entry
+    cancel_event.set()
+    return {"match_id": match_id, "status": "stopping"}
 
 
 @router.get("/stream")
@@ -177,6 +205,9 @@ async def relay_stream(
         };
     """
     hub = _get_hub(request)
+    # Support selective replay: browser sends Last-Event-ID header on reconnect
+    raw_last_id = request.headers.get("last-event-id")
+    last_event_id: int | None = int(raw_last_id) if raw_last_id and raw_last_id.isdigit() else None
 
     async def generate_with_keepalive():
         """Stream events with periodic keepalive comments.
@@ -193,6 +224,7 @@ async def relay_stream(
                 async for evt in hub.subscribe(
                     match_id=match_id,
                     include_history=include_history,
+                    last_event_id=last_event_id,
                 ):
                     await q.put(evt)
             except Exception:
@@ -207,7 +239,7 @@ async def relay_stream(
                     event = await asyncio.wait_for(q.get(), timeout=KEEPALIVE_INTERVAL)
                     if event is None:
                         break  # Subscription ended
-                    yield f"data: {event.to_sse_data()}\n\n"
+                    yield f"id: {event.event_id}\ndata: {event.to_sse_data()}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         except asyncio.CancelledError:
@@ -277,12 +309,59 @@ async def check_model_status():
     for name, model in MODEL_REGISTRY.items():
         provider = get_provider(model)
         env_var = provider_keys.get(provider)
-        available = bool(os.environ.get(env_var, "")) if env_var else False
+        key_val = os.environ.get(env_var, "") if env_var else ""
+        available = bool(key_val)
+        # C6: Show first4...last4 of the loaded key so the user can verify it
+        key_preview: str | None = None
+        if key_val:
+            key_preview = f"{key_val[:4]}...{key_val[-4:]}" if len(key_val) >= 8 else "****"
         results.append({
             "name": name,
             "model": model,
             "provider": provider,
             "available": available,
+            "env_var": env_var or "unknown",
+            "key_preview": key_preview,
         })
 
     return {"models": results}
+
+
+@router.get("/env-status")
+async def get_env_status():
+    """Check whether a .env file exists at the project root (C5)."""
+    import os
+    env_path = os.path.join(os.getcwd(), ".env")
+    return {"env_file_found": os.path.isfile(env_path)}
+
+
+@router.post("/models/test/{provider}")
+async def test_provider_connection(provider: str):
+    """Test a provider's API key by making a tiny LLM call.
+
+    Returns {ok: true, latency_ms: N} on success or {ok: false, error: str} on failure.
+    """
+    import time
+    import litellm
+
+    # Find the first model for this provider
+    model_str = None
+    for _name, model in MODEL_REGISTRY.items():
+        if model.startswith(f"{provider}/"):
+            model_str = model
+            break
+    if not model_str:
+        raise HTTPException(404, f"No models found for provider '{provider}'")
+
+    try:
+        start = time.time()
+        await litellm.acompletion(
+            model=model_str,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=1,
+            temperature=0,
+        )
+        latency_ms = round((time.time() - start) * 1000)
+        return {"ok": True, "provider": provider, "latency_ms": latency_ms}
+    except Exception as e:
+        return {"ok": False, "provider": provider, "error": str(e)}

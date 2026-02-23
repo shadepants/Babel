@@ -27,6 +27,7 @@ class SSEEvent:
     payload: dict
     timestamp: float = 0.0
     match_id: str | None = None
+    event_id: int = 0  # assigned by EventHub.publish(); used for Last-Event-ID resumption
 
     def __post_init__(self) -> None:
         if self.timestamp == 0.0:
@@ -55,10 +56,13 @@ class EventHub:
         self._subscribers: list[tuple[asyncio.Queue, str | None]] = []
         self._history: list[SSEEvent] = []
         self._max_history = max_history
+        self._next_id: int = 1  # monotonically increasing SSE event counter
 
     def publish(self, event_type: str, payload: dict) -> None:
         """Broadcast an event to all matching subscribers."""
         event = SSEEvent(event_type=event_type, payload=payload)
+        event.event_id = self._next_id
+        self._next_id += 1
 
         # Keep in history for late-joining clients
         self._history.append(event)
@@ -83,6 +87,7 @@ class EventHub:
         self,
         match_id: str | None = None,
         include_history: bool = True,
+        last_event_id: int | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """Subscribe to events as an async iterator.
 
@@ -92,6 +97,9 @@ class EventHub:
             Only receive events for this match. None = all events.
         include_history:
             Replay recent events before streaming new ones.
+        last_event_id:
+            If provided, only replay history events with event_id > last_event_id.
+            Enables selective replay after a client reconnect (Last-Event-ID header).
         """
         queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=2000)
         sub_entry = (queue, match_id)
@@ -100,8 +108,11 @@ class EventHub:
         try:
             if include_history:
                 for event in self._history:
-                    if match_id is None or event.match_id == match_id:
-                        yield event
+                    if match_id is not None and event.match_id != match_id:
+                        continue
+                    if last_event_id is not None and event.event_id <= last_event_id:
+                        continue
+                    yield event
 
             while True:
                 event = await queue.get()

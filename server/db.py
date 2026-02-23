@@ -4,6 +4,7 @@ Uses aiosqlite for async access with WAL mode for concurrent reads
 while the relay engine writes. All foreign keys are enforced.
 """
 
+import asyncio
 import aiosqlite
 import json
 import math
@@ -12,6 +13,8 @@ from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
 from typing import Any
+
+from server.config import get_display_name
 
 DB_PATH = Path(__file__).resolve().parent.parent / ".babel_data" / "babel.db"
 
@@ -57,7 +60,8 @@ CREATE TABLE IF NOT EXISTS vocabulary (
     coined_round INTEGER,
     category TEXT,
     usage_count INTEGER DEFAULT 1,
-    parent_words TEXT
+    parent_words TEXT,
+    confidence TEXT DEFAULT 'high'
 );
 
 CREATE INDEX IF NOT EXISTS idx_vocabulary_experiment ON vocabulary(experiment_id);
@@ -74,7 +78,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
     config_json TEXT,
     models_json TEXT NOT NULL,
     status TEXT DEFAULT 'pending'
-        CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
     total_matches INTEGER DEFAULT 0,
     completed_matches INTEGER DEFAULT 0,
     created_at TEXT NOT NULL
@@ -88,7 +92,7 @@ CREATE TABLE IF NOT EXISTS tournament_matches (
     model_b TEXT NOT NULL,
     match_order INTEGER NOT NULL,
     status TEXT DEFAULT 'pending'
-        CHECK(status IN ('pending', 'running', 'completed', 'failed'))
+        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_tourn_matches_tid
@@ -104,10 +108,12 @@ class Database:
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
         self._db: aiosqlite.Connection | None = None
+        self._write_lock: asyncio.Lock | None = None
 
     async def connect(self) -> None:
         """Open the database connection and initialize schema."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_lock = asyncio.Lock()  # serializes concurrent write tasks
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
 
@@ -118,6 +124,16 @@ class Database:
 
         await self._db.executescript(_SCHEMA)
         await self._db.commit()
+
+        # ── Migrations (idempotent ALTER TABLE additions) ──
+        # SQLite ignores IF NOT EXISTS on columns, so we catch the error instead.
+        try:
+            await self._db.execute(
+                "ALTER TABLE vocabulary ADD COLUMN confidence TEXT DEFAULT 'high'"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -148,15 +164,16 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         config_json = json.dumps(config) if config else None
 
-        await self.db.execute(
-            """INSERT INTO experiments
-               (id, created_at, model_a, model_b, preset, seed,
-                system_prompt, rounds_planned, config_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (experiment_id, now, model_a, model_b, preset, seed,
-             system_prompt, rounds_planned, config_json),
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO experiments
+                   (id, created_at, model_a, model_b, preset, seed,
+                    system_prompt, rounds_planned, config_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (experiment_id, now, model_a, model_b, preset, seed,
+                 system_prompt, rounds_planned, config_json),
+            )
+            await self.db.commit()
         return experiment_id
 
     async def get_experiment(self, experiment_id: str) -> dict | None:
@@ -202,11 +219,18 @@ class Database:
             params.append(elapsed_seconds)
         params.append(experiment_id)
 
-        await self.db.execute(
-            f"UPDATE experiments SET {', '.join(parts)} WHERE id = ?",
-            params,
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                f"UPDATE experiments SET {', '.join(parts)} WHERE id = ?",
+                params,
+            )
+            await self.db.commit()
+
+    async def delete_experiment(self, experiment_id: str) -> None:
+        """Delete an experiment and all associated data (cascades via FK)."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+            await self.db.commit()
 
     # ── Turns ────────────────────────────────────────────────────────
 
@@ -222,15 +246,16 @@ class Database:
     ) -> int:
         """Insert a conversation turn. Returns the turn ID."""
         now = datetime.now(timezone.utc).isoformat()
-        cursor = await self.db.execute(
-            """INSERT INTO turns
-               (experiment_id, round, speaker, model, content,
-                latency_seconds, token_count, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (experiment_id, round_num, speaker, model, content,
-             latency_seconds, token_count, now),
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            cursor = await self.db.execute(
+                """INSERT INTO turns
+                   (experiment_id, round, speaker, model, content,
+                    latency_seconds, token_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (experiment_id, round_num, speaker, model, content,
+                 latency_seconds, token_count, now),
+            )
+            await self.db.commit()
         return cursor.lastrowid
 
     async def get_turns(self, experiment_id: str) -> list[dict]:
@@ -252,24 +277,34 @@ class Database:
         coined_round: int | None = None,
         category: str | None = None,
         parent_words: list[str] | None = None,
+        confidence: str = "high",
     ) -> None:
         """Insert a vocabulary word or bump usage_count if it already exists.
 
         Uses SQLite's ON CONFLICT upsert for atomicity — a single query
         handles both creation and re-encounter counting.
+        On re-encounter, updates meaning if the new one is longer/richer.
         """
         parents_json = json.dumps(parent_words) if parent_words else None
-        await self.db.execute(
-            """INSERT INTO vocabulary
-               (experiment_id, word, meaning, coined_by, coined_round,
-                category, parent_words)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(experiment_id, word)
-               DO UPDATE SET usage_count = usage_count + 1""",
-            (experiment_id, word, meaning, coined_by, coined_round,
-             category, parents_json),
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO vocabulary
+                   (experiment_id, word, meaning, coined_by, coined_round,
+                    category, parent_words, confidence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(experiment_id, word)
+                   DO UPDATE SET
+                       usage_count = usage_count + 1,
+                       meaning = CASE
+                           WHEN excluded.meaning IS NOT NULL
+                                AND (meaning IS NULL OR length(excluded.meaning) > length(meaning))
+                           THEN excluded.meaning
+                           ELSE meaning
+                       END""",
+                (experiment_id, word, meaning, coined_by, coined_round,
+                 category, parents_json, confidence),
+            )
+            await self.db.commit()
 
     async def get_vocabulary(self, experiment_id: str) -> list[dict]:
         """Get all vocabulary for an experiment, ordered by round coined."""
@@ -298,8 +333,9 @@ class Database:
         exp = await self.get_experiment(experiment_id)
         if not exp:
             return {"turns_by_round": [], "vocab_by_round": [], "totals": {}}
-        model_a_name = exp["model_a"]
-        model_b_name = exp["model_b"]
+        # turns.speaker stores display names; experiments store litellm strings
+        model_a_name = get_display_name(exp["model_a"])
+        model_b_name = get_display_name(exp["model_b"])
 
         # Per-turn data ordered by round
         cursor = await self.db.execute(
@@ -396,29 +432,30 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         pairings = list(combinations(models, 2))
 
-        await self.db.execute(
-            """INSERT INTO tournaments
-               (id, name, preset, seed, system_prompt, rounds,
-                config_json, models_json, total_matches, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                tournament_id, name, preset, seed, system_prompt, rounds,
-                json.dumps(config) if config else None,
-                json.dumps(models),
-                len(pairings),
-                now,
-            ),
-        )
-
-        for order, (model_a, model_b) in enumerate(pairings, start=1):
+        async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute(
-                """INSERT INTO tournament_matches
-                   (tournament_id, model_a, model_b, match_order)
-                   VALUES (?, ?, ?, ?)""",
-                (tournament_id, model_a, model_b, order),
+                """INSERT INTO tournaments
+                   (id, name, preset, seed, system_prompt, rounds,
+                    config_json, models_json, total_matches, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    tournament_id, name, preset, seed, system_prompt, rounds,
+                    json.dumps(config) if config else None,
+                    json.dumps(models),
+                    len(pairings),
+                    now,
+                ),
             )
 
-        await self.db.commit()
+            for order, (model_a, model_b) in enumerate(pairings, start=1):
+                await self.db.execute(
+                    """INSERT INTO tournament_matches
+                       (tournament_id, model_a, model_b, match_order)
+                       VALUES (?, ?, ?, ?)""",
+                    (tournament_id, model_a, model_b, order),
+                )
+
+            await self.db.commit()
         return tournament_id
 
     async def get_tournament(self, tournament_id: str) -> dict | None:
@@ -468,10 +505,11 @@ class Database:
             parts.append("completed_matches = ?")
             params.append(completed_matches)
         params.append(tournament_id)
-        await self.db.execute(
-            f"UPDATE tournaments SET {', '.join(parts)} WHERE id = ?", params,
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                f"UPDATE tournaments SET {', '.join(parts)} WHERE id = ?", params,
+            )
+            await self.db.commit()
 
     async def update_tournament_match(
         self,
@@ -486,11 +524,12 @@ class Database:
             parts.append("experiment_id = ?")
             params.append(experiment_id)
         params.append(match_id)
-        await self.db.execute(
-            f"UPDATE tournament_matches SET {', '.join(parts)} WHERE id = ?",
-            params,
-        )
-        await self.db.commit()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                f"UPDATE tournament_matches SET {', '.join(parts)} WHERE id = ?",
+                params,
+            )
+            await self.db.commit()
 
     async def get_tournament_leaderboard(self, tournament_id: str) -> list[dict]:
         """Aggregate per-model stats across all completed tournament matches.

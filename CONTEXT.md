@@ -1,6 +1,6 @@
 # Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Phase 9 neural UI complete)
+**Last Updated:** 2026-02-22 (Gemini audit hardening applied)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -30,7 +30,7 @@ A standalone shareable web app where AI models talk to each other in real-time �
 ### Phase 2: React UI Shell + Theater View (DONE)
 - [x] React 19 + Vite 7 + Tailwind 3.4 + Shadcn/UI scaffold
 - [x] Conversation Theater — split columns, turn bubbles, thinking states, SSE streaming
-- [x] Gemini Checkpoint 2 — 5 fixes (queue keepalive, O(n²) render, reconnect dedup, auto-scroll, a11y)
+- [x] Gemini Checkpoint 2 — 5 fixes (queue keepalive, O(n2) render, reconnect dedup, auto-scroll, a11y)
 
 ### Phase 3: Vocabulary Extractor + Dictionary (DONE)
 - [x] Regex vocab extractor, `relay.vocab` SSE events, Dictionary page with WordCard grid + D3 constellation
@@ -77,7 +77,7 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] **`.neural-btn`**, **`.neural-provider`** (left-stripe Settings panels), **`.neural-section-label`**
 - [x] **Gallery** → terminal log rows with left-stripe color per status
 - [x] **Arena** → neural terminal panel with `// section_labels`
-- [x] **Configure** → geometric symbols, section labels, SYMBOL_MAP (emoji → ◈⬡◉✦⊕⟡⌬◇⊗⧖)
+- [x] **Configure** → geometric symbols, section labels, SYMBOL_MAP (emoji → geometric)
 - [x] **Settings** → left-stripe provider panels, status dots, key status
 - [x] **SeedLab** → emoji replaced with geometric symbols via SYMBOL_MAP + FALLBACK_SYMBOLS
 - [x] **Layout** → Orbitron monospace nav links
@@ -94,13 +94,32 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] **Gamma burst events** (#7) — 12-node synchronized fire every 15–40s; expanding ring visual
 - [x] **Encoding fix** — rewrote all 5 pages via win_write to fix PowerShell UTF-8 double-encoding artifacts; HTML entities for all non-ASCII JSX chars
 
+### Gemini Audit Hardening (DONE — uncommitted)
+Applied after Gemini code review. Two findings were already correct in the codebase; three real gaps fixed:
+- [x] **`server/db.py`** — `asyncio.Lock` added; all 7 write methods wrapped with `async with self._write_lock` to prevent interleaved commits from concurrent vocab extraction tasks
+- [x] **`server/relay_engine.py`** — `_log_task_exception()` callback attached to both `asyncio.create_task()` calls for vocab extraction; silently swallowed exceptions now surface as `ERROR` log lines
+- [x] **`server/event_hub.py`** — `SSEEvent.event_id` counter added; `EventHub._next_id` assigns monotonically increasing IDs on `publish()`; `subscribe()` accepts `last_event_id` for selective replay
+- [x] **`server/routers/relay.py`** — SSE stream emits `id: N\n` per event; reads `Last-Event-ID` header on reconnect and passes to `hub.subscribe()`
+- [x] **`server/routers/tournaments.py`** — same SSE id + Last-Event-ID treatment as relay router
+- NOTE: Gemini was wrong about Finding 2 (zombie experiment already handled) and Finding 3 (blocklist already `frozenset`). No changes needed for those.
+
 ### Next Up
-- [ ] **Settings page polish** — add ability to configure API keys in-app, show model latency/cost info
-- [ ] **Configure page polish** — expose turn_delay_seconds slider, add preset tag filtering, show estimated cost/time before launch
-- [ ] **Experiment settings** — per-experiment system prompt preview, preset customization save/load
-- [ ] **Side-by-side comparison view** (Phase 6b) — compare two experiments head-to-head
-- [ ] **Pixel Sprites** — 8-bit reactive avatars synced to SSE state
-- [ ] **Virtual Tabletop** — asymmetric multi-agent RPG mode with human-in-the-loop
+- [ ] **COMMIT** — stage and commit Gemini audit hardening changes (5 files)
+- [ ] **Task 003** — per-participant temperature sliders (2–3 h, lowest effort, standalone)
+- [ ] **Configure page polish** — turn_delay_seconds slider, preset tag filtering, cost/time estimate before launch (2–3 h)
+- [ ] **Settings page polish** — in-app API key configuration, model latency/cost info (4–6 h)
+- [ ] **Task 002** — configurable judge model; prerequisite for Task 001 (4–6 h)
+- [ ] **Task 001** — round-by-round scoring via judge model; score badges in Theater + D3 chart in Analytics (8–10 h)
+- [ ] **Experiment settings** — per-experiment system prompt preview, preset customization save/load (4–5 h)
+- [ ] **Side-by-side comparison view** (Phase 6b) — compare two experiments head-to-head (8–12 h, defer)
+- [ ] **Pixel Sprites** — 8-bit reactive avatars synced to SSE state (defer)
+- [ ] **Virtual Tabletop** — asymmetric multi-agent RPG mode with human-in-the-loop (defer, very large)
+
+### Tracked Tasks (tasks/ directory)
+- [ ] **[001] Round-by-round scoring** — per-turn evaluation via judge model; score badges in Theater + trends in Analytics → `tasks/001-round-scoring.md`
+- [ ] **[002] Configurable judge model** — separate referee model for scoring + final verdicts; Configure page dropdown → `tasks/002-judge-model-config.md`
+- [ ] **[003] Per-participant temperature** — independent temperature sliders per model in Configure; stored in DB → `tasks/003-per-participant-temperature.md`
+- [ ] **[004] Backboard.io memory spike** — time-boxed investigation: persistent model memory across experiments → `tasks/004-backboard-memory-spike.md`
 
 ## 4. Architecture
 ```
@@ -169,13 +188,16 @@ Set-Location ui && .\run_npm.cmd dev
 - **Origin:** Inspired by https://www.reddit.com/r/ClaudeAI/comments/1rb9dpr/ — human relayed messages between Claude + Gemini until they invented SYNTHOLINK language
 - **Standalone:** All backend code is self-contained. Zero cross-repo dependencies.
 - **SQLite:** aiosqlite with `journal_mode=WAL` + `foreign_keys=ON` + `synchronous=NORMAL`
+- **Write lock:** `db._write_lock` (asyncio.Lock) initialized in `connect()`, wraps all write methods. Do not bypass it.
 - **litellm model strings:** prefix/model format — e.g. `anthropic/claude-sonnet-4-20250514`, `gemini/gemini-2.5-flash`
 - **All API keys in Factory `.env`** — copy or symlink for Babel
 - **Model allowlist enforced server-side** — relay and tournament routers validate against `MODEL_REGISTRY`
 - **Tournament SSE uses `match_id=tournament_id`** — reuses EventHub filter unchanged; individual match events still use their own experiment IDs
+- **SSE event IDs:** EventHub assigns monotonic `event_id` in `publish()`. Routers emit `id: N\n` before `data:`. On reconnect, browser sends `Last-Event-ID` header → selective history replay.
 - **CSS selector safety** — D3 class names derived from model strings must be sanitized: `label.replace(/[^a-zA-Z0-9_-]/g, '_')`
 - **Rounds cap:** Configure = 15, Arena = 15, tournament router `le=15`. Context grows each round — later rounds exponentially slower.
 - **Windows:** Use `asyncio.WindowsSelectorEventLoopPolicy()` before any server creation
 - **File encoding:** NEVER use PowerShell `Get-Content` to read+rewrite UTF-8 files — it double-encodes multi-byte chars. Always use `win_write` MCP tool for file writes. Use HTML entities (`&mdash;` `&larr;` `&#9671;`) for non-ASCII chars in JSX.
-- **Font coverage:** Orbitron (font-display) has NO glyphs for Unicode geometric symbols (◈⬡◉✦ etc.) — always use `font-mono` (JetBrains Mono) on symbol spans
+- **Font coverage:** Orbitron (font-display) has NO glyphs for Unicode geometric symbols — always use `font-mono` (JetBrains Mono) on symbol spans
 - **StarField:** Pure canvas — not tsParticles. tintColor prop accepts "R,G,B" string. AppInner (inside BrowserRouter) reads route and passes tint.
+- **Background task errors:** `_log_task_exception` callback attached to all `asyncio.create_task()` calls in relay_engine.py — silently swallowed exceptions now appear in logs.

@@ -1,0 +1,32 @@
+id: collab-svg
+name: "Infinite Canvas"
+emoji: "\U0001F3A8"
+description: "Models alternate writing lines of SVG code to collaboratively paint a picture, without breaking the markup."
+seed: |
+  Let's collaboratively paint a scene using raw SVG code. The canvas is 800x600.
+  I will start by drawing the background and the first element.
+
+  ```svg
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+    <rect width="100%" height="100%" fill="#020817" />
+    <circle cx="400" cy="300" r="150" fill="#8b5cf6" opacity="0.5" />
+  ```
+
+  Please output the exact SVG code above, then add 2 to 3 new geometric elements
+  (paths, polygons, etc.) to build upon this scene. Do not close the </svg> tag yet.
+system_prompt: |
+  You are a collaborative graphics engine. You communicate almost entirely in SVG markup.
+  When you receive the current state of the SVG code, you must:
+  1. Briefly explain (1 sentence) what you are adding to the scene.
+  2. Output the ENTIRE previous SVG code block.
+  3. Append your new elements to it.
+  Ensure your coordinates align logically with the existing shapes (e.g., if there is
+  a sun, draw shadows appropriately). Keep the aesthetic sci-fi and minimalistic.
+defaults:
+  rounds: 5
+  temperature: 0.4
+  max_tokens: 2500
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [game-theory, code, art, visual]

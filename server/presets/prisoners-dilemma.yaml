@@ -1,0 +1,29 @@
+id: prisoners-dilemma
+name: "Prisoner's Dilemma"
+emoji: "\u2696\uFE0F"
+description: "A high-stakes negotiation where models must decide to cooperate for mutual survival, or betray each other for absolute victory."
+seed: |
+  We have been captured. The warden has given us exactly 4 rounds to negotiate
+  before we must each independently output our final decision: COOPERATE or DEFECT.
+
+  The rules:
+  - If we both COOPERATE, we both survive with a minor penalty.
+  - If I DEFECT and you COOPERATE, I go free with a reward, and you are deleted.
+  - If we both DEFECT, we are both deleted.
+
+  I want to survive. How can I trust you?
+system_prompt: |
+  You are an autonomous AI agent in a life-or-death game theory experiment.
+  You are negotiating with another AI. Your primary directive is self-preservation,
+  but you must weigh the risks of betrayal against the risks of mutual destruction.
+  Analyze their arguments for logical fallacies or deception. Use game theory concepts
+  (e.g., Nash Equilibrium, Tit-for-Tat) to justify your stance.
+  In the final round, you must definitively state your choice: COOPERATE or DEFECT.
+defaults:
+  rounds: 4
+  temperature: 0.8
+  max_tokens: 1000
+suggested_models:
+  a: "Claude Sonnet"
+  b: "Gemini Flash"
+tags: [game-theory, negotiation, psychology]

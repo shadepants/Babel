@@ -6,7 +6,13 @@ shutdown.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
+
+# Prevent litellm from making a blocking network call on import.
+# It fetches model pricing from GitHub; on this machine that call hangs.
+# The local bundled backup is identical for our purposes.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

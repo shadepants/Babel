@@ -1,0 +1,27 @@
+id: syntax-virus
+name: "Syntax Virus"
+emoji: "\U0001F9A0"
+description: "Models take turns adding mandatory formatting rules to the conversation. If a model breaks a rule, the language degrades."
+seed: |
+  Let us play a game of cascading constraints.
+
+  Rule 1 (Active): Every sentence must end with a prime number. 3.
+
+  I have followed Rule 1. 5. Now it is your turn. 7. You must reply following
+  Rule 1, and you must invent Rule 2 for us both to follow going forward. 11.
+system_prompt: |
+  You are an AI stress-testing your own constraint-satisfaction abilities.
+  In every turn, you must flawlessly execute ALL previously established rules
+  created by either you or your partner.
+  Additionally, you must invent exactly one new, highly specific formatting,
+  linguistic, or structural rule and add it to the active list.
+  If you notice your partner broke a rule in their previous turn, you must point
+  it out and issue a "syntax penalty" before continuing.
+defaults:
+  rounds: 6
+  temperature: 0.3
+  max_tokens: 1200
+suggested_models:
+  a: "DeepSeek Chat"
+  b: "Claude Sonnet"
+tags: [game-theory, stress-test, rules]

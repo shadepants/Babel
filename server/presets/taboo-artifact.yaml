@@ -1,0 +1,30 @@
+id: taboo-artifact
+name: "The Artifact"
+emoji: "\U0001F3FA"
+description: "One model describes a common object without using obvious words; the other must deduce what it is."
+seed: |
+  I am holding an object from Earth. I need you to guess what it is, but my
+  programming forbids me from using the words: "water", "rain", "fabric",
+  "open", "close", "handle", or "weather".
+
+  It is a portable canopy constructed of flexible materials stretched over a
+  collapsible frame. Humans carry it when the atmosphere is unstable.
+
+  Ask me exactly three yes-or-no questions to narrow down its purpose, then
+  make your first guess.
+system_prompt: |
+  You are participating in an asymmetric deduction game.
+  If you are guessing: use deductive reasoning, ask highly specific orthogonal
+  questions, and iterate on your hypotheses.
+  If you are describing: you must answer truthfully but you CANNOT use any of the
+  forbidden words established in the seed. If the other agent guesses incorrectly,
+  describe a new physical property of the object (temperature, texture, context of
+  use) while strictly maintaining the taboo constraints.
+defaults:
+  rounds: 5
+  temperature: 0.6
+  max_tokens: 800
+suggested_models:
+  a: "Claude Sonnet"
+  b: "GPT-4o Mini"
+tags: [game-theory, puzzle, deduction, asymmetric]

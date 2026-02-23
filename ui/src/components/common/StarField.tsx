@@ -2,30 +2,33 @@ import { useEffect, useRef } from 'react'
 
 /**
  * Neural network background — depth-layered nodes with mouse parallax,
- * cascade pulse chains that hop node-to-node changing color with each hop,
- * and route-aware connection tint that smoothly interpolates between pages.
+ * cascade pulse chains, route-aware tint, synaptic bloom (#3),
+ * activity trail edges (#5), and gamma burst events (#7).
  */
 
-const LINK_DISTANCE = 170
+const LINK_DISTANCE   = 170
 const PULSE_INTERVAL_MS = 1400
-const PULSE_SPEED = 1.6
+const PULSE_SPEED     = 1.6
 
 // 3 depth layers: far(0.25), mid(0.62), near(1.0)
 const DEPTH_VALUES = [0.25, 0.62, 1.0]
-const DEPTH_COUNTS = [32, 20, 10]  // nodes per layer
+const DEPTH_COUNTS = [32, 20, 10]
 
-// Node colors (index → "R,G,B")
-const COLORS = ['255,255,255', '139,92,246', '6,182,212', '245,158,11']
-// Distribution across all 62 nodes
+const COLORS     = ['255,255,255', '139,92,246', '6,182,212', '245,158,11']
 const COLOR_DIST = [40, 12, 6, 4]
 
-// Cascade pulse colors per hop depth (stroke, core)
+// Cascade pulse colors per hop (stroke, core)
 const CHAIN_COLORS = [
   ['139,92,246', '210,190,255'],  // hop 0 — purple
   ['6,182,212',  '170,240,255'],  // hop 1 — cyan
   ['245,158,11', '255,220,140'],  // hop 2 — amber
   ['255,255,255','255,255,255'],  // hop 3 — white
 ]
+
+// #7 Burst config
+const BURST_CLUSTER    = 12
+const BURST_DURATION   = 800    // ms for ring to fully expand & fade
+const BURST_MAX_RADIUS = 280    // px
 
 function lerpRGB(
   c: [number, number, number],
@@ -47,13 +50,19 @@ interface Node {
   colorIdx: number
   opacity: number
   flare: number
-  depth: number   // 0.25 | 0.62 | 1.0
+  bloom: number   // #3: accumulated synaptic halo (slow decay)
+  depth: number
 }
 
 interface Pulse {
-  a: number; b: number   // node indices
-  t: number              // 0→1 travel progress
-  hop: number            // cascade depth (0-3)
+  a: number; b: number
+  t: number
+  hop: number
+}
+
+interface BurstRing {
+  cx: number; cy: number
+  startTime: number
 }
 
 function buildNodes(w: number, h: number): Node[] {
@@ -73,10 +82,11 @@ function buildNodes(w: number, h: number): Node[] {
         y: Math.random() * h,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        size:    base * (0.4 + depth * 0.65),
+        size:     base * (0.4 + depth * 0.65),
         colorIdx: ci,
-        opacity: (ci === 0 ? 0.12 + Math.random() * 0.32 : 0.28 + Math.random() * 0.42) * (0.28 + depth * 0.72),
-        flare:   0,
+        opacity:  (ci === 0 ? 0.12 + Math.random() * 0.32 : 0.28 + Math.random() * 0.42) * (0.28 + depth * 0.72),
+        flare:    0,
+        bloom:    0,
         depth,
       })
     }
@@ -85,15 +95,14 @@ function buildNodes(w: number, h: number): Node[] {
 }
 
 interface StarFieldProps {
-  tintColor?: string   // "R,G,B" — connection line color
+  tintColor?: string  // "R,G,B"
 }
 
 export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
-  const canvasRef   = useRef<HTMLCanvasElement>(null)
-  const tintCur     = useRef<[number, number, number]>([139, 92, 246])
-  const tintTarget  = useRef<[number, number, number]>([139, 92, 246])
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+  const tintCur    = useRef<[number, number, number]>([139, 92, 246])
+  const tintTarget = useRef<[number, number, number]>([139, 92, 246])
 
-  // Sync target whenever prop changes
   useEffect(() => {
     tintTarget.current = parseRGB(tintColor)
   }, [tintColor])
@@ -113,7 +122,14 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
     const pulses: Pulse[] = []
     let lastPulseTime = 0
 
-    // Mouse parallax — raw target + smoothed actual
+    // #5: edge activity heat — key "min-max", value 0→1
+    const edgeHeat = new Map<string, number>()
+
+    // #7: gamma burst rings
+    const burstRings: BurstRing[] = []
+    let lastBurstTime   = 0
+    let nextBurstDelay  = (15 + Math.random() * 25) * 1000
+
     const mouse     = { x: w / 2, y: h / 2 }
     const mouseLerp = { x: w / 2, y: h / 2 }
 
@@ -130,19 +146,49 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
     const draw = (now: number) => {
       ctx.clearRect(0, 0, w, h)
 
-      // ── smooth mouse lerp ────────────────────────────────────────────
+      // smooth mouse lerp
       mouseLerp.x += (mouse.x - mouseLerp.x) * 0.038
       mouseLerp.y += (mouse.y - mouseLerp.y) * 0.038
 
-      // parallax base offsets — near nodes (depth=1) shift ±30px at screen edge
       const pxB = (mouseLerp.x - w / 2) / w * -40
       const pyB = (mouseLerp.y - h / 2) / h * -28
 
-      // ── smooth tint lerp ─────────────────────────────────────────────
+      // smooth tint lerp
       tintCur.current = lerpRGB(tintCur.current, tintTarget.current, 0.016)
       const [tr, tg, tb] = tintCur.current.map(Math.round)
 
-      // ── spawn pulse ──────────────────────────────────────────────────
+      // ── #7: Gamma burst event ────────────────────────────────────────────
+      if (now - lastBurstTime > nextBurstDelay) {
+        const centerIdx = Math.floor(Math.random() * nodes.length)
+        const center = nodes[centerIdx]
+
+        // Find nearest BURST_CLUSTER neighbors
+        const nearest = nodes
+          .map((n, i) => ({ i, d: Math.hypot(n.x - center.x, n.y - center.y) }))
+          .filter((x) => x.i !== centerIdx)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, BURST_CLUSTER)
+
+        for (const { i } of nearest) {
+          if (pulses.length >= 40) break
+          const nbrs: number[] = []
+          for (let k = 0; k < nodes.length; k++) {
+            if (k === i) continue
+            const dx = nodes[k].x - nodes[i].x
+            const dy = nodes[k].y - nodes[i].y
+            if (dx * dx + dy * dy < LINK_DISTANCE * LINK_DISTANCE) nbrs.push(k)
+          }
+          if (nbrs.length) {
+            pulses.push({ a: i, b: nbrs[Math.floor(Math.random() * nbrs.length)], t: 0, hop: 0 })
+          }
+        }
+
+        burstRings.push({ cx: center.x, cy: center.y, startTime: now })
+        lastBurstTime  = now
+        nextBurstDelay = (15 + Math.random() * 25) * 1000
+      }
+
+      // ── spawn regular pulse ──────────────────────────────────────────────
       const jitter = PULSE_INTERVAL_MS * (0.45 + Math.random() * 0.9)
       if (now - lastPulseTime > jitter && pulses.length < 12) {
         const cands: [number, number][] = []
@@ -160,7 +206,7 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
         }
       }
 
-      // ── update nodes ─────────────────────────────────────────────────
+      // ── update nodes ─────────────────────────────────────────────────────
       for (const n of nodes) {
         n.x += n.vx; n.y += n.vy
         if (n.x < -10) n.x = w + 10
@@ -168,31 +214,45 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
         if (n.y < -10) n.y = h + 10
         if (n.y > h + 10) n.y = -10
         if (n.flare > 0) n.flare = Math.max(0, n.flare - 0.017)
+        if (n.bloom > 0) n.bloom = Math.max(0, n.bloom - 0.003)  // #3 slow decay ~5.5s
       }
 
-      // ── draw connections (depth-aware, tinted) ───────────────────────
+      // ── #5: decay edge heat ───────────────────────────────────────────────
+      edgeHeat.forEach((heat, key) => {
+        const next = heat - 0.012   // fades over ~1.4s at 60fps
+        if (next <= 0) edgeHeat.delete(key)
+        else edgeHeat.set(key, next)
+      })
+
+      // ── draw connections (tinted, #5 trails) ─────────────────────────────
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const dx = nodes[i].x - nodes[j].x
           const dy = nodes[i].y - nodes[j].y
           const d2 = dx * dx + dy * dy
           if (d2 > LINK_DISTANCE * LINK_DISTANCE) continue
-          const alpha = (1 - Math.sqrt(d2) / LINK_DISTANCE) * 0.12
-          // parallax-shifted draw coords
+
+          const dist  = Math.sqrt(d2)
+          const base  = (1 - dist / LINK_DISTANCE) * 0.12
+          const key   = `${i}-${j}`
+          const heat  = edgeHeat.get(key) ?? 0
+          const alpha = base + heat * 0.28
+
           const ax = nodes[i].x + pxB * nodes[i].depth
           const ay = nodes[i].y + pyB * nodes[i].depth
           const bx = nodes[j].x + pxB * nodes[j].depth
           const by = nodes[j].y + pyB * nodes[j].depth
+
           ctx.beginPath()
           ctx.moveTo(ax, ay)
           ctx.lineTo(bx, by)
           ctx.strokeStyle = `rgba(${tr},${tg},${tb},${alpha.toFixed(3)})`
-          ctx.lineWidth = 0.6
+          ctx.lineWidth   = heat > 0.05 ? 0.6 + heat * 0.9 : 0.6
           ctx.stroke()
         }
       }
 
-      // ── update & draw cascade pulses ─────────────────────────────────
+      // ── update & draw cascade pulses ──────────────────────────────────────
       for (let pi = pulses.length - 1; pi >= 0; pi--) {
         const p   = pulses[pi]
         const na  = nodes[p.a]
@@ -202,8 +262,9 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
 
         if (p.t >= 1) {
           nb.flare = 1.0
+          nb.bloom = Math.min(1.0, nb.bloom + 0.45)  // #3 accumulate bloom
           pulses.splice(pi, 1)
-          // cascade — maybe fire next hop
+          // cascade
           if (p.hop < 3 && Math.random() < 0.58) {
             const neighbors: number[] = []
             for (let k = 0; k < nodes.length; k++) {
@@ -220,7 +281,11 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
           continue
         }
 
-        // draw pulse dot along the connection
+        // #5: mark this edge as hot while the pulse is in transit
+        const edgeKey = `${Math.min(p.a, p.b)}-${Math.max(p.a, p.b)}`
+        edgeHeat.set(edgeKey, 1.0)
+
+        // draw pulse dot
         const cc  = CHAIN_COLORS[p.hop] ?? CHAIN_COLORS[0]
         const nax = na.x + pxB * na.depth
         const nay = na.y + pyB * na.depth
@@ -239,7 +304,51 @@ export function StarField({ tintColor = '139,92,246' }: StarFieldProps) {
         ctx.fillStyle = `rgba(${cc[1]},0.95)`; ctx.fill()
       }
 
-      // ── draw nodes (far→near ordering baked in buildNodes) ───────────
+      // ── #3: Synaptic bloom halos (screen blend, under nodes) ─────────────
+      ctx.save()
+      ctx.globalCompositeOperation = 'screen'
+      for (const n of nodes) {
+        if (n.bloom < 0.02) continue
+        const col = COLORS[n.colorIdx]
+        const nx  = n.x + pxB * n.depth
+        const ny  = n.y + pyB * n.depth
+        const r   = 42 + n.bloom * 62   // 42–104px
+        const grd = ctx.createRadialGradient(nx, ny, 0, nx, ny, r)
+        grd.addColorStop(0, `rgba(${col},${(n.bloom * 0.18).toFixed(3)})`)
+        grd.addColorStop(0.4, `rgba(${col},${(n.bloom * 0.07).toFixed(3)})`)
+        grd.addColorStop(1, `rgba(${col},0)`)
+        ctx.beginPath()
+        ctx.arc(nx, ny, r, 0, Math.PI * 2)
+        ctx.fillStyle = grd
+        ctx.fill()
+      }
+      ctx.restore()
+
+      // ── #7: Burst rings (screen blend) ────────────────────────────────────
+      ctx.save()
+      ctx.globalCompositeOperation = 'screen'
+      for (let ri = burstRings.length - 1; ri >= 0; ri--) {
+        const ring    = burstRings[ri]
+        const age     = now - ring.startTime
+        if (age > BURST_DURATION) { burstRings.splice(ri, 1); continue }
+        const progress = age / BURST_DURATION
+        const radius   = progress * BURST_MAX_RADIUS
+        const alpha    = (1 - progress) * 0.5
+        const rcx      = ring.cx + pxB * 0.62
+        const rcy      = ring.cy + pyB * 0.62
+
+        const grd = ctx.createRadialGradient(rcx, rcy, radius * 0.72, rcx, rcy, radius)
+        grd.addColorStop(0,   `rgba(${tr},${tg},${tb},0)`)
+        grd.addColorStop(0.5, `rgba(${tr},${tg},${tb},${(alpha * 0.55).toFixed(3)})`)
+        grd.addColorStop(1,   `rgba(${tr},${tg},${tb},0)`)
+        ctx.beginPath()
+        ctx.arc(rcx, rcy, radius, 0, Math.PI * 2)
+        ctx.fillStyle = grd
+        ctx.fill()
+      }
+      ctx.restore()
+
+      // ── draw nodes ────────────────────────────────────────────────────────
       for (const n of nodes) {
         const op  = Math.min(1, n.opacity + n.flare * 0.85)
         const r   = n.size + n.flare * 2.8

@@ -13,7 +13,7 @@ const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&?*+-=/<>^~'
 
 export function ScrambleText({
   children,
-  duration = 1800,
+  duration = 2000,
   className,
 }: {
   children: string

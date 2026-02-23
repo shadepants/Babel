@@ -13,7 +13,7 @@ function modelDisplayName(model: string): string {
 
 /** Format elapsed seconds as "Xm Ys" or "Ys" */
 function formatElapsed(seconds: number | null): string {
-  if (seconds == null) return 'â€”'
+  if (seconds == null) return '—'
   if (seconds < 60) return `${Math.round(seconds)}s`
   const m = Math.floor(seconds / 60)
   const s = Math.round(seconds % 60)
@@ -66,7 +66,7 @@ export default function Gallery() {
           <ScrambleText>Gallery</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim tracking-wider">
-          <span className="text-accent/60">// </span>experiment archive â€” {experiments.length} records
+          <span className="text-accent/60">// </span>experiment archive &mdash; {experiments.length} records
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export default function Gallery() {
                   </div>
                   <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5">
                     <span>{formatDate(exp.created_at)}</span>
-                    <span className="text-accent/25">Â·</span>
+                    <span className="text-accent/25">&middot;</span>
                     <span>{formatElapsed(exp.elapsed_seconds)}</span>
                   </div>
                 </div>

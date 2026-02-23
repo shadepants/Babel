@@ -16,14 +16,14 @@ import {
 
 /** Map emoji to sci-fi geometric symbols */
 const SYMBOL_MAP: Record<string, string> = {
-  'Ã°Å¸Â§Â ': 'Ã¢â€”Ë†', 'Ã¢Å¡â„¢Ã¯Â¸Â': 'Ã¢Å â€¢', 'Ã°Å¸Å½Â­': 'Ã¢Å“Â¦', 'Ã°Å¸â€œÅ ': 'Ã¢Â¬Â¡', 'Ã°Å¸Å’Â±': 'Ã¢â€”â€°',
-  'Ã°Å¸Â¤Â': 'Ã¢Å¸Â¡', 'Ã°Å¸â€Â¬': 'Ã¢Å’Â¬', 'Ã°Å¸â€™Â¡': 'Ã¢â€”â€¡', 'Ã°Å¸Å½Â¯': 'Ã¢Å â€”', 'Ã°Å¸Â¤â€“': 'Ã¢Â§â€“',
-  'Ã°Å¸Å’Â': 'Ã¢â€”â€°', 'Ã¢Å¡â€“Ã¯Â¸Â': 'Ã¢Å â€”', 'Ã°Å¸Å½Âª': 'Ã¢Å“Â¦', 'Ã°Å¸â€Â®': 'Ã¢â€”Ë†', 'Ã°Å¸â€”ÂºÃ¯Â¸Â': 'Ã¢Â¬Â¡',
-  'Ã°Å¸Å’Â': 'Ã¢Â¬Â¡', 'Ã°Å¸Â§Â¬': 'Ã¢â€”Ë†', 'Ã¢Å¡Â¡': 'Ã¢Å â€¢', 'Ã°Å¸Å’Å ': 'Ã¢â€”â€°', 'Ã°Å¸â€Â¥': 'Ã¢Å“Â¦',
+  '🧠': '◈', '⚙️': '⊕', '🎭': '✦', '📊': '⬡', '🌱': '◉',
+  '🤝': '⟡', '🔬': '⌬', '💡': '◇', '🎯': '⊗', '🤖': '⧖',
+  '🌍': '◉', '⚖️': '⊗', '🎪': '✦', '🔮': '◈', '🗺️': '⬡',
+  '🌐': '⬡', '🧬': '◈', '⚡': '⊕', '🌊': '◉', '🔥': '✦',
 }
 
 function getSymbol(emoji: string): string {
-  return SYMBOL_MAP[emoji] ?? 'Ã¢â€”Ë†'
+  return SYMBOL_MAP[emoji] ?? '◇'
 }
 
 export default function Configure() {
@@ -31,13 +31,13 @@ export default function Configure() {
   const navigate = useNavigate()
   const isCustom = presetId === 'custom'
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Data loading Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Data loading --
   const [preset, setPreset] = useState<Preset | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Form state Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Form state --
   const [modelA, setModelA] = useState('')
   const [modelB, setModelB] = useState('')
   const [rounds, setRounds] = useState(5)
@@ -150,7 +150,7 @@ export default function Configure() {
         <div className="text-center space-y-3">
           <p className="font-mono text-xs text-danger">{loadError}</p>
           <Link to="/" className="font-mono text-[10px] text-accent hover:text-accent/80 tracking-widest uppercase">
-            Ã¢â€ Â Back to Seed Lab
+            &larr; Back to Seed Lab
           </Link>
         </div>
       </div>
@@ -162,18 +162,18 @@ export default function Configure() {
       {/* Header */}
       <div>
         <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          Ã¢â€ Â Seed Lab
+          &larr; Seed Lab
         </Link>
 
         <div className="mt-4 flex items-center gap-4">
-          {/* Geometric symbol Ã¢â‚¬â€ replaces emoji */}
+          {/* Geometric symbol — replaces emoji */}
           {preset && (
             <span className="font-mono text-3xl text-accent/50 leading-none select-none">
               {getSymbol(preset.emoji)}
             </span>
           )}
           {isCustom && (
-            <span className="font-mono text-3xl text-accent/35 leading-none select-none">Ã¢Å“Â¦</span>
+            <span className="font-mono text-3xl text-accent/35 leading-none select-none">&#9671;</span>
           )}
           <div>
             <h1 className="font-display font-black tracking-widest text-2xl text-text-primary">
@@ -210,7 +210,7 @@ export default function Configure() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
-                  Ã¢â€”Ë† Model A
+                  &#9671; Model A
                 </label>
                 <Select value={modelA} onValueChange={setModelA}>
                   <SelectTrigger className="font-mono text-xs border-model-a/30 focus:ring-model-a/40">
@@ -225,7 +225,7 @@ export default function Configure() {
               </div>
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
-                  Ã¢â€”Ë† Model B
+                  &#9671; Model B
                 </label>
                 <Select value={modelB} onValueChange={setModelB}>
                   <SelectTrigger className="font-mono text-xs border-model-b/30 focus:ring-model-b/40">
@@ -285,7 +285,7 @@ export default function Configure() {
                   onClick={() => setSeedEditing(true)}
                   className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
                 >
-                  Customize Ã¢â€ â€™
+                  Customize &#8594;
                 </button>
               )}
             </div>

@@ -5,7 +5,7 @@ import { api } from '@/api/client'
 import type { ModelStatusInfo } from '@/api/types'
 
 /**
- * Settings page â€” API key status and model availability.
+ * Settings page &mdash; API key status and model availability.
  */
 export default function Settings() {
   const [models, setModels] = useState<ModelStatusInfo[]>([])
@@ -34,7 +34,7 @@ export default function Settings() {
       {/* Header */}
       <div>
         <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          â† Seed Lab
+          &larr; Seed Lab
         </Link>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
           <ScrambleText>Settings</ScrambleText>
@@ -105,7 +105,7 @@ export default function Settings() {
       )}
 
       <p className="font-mono text-[10px] text-text-dim/50 tracking-wider">
-        // api keys read from environment variables â€” set in <code className="text-accent/60">.env</code> and restart backend
+        // api keys read from environment variables &mdash; set in <code className="text-accent/60">.env</code> and restart backend
       </p>
     </div>
   )

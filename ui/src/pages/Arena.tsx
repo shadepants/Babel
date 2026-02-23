@@ -3,7 +3,6 @@ import { useNavigate, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { ModelInfo, Preset } from '@/api/types'
 import { Button } from '@/components/ui/button'
-import { ScrambleText } from '@/components/common/ScrambleText'
 import { Textarea } from '@/components/ui/textarea'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -13,20 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ScrambleText } from '@/components/common/ScrambleText'
 
 /**
- * Arena page â€” tournament setup with multi-model selection.
+ * Arena page — tournament setup with multi-model selection.
  * Pick 3+ models, a preset, and launch a round-robin tournament.
  */
 export default function Arena() {
   const navigate = useNavigate()
 
-  // â”€â”€ Data loading â”€â”€
   const [models, setModels] = useState<ModelInfo[]>([])
   const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
 
-  // â”€â”€ Form state â”€â”€
   const [name, setName] = useState('')
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
   const [presetId, setPresetId] = useState<string>('')
@@ -48,7 +46,7 @@ export default function Arena() {
         setModels(modelsRes.models)
         setPresets(presetsRes.presets)
       } catch {
-        // Non-critical â€” form still usable
+        // Non-critical — form still usable
       } finally {
         setLoading(false)
       }
@@ -56,7 +54,6 @@ export default function Arena() {
     loadData()
   }, [])
 
-  // When preset changes, update seed/system prompt
   function handlePresetChange(id: string) {
     setPresetId(id)
     if (id) {
@@ -75,11 +72,8 @@ export default function Arena() {
   function toggleModel(modelStr: string) {
     setSelectedModels((prev) => {
       const next = new Set(prev)
-      if (next.has(modelStr)) {
-        next.delete(modelStr)
-      } else {
-        next.add(modelStr)
-      }
+      if (next.has(modelStr)) next.delete(modelStr)
+      else next.add(modelStr)
       return next
     })
   }
@@ -87,18 +81,9 @@ export default function Arena() {
   const pairingCount = selectedModels.size * (selectedModels.size - 1) / 2
 
   async function handleLaunch() {
-    if (!name.trim()) {
-      setFormError('Please enter a tournament name.')
-      return
-    }
-    if (selectedModels.size < 3) {
-      setFormError('Select at least 3 models.')
-      return
-    }
-    if (!seed.trim()) {
-      setFormError('Select a preset or enter a seed message.')
-      return
-    }
+    if (!name.trim()) { setFormError('Please enter a tournament name.'); return }
+    if (selectedModels.size < 3) { setFormError('Select at least 3 models.'); return }
+    if (!seed.trim()) { setFormError('Select a preset or enter a seed message.'); return }
 
     setStarting(true)
     setFormError(null)
@@ -132,25 +117,22 @@ export default function Arena() {
 
   return (
     <div className="flex-1 p-6 max-w-2xl mx-auto space-y-6">
-      {/* Header */}
       <div>
         <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          â† Seed Lab
+          &larr; Seed Lab
         </Link>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
           <ScrambleText>Arena</ScrambleText>
         </h1>
         <p className="font-mono text-xs text-text-dim mt-1 tracking-wider">
-          <span className="text-accent/60">// </span>round-robin tournament â€” same preset, every pairing
+          <span className="text-accent/60">// </span>round-robin tournament &mdash; same preset, every pairing
         </p>
       </div>
 
-      {/* Form Panel */}
       <div className="neural-card">
         <div className="neural-card-bar" />
         <div className="p-6 space-y-6">
 
-          {/* Tournament Name */}
           <div className="space-y-2">
             <div className="neural-section-label">// tournament_identity</div>
             <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">Name</label>
@@ -163,7 +145,6 @@ export default function Arena() {
             />
           </div>
 
-          {/* Preset */}
           <div className="space-y-2">
             <div className="neural-section-label">// experiment_protocol</div>
             <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">Preset</label>
@@ -181,14 +162,13 @@ export default function Arena() {
             </Select>
           </div>
 
-          {/* Model Multi-Select */}
           <div className="space-y-2">
             <div className="neural-section-label">// model_selection</div>
             <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
               Models
               <span className="ml-2 text-accent/60">
                 [{selectedModels.size} selected
-                {selectedModels.size >= 2 && ` Â· ${pairingCount} matches`}]
+                {selectedModels.size >= 2 && ` · ${pairingCount} matches`}]
               </span>
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -215,11 +195,9 @@ export default function Arena() {
             )}
           </div>
 
-          {/* Parameters */}
           <div className="space-y-4">
             <div className="neural-section-label">// parameters</div>
 
-            {/* Rounds */}
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Rounds per match <span className="text-accent/60">[{rounds}]</span>
@@ -230,7 +208,6 @@ export default function Arena() {
               </div>
             </div>
 
-            {/* Temperature */}
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Temperature <span className="text-accent/60">[{temperature.toFixed(1)}]</span>
@@ -241,7 +218,6 @@ export default function Arena() {
               </div>
             </div>
 
-            {/* Max Tokens */}
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Max Tokens <span className="text-accent/60">[{maxTokens}]</span>
@@ -250,7 +226,6 @@ export default function Arena() {
             </div>
           </div>
 
-          {/* Seed */}
           {seed && (
             <div className="space-y-2">
               <div className="neural-section-label">// seed_message</div>
@@ -270,7 +245,6 @@ export default function Arena() {
             </div>
           )}
 
-          {/* System Prompt */}
           {systemPrompt && (
             <div className="space-y-2">
               <div className="neural-section-label">// system_prompt</div>
@@ -283,7 +257,6 @@ export default function Arena() {
             </div>
           )}
 
-          {/* Pairing Preview */}
           {selectedModels.size >= 3 && (
             <div className="space-y-2">
               <div className="neural-section-label">// match_pairings</div>
@@ -301,7 +274,7 @@ export default function Arena() {
                     const nameB = models.find((m) => m.model === b)?.name ?? b.split('/').pop()
                     return (
                       <span key={`${a}-${b}`} className="font-mono text-[10px] text-accent/60 border border-accent/20 px-1.5 py-0.5 rounded-sm">
-                        {nameA} â‡Œ {nameB}
+                        {nameA} &#8652; {nameB}
                       </span>
                     )
                   })
@@ -310,21 +283,16 @@ export default function Arena() {
             </div>
           )}
 
-          {/* Error */}
           {formError && (
             <p className="font-mono text-xs text-danger">// {formError}</p>
           )}
 
-          {/* Launch */}
           <Button
             onClick={handleLaunch}
             disabled={starting || selectedModels.size < 3 || !name.trim() || !seed.trim()}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
-            {starting
-              ? '// Launching...'
-              : `Launch Tournament (${pairingCount} matches)`
-            }
+            {starting ? '// Launching...' : `Launch Tournament (${pairingCount} matches)`}
           </Button>
         </div>
       </div>

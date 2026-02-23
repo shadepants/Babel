@@ -45,7 +45,7 @@ export default function Configure() {
   const [formError, setFormError] = useState<string | null>(null)
 
   // -- Referee / scoring --
-  const [judgeModel, setJudgeModel] = useState<string | null>(null)
+  const [judgeModel, setJudgeModel] = useState<string>('auto')
   const [enableScoring, setEnableScoring] = useState(false)
   const [enableVerdict, setEnableVerdict] = useState(false)
 
@@ -164,7 +164,7 @@ export default function Configure() {
         turn_delay_seconds: turnDelay,
         enable_scoring: enableScoring,
         enable_verdict: enableVerdict,
-        ...(judgeModel ? { judge_model: judgeModel } : {}),
+        ...(judgeModel && judgeModel !== 'auto' ? { judge_model: judgeModel } : {}),
       }
       if (!isCustom && presetId) {
         request.preset = presetId
@@ -467,12 +467,12 @@ export default function Configure() {
                   <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                     Referee Model
                   </label>
-                  <Select value={judgeModel ?? ''} onValueChange={(v) => setJudgeModel(v || null)}>
+                  <Select value={judgeModel} onValueChange={setJudgeModel}>
                     <SelectTrigger className="font-mono text-xs">
                       <SelectValue placeholder="Auto (gemini-2.5-flash)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="" className="font-mono text-xs">Auto (gemini-2.5-flash)</SelectItem>
+                      <SelectItem value="auto" className="font-mono text-xs">Auto (gemini-2.5-flash)</SelectItem>
                       {models.map((m) => (
                         <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
                           {m.name}

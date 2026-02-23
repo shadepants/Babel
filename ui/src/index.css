@@ -237,3 +237,52 @@ html[data-active-model="b"] nav {
   50%  { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+
+/* --- Sprite avatar animations -------------------------------------------- */
+@keyframes sprite-float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+@keyframes sprite-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-3px); }
+  40%      { transform: translateX(3px); }
+  60%      { transform: translateX(-3px); }
+  80%      { transform: translateX(3px); }
+}
+@keyframes sprite-scan {
+  0%   { transform: translateX(-46px); opacity: 0.75; }
+  80%  { transform: translateX(46px);  opacity: 0.75; }
+  100% { transform: translateX(46px);  opacity: 0; }
+}
+@keyframes sprite-talk {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.15; }
+}
+@keyframes sprite-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+@keyframes sprite-win-pulse {
+  0%, 100% { filter: brightness(1);   transform: translateY(0); }
+  25%      { filter: brightness(1.8); transform: translateY(-6px); }
+  50%      { filter: brightness(1.4); transform: translateY(-3px); }
+  75%      { filter: brightness(1.6); transform: translateY(-5px); }
+}
+.sprite-float    { animation: sprite-float 3s ease-in-out infinite; }
+.sprite-shake    { animation: sprite-shake 0.4s ease-in-out infinite; }
+.sprite-scan-bar { animation: sprite-scan 1.5s ease-in-out infinite; }
+.sprite-talk-eye { animation: sprite-talk 0.35s ease-in-out infinite; }
+.sprite-cursor   { animation: sprite-cursor-blink 0.7s ease-in-out infinite; }
+.sprite-win      { animation: sprite-win-pulse 0.6s ease-in-out 4; }
+
+/* Arena stage scanlines */
+.arena-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.012) 3px,
+    rgba(255, 255, 255, 0.012) 4px
+  );
+}

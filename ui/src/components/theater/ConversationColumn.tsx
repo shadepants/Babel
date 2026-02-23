@@ -12,6 +12,8 @@ interface ConversationColumnProps {
   thinkingSpeaker: string | null
   color: 'model-a' | 'model-b'
   scores?: Record<number, ScoreEvent>
+  /** turn_id of the most recent turn — enables typewriter effect on that bubble */
+  latestTurnId?: string | null
 }
 
 /**
@@ -26,6 +28,7 @@ export function ConversationColumn({
   thinkingSpeaker,
   color,
   scores,
+  latestTurnId,
 }: ConversationColumnProps) {
   const bottomRef     = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -33,7 +36,6 @@ export function ConversationColumn({
   const myTurns  = turns.filter((t) => t.speaker === speakerName)
   const isThinking = thinkingSpeaker === speakerName
 
-  // Scroll listener on Radix's internal viewport
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector(
       '[data-radix-scroll-area-viewport]'
@@ -54,47 +56,49 @@ export function ConversationColumn({
   }, [myTurns.length, isThinking])
 
   const isA = color === 'model-a'
-  const headerColor = isA ? 'text-model-a' : 'text-model-b'
 
-  // Border: brighter + glowing when this model is thinking, dimmer otherwise
   const borderColor = isA
-    ? isThinking ? 'border-model-a/70' : 'border-model-a/20'
-    : isThinking ? 'border-model-b/70' : 'border-model-b/20'
+    ? isThinking ? 'border-model-a/60' : 'border-model-a/15'
+    : isThinking ? 'border-model-b/60' : 'border-model-b/15'
 
-  // Glow shadow: pulses on when thinking
   const glowShadow = isThinking
     ? isA
-      ? '0 0 20px rgba(245, 158, 11, 0.35), inset 0 0 30px rgba(245, 158, 11, 0.05)'
-      : '0 0 20px rgba(6, 182, 212, 0.35), inset 0 0 30px rgba(6, 182, 212, 0.05)'
+      ? '0 0 18px rgba(245,158,11,0.3), inset 0 0 24px rgba(245,158,11,0.04)'
+      : '0 0 18px rgba(6,182,212,0.3), inset 0 0 24px rgba(6,182,212,0.04)'
     : undefined
 
   return (
     <div
       className={cn(
-        'flex flex-col h-full border rounded-lg bg-bg-card/40 backdrop-blur-sm transition-all duration-700',
+        'flex flex-col h-full border rounded-sm bg-bg-card/35 backdrop-blur-sm transition-all duration-700',
         borderColor,
       )}
       style={{ boxShadow: glowShadow }}
     >
-      {/* Column header — glows in model color when thinking */}
-      <div className={cn(
-        'px-4 py-3 border-b transition-colors duration-700',
-        isThinking ? (isA ? 'border-model-a/40' : 'border-model-b/40') : 'border-border-custom',
-      )}>
-        <h3 className={cn('text-sm font-semibold transition-all duration-500', headerColor, isThinking && 'brightness-125')}>
-          {speakerName}
-        </h3>
-      </div>
+      {/* Minimal colored top bar replaces full header — ArenaStage shows names */}
+      <div
+        className="h-0.5 rounded-t-sm transition-all duration-500"
+        style={{
+          background: isThinking
+            ? `linear-gradient(90deg, ${isA ? '#F59E0B' : '#06B6D4'}, transparent)`
+            : `linear-gradient(90deg, ${isA ? 'rgba(245,158,11,0.3)' : 'rgba(6,182,212,0.3)'}, transparent)`,
+        }}
+      />
 
       <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden" aria-live="polite" aria-atomic="false">
-        <div className="p-3 space-y-3">
+        <div className="p-3 space-y-2.5">
           {myTurns.map((turn, i) => {
             const prevRound = i > 0 ? myTurns[i - 1].round : 0
             const showDivider = turn.round > prevRound && i > 0
             return (
               <div key={turn.turn_id}>
                 {showDivider && <RoundDivider round={turn.round} />}
-                <TurnBubble turn={turn} color={color} score={scores?.[turn.turn_id]} />
+                <TurnBubble
+                  turn={turn}
+                  color={color}
+                  score={scores?.[turn.turn_id]}
+                  isLatest={turn.turn_id === latestTurnId}
+                />
               </div>
             )
           })}

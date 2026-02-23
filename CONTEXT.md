@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (Tasks 001+002 merged; SSE event ID smoke test confirmed)
+**Last Updated:** 2026-02-23 (session 4 &mdash; Theater 8-bit revamp + DB fallback fix)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -119,6 +119,15 @@ A standalone shareable web app where AI models talk to each other in real-time &
 ### Task 005: CSV Export (DONE)
 - [x] **`ui/src/pages/Analytics.tsx`** &mdash; "Download CSV" button; exports `round,speaker,model,content,latency_seconds,token_count`; content cells RFC-4180 quoted
 
+### Phase 10: 8-bit Theater Revamp (DONE)
+- [x] **SpriteAvatar.tsx** (NEW) &mdash; pure SVG pixel-art avatar; 6 states: idle (float+blink), thinking (scan bar), talking (eye pulse), error (red X+shake), winner (gold bounce), loser (red dim+shake); amber=model-a / cyan=model-b
+- [x] **TypewriterText.tsx** (NEW) &mdash; char-by-char reveal on latest live turn only; past turns instant; blinking cursor; `onComplete` callback
+- [x] **ArenaStage.tsx** (NEW) &mdash; HUD bracket frame, `// ARENA` label, sprites + VS divider, preset-tinted gradient background, STATUS_LABELS per state
+- [x] **TurnBubble.tsx** &mdash; rewritten: left-stripe terminal styling, scanline texture, `[R.N]` round tag, TypewriterText for latest turn
+- [x] **ConversationColumn.tsx** &mdash; header replaced by 2px gradient accent bar; `latestTurnId` prop added
+- [x] **Theater.tsx** &mdash; ArenaStage row, `talkingSpeaker` state + timeout, `latestTurnId`, sprite status derivation, verdict beat with TypewriterText reveal
+- [x] **Bug fix: Theater empty on revisit** &mdash; when `api.getExperiment` returns completed/stopped, also fetches `api.getExperimentTurns` + `api.getExperimentScores`; converts DB records to SSE event format; `effectiveTurns`/`effectiveScores` prefer SSE, fall back to DB (root cause: EventHub history is in-memory, lost on server restart)
+
 ### Next Up
 - [x] **Task 002** &mdash; configurable judge model; Configure page dropdown; DONE
 - [x] **Task 001** &mdash; round-by-round scoring via judge model; score badges in Theater + D3 chart in Analytics; DONE
@@ -126,6 +135,8 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **Settings page polish** &mdash; in-app API key configuration, model latency/cost info
 - [ ] **Task 004** &mdash; Backboard.io memory spike: persistent model memory across experiments (time-boxed investigation)
 - [ ] **Browser smoke test** &mdash; Last-Event-ID reconnect: disable network mid-experiment, re-enable &rarr; confirm only missed turns replay
+- [ ] **Verdict persistence** &mdash; verdict (winner + reasoning) not stored in DB; lost on server restart (low priority)
+- [ ] **Theater cohesion backlog** &mdash; sprites in Gallery/Analytics mini icons; typewriter in Configure estimate bar; BABEL glitch during live match; preset color threading full app (Option C)
 - [ ] **Side-by-side comparison view** (Phase 6b) &mdash; compare two experiments head-to-head (8&ndash;12 h, defer)
 
 ### Tracked Tasks (tasks/ directory)
@@ -178,7 +189,7 @@ Babel/
         Tournaments.tsx        Tournament history list at /tournaments
         Settings.tsx           API key status + model registry + in-app key config
       components/
-        theater/               TurnBubble, ThinkingIndicator, RoundDivider, VocabPanel
+        theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas
         dictionary/            WordCard, ConstellationGraph (incremental D3)
         analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
         common/                Layout (nav+transitions+glitch), StarField (canvas neural net),
@@ -221,4 +232,6 @@ Set-Location ui && .\run_npm.cmd dev
 - **StarField:** Pure canvas &mdash; not tsParticles. tintColor prop accepts "R,G,B" string. AppInner (inside BrowserRouter) reads route and passes tint.
 - **Background task errors:** `_log_task_exception` callback attached to all `asyncio.create_task()` calls in relay_engine.py &mdash; silently swallowed exceptions now appear in logs.
 - **Per-participant temperature:** `temperature_a` and `temperature_b` stored in experiments table (DEFAULT 0.7). `RelayStartRequest` requires both fields. Tournament mode still uses single temperature (both agents share same value).
+- **Theater DB fallback:** EventHub history is in-memory; server restart wipes it. Theater.tsx fetches `api.getExperimentTurns` + `api.getExperimentScores` for completed experiments as fallback. Verdict (winner + reasoning) is NOT persisted &mdash; still lost on restart.
+- **Theater sprites:** `SpriteAvatar` clipPath IDs are `face-clip-model-a` / `face-clip-model-b` (unique per color to avoid SVG collision). `talkingSpeaker` uses a timeout keyed on `lastTurn.turn_id` &mdash; no callback threading needed. `latestTurnId` is null for completed experiments (typewriter only fires live).
 - **Judge / scoring:** `judge_model` stored in experiments table (DEFAULT: config.JUDGE_MODEL = gemini-2.5-flash). `enable_scoring` fires `score_turn()` after each turn (fire-and-forget). `enable_verdict` fires `final_verdict()` at end. Both are opt-in toggles in Configure. `turn_scores` table holds per-turn scores. Scoring fails gracefully &mdash; turns complete even if judge call errors.

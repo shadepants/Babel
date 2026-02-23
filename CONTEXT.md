@@ -1,6 +1,6 @@
-# Babel — AI-to-AI Conversation Arena
+﻿# Babel — AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-22 (Gemini audit hardening applied)
+**Last Updated:** 2026-02-23 (Tasks 001+002: judge model + per-turn scoring + verdict)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time — co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -94,32 +94,45 @@ A standalone shareable web app where AI models talk to each other in real-time �
 - [x] **Gamma burst events** (#7) — 12-node synchronized fire every 15–40s; expanding ring visual
 - [x] **Encoding fix** — rewrote all 5 pages via win_write to fix PowerShell UTF-8 double-encoding artifacts; HTML entities for all non-ASCII JSX chars
 
-### Gemini Audit Hardening (DONE — uncommitted)
-Applied after Gemini code review. Two findings were already correct in the codebase; three real gaps fixed:
-- [x] **`server/db.py`** — `asyncio.Lock` added; all 7 write methods wrapped with `async with self._write_lock` to prevent interleaved commits from concurrent vocab extraction tasks
-- [x] **`server/relay_engine.py`** — `_log_task_exception()` callback attached to both `asyncio.create_task()` calls for vocab extraction; silently swallowed exceptions now surface as `ERROR` log lines
-- [x] **`server/event_hub.py`** — `SSEEvent.event_id` counter added; `EventHub._next_id` assigns monotonically increasing IDs on `publish()`; `subscribe()` accepts `last_event_id` for selective replay
-- [x] **`server/routers/relay.py`** — SSE stream emits `id: N\n` per event; reads `Last-Event-ID` header on reconnect and passes to `hub.subscribe()`
-- [x] **`server/routers/tournaments.py`** — same SSE id + Last-Event-ID treatment as relay router
-- NOTE: Gemini was wrong about Finding 2 (zombie experiment already handled) and Finding 3 (blocklist already `frozenset`). No changes needed for those.
+### Gemini Audit Hardening (DONE)
+- [x] **`server/db.py`** — `asyncio.Lock` write lock; all 7 write methods wrapped
+- [x] **`server/relay_engine.py`** — `_log_task_exception()` callback on all `create_task()` calls
+- [x] **`server/event_hub.py`** — monotonic `event_id` counter; `subscribe()` accepts `last_event_id` for selective replay
+- [x] **`server/routers/relay.py`** — SSE emits `id: N\n`; reads `Last-Event-ID` on reconnect
+- [x] **`server/routers/tournaments.py`** — same SSE id + Last-Event-ID treatment
+
+### Task 003: Per-Participant Temperature (DONE)
+- [x] **`server/db.py`** — idempotent `ALTER TABLE` migrations for `temperature_a` / `temperature_b` (DEFAULT 0.7); `create_experiment()` stores both
+- [x] **`server/routers/relay.py`** — `RelayStartRequest` split `temperature` → `temperature_a` + `temperature_b`; each `RelayAgent` gets its own temp
+- [x] **`ui/src/api/types.ts`** — `RelayStartRequest` + `ExperimentRecord` updated
+- [x] **`ui/src/pages/Configure.tsx`** — two per-model temperature sliders (amber = A, cyan = B); `presetDefaults`, `hasParamChanges`, `handleResetParams`, `handleLaunch` all updated
+- [x] **`ui/src/pages/Analytics.tsx`** — conditional Temp A / Temp B stat cards (guarded by `!= null` for backwards compat)
+
+### Configure Page Polish (DONE)
+- [x] **Pre-launch estimate bar** — displays `~Xm Xs` and `≤X tokens` above Launch button, computed live from rounds × 2 × (6s + turnDelay) and rounds × 2 × maxTokens
+
+### SeedLab Tag Filtering (DONE)
+- [x] **Tag chip row** — `allTags` derived from preset metadata; `activeTag` state filters `visiblePresets`; "all" chip resets filter; active chip styled with accent border
+
+### Task 005: CSV Export (DONE)
+- [x] **`ui/src/pages/Analytics.tsx`** — "Download CSV" button; exports `round,speaker,model,content,latency_seconds,token_count`; content cells RFC-4180 quoted
 
 ### Next Up
-- [ ] **COMMIT** — stage and commit Gemini audit hardening changes (5 files)
-- [ ] **Task 003** — per-participant temperature sliders (2–3 h, lowest effort, standalone)
-- [ ] **Configure page polish** — turn_delay_seconds slider, preset tag filtering, cost/time estimate before launch (2–3 h)
-- [ ] **Settings page polish** — in-app API key configuration, model latency/cost info (4–6 h)
-- [ ] **Task 002** — configurable judge model; prerequisite for Task 001 (4–6 h)
-- [ ] **Task 001** — round-by-round scoring via judge model; score badges in Theater + D3 chart in Analytics (8–10 h)
-- [ ] **Experiment settings** — per-experiment system prompt preview, preset customization save/load (4–5 h)
+- [x] **Task 002** — configurable judge model; Configure page dropdown; DONE
+- [x] **Task 001** — round-by-round scoring via judge model; score badges in Theater + D3 chart in Analytics; DONE
+- [x] **Configure page** — `turn_delay_seconds` slider; DONE
+- [x] **Settings page polish** — in-app API key configuration, model latency/cost info
+- [ ] **Task 004** — Backboard.io memory spike: persistent model memory across experiments (time-boxed investigation)
+- [ ] **Browser smoke test** SSE event IDs: open Theater page → Network tab → confirm `id: 1`, `id: 2`, ... per event frame
+- [ ] **Browser smoke test** Last-Event-ID: disable network mid-experiment, re-enable → confirm only missed turns replay
 - [ ] **Side-by-side comparison view** (Phase 6b) — compare two experiments head-to-head (8–12 h, defer)
-- [ ] **Pixel Sprites** — 8-bit reactive avatars synced to SSE state (defer)
-- [ ] **Virtual Tabletop** — asymmetric multi-agent RPG mode with human-in-the-loop (defer, very large)
 
 ### Tracked Tasks (tasks/ directory)
-- [ ] **[001] Round-by-round scoring** — per-turn evaluation via judge model; score badges in Theater + trends in Analytics → `tasks/001-round-scoring.md`
-- [ ] **[002] Configurable judge model** — separate referee model for scoring + final verdicts; Configure page dropdown → `tasks/002-judge-model-config.md`
-- [ ] **[003] Per-participant temperature** — independent temperature sliders per model in Configure; stored in DB → `tasks/003-per-participant-temperature.md`
+- [x] **[001] Round-by-round scoring** — per-turn evaluation via judge model; score badges in Theater + trends in Analytics → DONE
+- [x] **[002] Configurable judge model** — separate referee model for scoring + final verdicts; Configure page dropdown → DONE
+- [x] **[003] Per-participant temperature** — independent temperature sliders per model in Configure; stored in DB → `tasks/003-per-participant-temperature.md` ✓ DONE
 - [ ] **[004] Backboard.io memory spike** — time-boxed investigation: persistent model memory across experiments → `tasks/004-backboard-memory-spike.md`
+- [x] **[005] Conversation CSV export** — Download CSV button in Analytics → DONE (no separate task file; implemented inline)
 
 ## 4. Architecture
 ```
@@ -149,19 +162,20 @@ Babel/
   ui/
     src/
       pages/
-        SeedLab.tsx            Landing page — preset card grid + custom card
-        Configure.tsx          Experiment config — models, sliders, seed, system prompt
+        SeedLab.tsx            Landing page — preset card grid + tag filter + custom card
+        Configure.tsx          Experiment config — per-model temp sliders, estimate bar, launch
         Theater.tsx            Pure live-view — SSE stream, split columns, vocab panel
         Dictionary.tsx         WordCard grid + D3 constellation
         Gallery.tsx            Past experiments card grid with status badges
-        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown export
+        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export
         Arena.tsx              Tournament setup — model multi-select, launcher
         Tournament.tsx         Live match grid, leaderboard, radar chart
-        Settings.tsx           API key status + model registry
+        Tournaments.tsx        Tournament history list at /tournaments
+        Settings.tsx           API key status + model registry + in-app key config
       components/
         theater/               TurnBubble, ThinkingIndicator, RoundDivider, VocabPanel
         dictionary/            WordCard, ConstellationGraph (incremental D3)
-        analytics/             VocabGrowthChart, LatencyChart, RadarChart (D3)
+        analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
         common/                Layout (nav+transitions+glitch), StarField (canvas neural net),
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
         ui/                    9 Shadcn primitives
@@ -201,3 +215,5 @@ Set-Location ui && .\run_npm.cmd dev
 - **Font coverage:** Orbitron (font-display) has NO glyphs for Unicode geometric symbols — always use `font-mono` (JetBrains Mono) on symbol spans
 - **StarField:** Pure canvas — not tsParticles. tintColor prop accepts "R,G,B" string. AppInner (inside BrowserRouter) reads route and passes tint.
 - **Background task errors:** `_log_task_exception` callback attached to all `asyncio.create_task()` calls in relay_engine.py — silently swallowed exceptions now appear in logs.
+- **Per-participant temperature:** `temperature_a` and `temperature_b` stored in experiments table (DEFAULT 0.7). `RelayStartRequest` requires both fields. Tournament mode still uses single temperature (both agents share same value).
+- **Judge / scoring:** `judge_model` stored in experiments table (DEFAULT: config.JUDGE_MODEL = gemini-2.5-flash). `enable_scoring` fires `score_turn()` after each turn (fire-and-forget). `enable_verdict` fires `final_verdict()` at end. Both are opt-in toggles in Configure. `turn_scores` table holds per-turn scores. Scoring fails gracefully — turns complete even if judge call errors.

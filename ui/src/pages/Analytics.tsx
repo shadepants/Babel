@@ -1,12 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord, ExperimentStats, VocabWord, TurnRecord } from '@/api/types'
-import { Card, CardContent } from '@/components/ui/card'
+import type { ExperimentRecord, ExperimentStats, ExperimentRadarResponse, RadarDataPoint, VocabWord, TurnRecord } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VocabGrowthChart } from '@/components/analytics/VocabGrowthChart'
 import { LatencyChart } from '@/components/analytics/LatencyChart'
+import { TokenChart } from '@/components/analytics/TokenChart'
+import { RadarChart } from '@/components/analytics/RadarChart'
+import { formatDuration } from '@/lib/format'
+import { HudBrackets } from '@/components/common/HudBrackets'
+
+const MODEL_A_COLOR = '#F59E0B'
+const MODEL_B_COLOR = '#06B6D4'
 
 /** Extract short name from litellm model string */
 function modelDisplayName(model: string): string {
@@ -28,12 +34,13 @@ function StatusBadge({ status }: { status: string }) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="bg-bg-card border-border-custom">
-      <CardContent className="p-4 text-center">
+    <div className="neural-card relative">
+      <HudBrackets />
+      <div className="p-4 text-center">
         <div className="text-2xl font-bold text-text-primary">{value}</div>
         <div className="text-xs text-text-dim mt-1">{label}</div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -43,18 +50,34 @@ export default function Analytics() {
   const [stats, setStats] = useState<ExperimentStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [radar, setRadar] = useState<RadarDataPoint[]>([])
   const [exporting, setExporting] = useState(false)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
     try {
-      const [exp, st] = await Promise.all([
+      const [exp, st, radarRes] = await Promise.all([
         api.getExperiment(experimentId),
         api.getExperimentStats(experimentId),
+        api.getExperimentRadar(experimentId).catch(() => null),
       ])
       setExperiment(exp)
       setStats(st)
+      if (radarRes && radarRes.models.length > 0) {
+        setRadar(radarRes.models.map((m, i) => ({
+          model: m.model,
+          display_name: m.display_name,
+          color: i === 0 ? MODEL_A_COLOR : MODEL_B_COLOR,
+          axes: [
+            { axis: 'Verbosity', value: m.verbosity },
+            { axis: 'Speed', value: m.speed },
+            { axis: 'Creativity', value: m.creativity },
+            { axis: 'Consistency', value: m.consistency },
+            { axis: 'Engagement', value: m.engagement },
+          ],
+        })))
+      }
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -100,6 +123,38 @@ export default function Analytics() {
     }
   }
 
+  // ── Export: Download CSV ──
+  async function handleDownloadCsv() {
+    if (!experimentId || exporting) return
+    setExporting(true)
+    try {
+      const turnsRes = await api.getExperimentTurns(experimentId)
+      const rows = [
+        ['round', 'speaker', 'model', 'content', 'latency_seconds', 'token_count'],
+        ...(turnsRes.turns as TurnRecord[]).map((t) => [
+          String(t.round),
+          t.speaker,
+          t.model,
+          `"${t.content.replace(/"/g, '""')}"`,
+          t.latency_seconds != null ? String(t.latency_seconds) : '',
+          t.token_count != null ? String(t.token_count) : '',
+        ]),
+      ]
+      const csv = rows.map((r) => r.join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `babel-${experimentId}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setExporting(false)
+    }
+  }
+
   // ── Export: Copy Markdown ──
   async function handleCopyMarkdown() {
     if (!experimentId || exporting) return
@@ -113,7 +168,7 @@ export default function Analytics() {
       const lines = [
         `# Babel Experiment: ${modelDisplayName(exp.model_a)} vs ${modelDisplayName(exp.model_b)}`,
         '',
-        `**Status:** ${exp.status} | **Rounds:** ${exp.rounds_completed}/${exp.rounds_planned} | **Elapsed:** ${exp.elapsed_seconds ? `${exp.elapsed_seconds}s` : '—'}`,
+        `**Status:** ${exp.status} | **Rounds:** ${exp.rounds_completed}/${exp.rounds_planned} | **Elapsed:** ${exp.elapsed_seconds ? formatDuration(exp.elapsed_seconds) : '—'}`,
         '',
         '## Conversation',
         '',
@@ -210,9 +265,9 @@ export default function Analytics() {
               <span className="text-sm text-text-dim">
                 {experiment.rounds_completed}/{experiment.rounds_planned} rounds
               </span>
-              {experiment.elapsed_seconds && (
+              {experiment.elapsed_seconds != null && (
                 <span className="text-sm text-text-dim">
-                  {experiment.elapsed_seconds}s
+                  {formatDuration(experiment.elapsed_seconds)}
                 </span>
               )}
               {experiment.preset && (
@@ -229,6 +284,15 @@ export default function Analytics() {
               disabled={exporting}
             >
               {exporting ? '...' : 'Download JSON'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border-custom text-text-dim"
+              onClick={handleDownloadCsv}
+              disabled={exporting}
+            >
+              {exporting ? '...' : 'Download CSV'}
             </Button>
             <Button
               variant="outline"
@@ -262,27 +326,56 @@ export default function Analytics() {
           value={stats.totals.avg_latency_b != null ? `${stats.totals.avg_latency_b}s` : '—'}
         />
         <StatCard label="Words Coined" value={String(stats.totals.vocab_count)} />
+        {experiment.temperature_a != null && (
+          <StatCard label={`Temp (${modelA})`} value={experiment.temperature_a.toFixed(1)} />
+        )}
+        {experiment.temperature_b != null && (
+          <StatCard label={`Temp (${modelB})`} value={experiment.temperature_b.toFixed(1)} />
+        )}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-bg-card border-border-custom">
-          <CardContent className="p-5">
+        <div className="neural-card">
+          <div className="p-5">
             <h2 className="text-sm font-semibold text-text-primary mb-4">Vocabulary Growth</h2>
             <VocabGrowthChart data={stats.vocab_by_round} />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className="bg-bg-card border-border-custom">
-          <CardContent className="p-5">
+        <div className="neural-card">
+          <div className="p-5">
             <h2 className="text-sm font-semibold text-text-primary mb-4">Latency per Round</h2>
             <LatencyChart
               data={stats.turns_by_round}
               modelAName={modelA}
               modelBName={modelB}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </div>
+
+      {/* Second chart row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="neural-card">
+          <div className="p-5">
+            <h2 className="text-sm font-semibold text-text-primary mb-4">Tokens per Round</h2>
+            <TokenChart
+              data={stats.turns_by_round}
+              modelAName={modelA}
+              modelBName={modelB}
+            />
+          </div>
+        </div>
+
+        {radar.length > 0 && (
+          <div className="neural-card">
+            <div className="p-5">
+              <h2 className="text-sm font-semibold text-text-primary mb-4">Model Personality</h2>
+              <RadarChart data={radar} height={280} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick links */}

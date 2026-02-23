@@ -7,8 +7,10 @@ export interface RelayStartRequest {
   seed: string;
   system_prompt?: string;
   rounds: number;
-  temperature: number;
+  temperature_a: number;
+  temperature_b: number;
   max_tokens: number;
+  turn_delay_seconds?: number;
   preset?: string;
 }
 
@@ -142,6 +144,7 @@ export interface VocabWord {
   category: string | null;
   usage_count: number;
   parent_words: string[] | null;
+  confidence: string | null;
 }
 
 /** GET /api/experiments/:id/vocabulary response */
@@ -162,6 +165,8 @@ export interface ExperimentRecord {
   rounds_completed: number;
   status: string;
   elapsed_seconds: number | null;
+  temperature_a?: number;
+  temperature_b?: number;
 }
 
 /** GET /api/experiments/ response */
@@ -374,6 +379,13 @@ export interface ModelStatusInfo {
   model: string;
   provider: string;
   available: boolean;
+  env_var: string;
+  key_preview: string | null;  // first4...last4 of loaded key, null if not set
+}
+
+/** GET /api/relay/env-status response */
+export interface EnvStatusResponse {
+  env_file_found: boolean;
 }
 
 export interface ModelStatusResponse {

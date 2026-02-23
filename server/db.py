@@ -135,6 +135,18 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        for col, default in [
+            ("temperature_a", "0.7"),
+            ("temperature_b", "0.7"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} REAL DEFAULT {default}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -158,6 +170,8 @@ class Database:
         rounds_planned: int,
         preset: str | None = None,
         config: dict[str, Any] | None = None,
+        temperature_a: float = 0.7,
+        temperature_b: float = 0.7,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -168,10 +182,12 @@ class Database:
             await self.db.execute(
                 """INSERT INTO experiments
                    (id, created_at, model_a, model_b, preset, seed,
-                    system_prompt, rounds_planned, config_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    system_prompt, rounds_planned, config_json,
+                    temperature_a, temperature_b)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
-                 system_prompt, rounds_planned, config_json),
+                 system_prompt, rounds_planned, config_json,
+                 temperature_a, temperature_b),
             )
             await self.db.commit()
         return experiment_id

@@ -49,7 +49,8 @@ class RelayStartRequest(BaseModel):
     seed: str = Field(default=DEFAULT_SEED, description="Starting message / seed vocabulary")
     system_prompt: str = Field(default=DEFAULT_SYSTEM_PROMPT, description="System prompt for both agents")
     rounds: int = Field(default=DEFAULT_ROUNDS, ge=1, le=15, description="Number of conversation rounds")
-    temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    temperature_a: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    temperature_b: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=100, le=4096)
     preset: str | None = Field(default=None, description="Preset name (if from Seed Lab)")
     turn_delay_seconds: float = Field(default=2.0, ge=0.0, le=10.0, description="Seconds to pause between turns")
@@ -104,7 +105,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
 
     # Create experiment record
     config = {
-        "temperature": body.temperature,
+        "temperature_a": body.temperature_a,
+        "temperature_b": body.temperature_b,
         "max_tokens": body.max_tokens,
     }
     match_id = await db.create_experiment(
@@ -115,19 +117,21 @@ async def start_relay(body: RelayStartRequest, request: Request):
         rounds_planned=body.rounds,
         preset=body.preset,
         config=config,
+        temperature_a=body.temperature_a,
+        temperature_b=body.temperature_b,
     )
 
     # Build agents
     agent_a = RelayAgent(
         name=get_display_name(body.model_a),
         model=body.model_a,
-        temperature=body.temperature,
+        temperature=body.temperature_a,
         max_tokens=body.max_tokens,
     )
     agent_b = RelayAgent(
         name=get_display_name(body.model_b),
         model=body.model_b,
-        temperature=body.temperature,
+        temperature=body.temperature_b,
         max_tokens=body.max_tokens,
     )
 

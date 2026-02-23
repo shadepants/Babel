@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { Preset, ModelInfo } from '@/api/types'
+import type { Preset, ModelInfo, ModelStatusInfo } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,17 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-/** Map emoji to sci-fi geometric symbols */
-const SYMBOL_MAP: Record<string, string> = {
-  '🧠': '◈', '⚙️': '⊕', '🎭': '✦', '📊': '⬡', '🌱': '◉',
-  '🤝': '⟡', '🔬': '⌬', '💡': '◇', '🎯': '⊗', '🤖': '⧖',
-  '🌍': '◉', '⚖️': '⊗', '🎪': '✦', '🔮': '◈', '🗺️': '⬡',
-  '🌐': '⬡', '🧬': '◈', '⚡': '⊕', '🌊': '◉', '🔥': '✦',
-}
-
-function getSymbol(emoji: string): string {
-  return SYMBOL_MAP[emoji] ?? '◇'
-}
+import { getSymbol } from '@/lib/symbols'
+import { getPrefs } from '@/lib/prefs'
 
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
@@ -34,6 +25,7 @@ export default function Configure() {
   // -- Data loading --
   const [preset, setPreset] = useState<Preset | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [modelStatus, setModelStatus] = useState<Map<string, boolean>>(new Map())
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -41,30 +33,50 @@ export default function Configure() {
   const [modelA, setModelA] = useState('')
   const [modelB, setModelB] = useState('')
   const [rounds, setRounds] = useState(5)
-  const [temperature, setTemperature] = useState(0.7)
+  const [temperatureA, setTemperatureA] = useState(0.7)
+  const [temperatureB, setTemperatureB] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(1500)
   const [seed, setSeed] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [turnDelay, setTurnDelay] = useState(2.0)
   const [seedEditing, setSeedEditing] = useState(false)
+  const [promptEditing, setPromptEditing] = useState(false)
   const [starting, setStarting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  // Preset defaults — for divergence indicators + reset (null when custom)
+  const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
+  // Suggested model strings from preset (for C3 indicator)
+  const [suggestedModelA, setSuggestedModelA] = useState('')
+  const [suggestedModelB, setSuggestedModelB] = useState('')
 
   // Load models + preset data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [modelsRes, presetsRes] = await Promise.all([
+        const [modelsRes, presetsRes, statusRes] = await Promise.all([
           api.getModels(),
           isCustom ? Promise.resolve(null) : api.getPresets(),
+          api.getModelStatus(),
         ])
 
         setModels(modelsRes.models)
+        const statusMap = new Map<string, boolean>()
+        statusRes.models.forEach((s: ModelStatusInfo) => statusMap.set(s.model, s.available))
+        setModelStatus(statusMap)
 
         if (isCustom) {
           if (modelsRes.models.length >= 2) {
             setModelA(modelsRes.models[0].model)
             setModelB(modelsRes.models[1].model)
           }
+          // Apply user's saved defaults for the custom path
+          const prefs = getPrefs()
+          setRounds(prefs.defaultRounds)
+          setTemperatureA(prefs.defaultTemperature)
+          setTemperatureB(prefs.defaultTemperature)
+          setMaxTokens(prefs.defaultMaxTokens)
+          setTurnDelay(prefs.defaultTurnDelay)
           setSeedEditing(true)
         } else if (presetsRes) {
           const found = presetsRes.presets.find((p) => p.id === presetId)
@@ -76,13 +88,26 @@ export default function Configure() {
           setSeed(found.seed)
           setSystemPrompt(found.system_prompt)
           setRounds(found.defaults.rounds)
-          setTemperature(found.defaults.temperature)
+          setTemperatureA(found.defaults.temperature)
+          setTemperatureB(found.defaults.temperature)
           setMaxTokens(found.defaults.max_tokens)
+          // Store for divergence tracking (C1/C2)
+          setPresetDefaults({
+            rounds: found.defaults.rounds,
+            temperatureA: found.defaults.temperature,
+            temperatureB: found.defaults.temperature,
+            maxTokens: found.defaults.max_tokens,
+          })
 
           const sugA = modelsRes.models.find((m) => m.name === found.suggested_models.a)
           const sugB = modelsRes.models.find((m) => m.name === found.suggested_models.b)
-          setModelA(sugA?.model ?? modelsRes.models[0]?.model ?? '')
-          setModelB(sugB?.model ?? modelsRes.models[1]?.model ?? '')
+          const resolvedA = sugA?.model ?? modelsRes.models[0]?.model ?? ''
+          const resolvedB = sugB?.model ?? modelsRes.models[1]?.model ?? ''
+          setModelA(resolvedA)
+          setModelB(resolvedB)
+          // Store for C3 "preset suggestion" label
+          setSuggestedModelA(resolvedA)
+          setSuggestedModelB(resolvedB)
         }
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Failed to load configuration')
@@ -92,6 +117,22 @@ export default function Configure() {
     }
     loadData()
   }, [presetId, isCustom])
+
+  // Whether any parameter slider has been moved from the preset default
+  const hasParamChanges = presetDefaults !== null && (
+    rounds !== presetDefaults.rounds ||
+    temperatureA !== presetDefaults.temperatureA ||
+    temperatureB !== presetDefaults.temperatureB ||
+    maxTokens !== presetDefaults.maxTokens
+  )
+
+  function handleResetParams() {
+    if (!presetDefaults) return
+    setRounds(presetDefaults.rounds)
+    setTemperatureA(presetDefaults.temperatureA)
+    setTemperatureB(presetDefaults.temperatureB)
+    setMaxTokens(presetDefaults.maxTokens)
+  }
 
   async function handleLaunch() {
     if (!modelA || !modelB) {
@@ -112,8 +153,10 @@ export default function Configure() {
         model_b: modelB,
         seed: seed.trim(),
         rounds,
-        temperature,
+        temperature_a: temperatureA,
+        temperature_b: temperatureB,
         max_tokens: maxTokens,
+        turn_delay_seconds: turnDelay,
       }
       if (!isCustom && presetId) {
         request.preset = presetId
@@ -218,10 +261,19 @@ export default function Configure() {
                   </SelectTrigger>
                   <SelectContent>
                     {models.map((m) => (
-                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">{m.name}</SelectItem>
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                        {m.name}
+                        {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {modelA && modelStatus.get(modelA) === false && (
+                  <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
+                )}
+                {!isCustom && suggestedModelA && modelA === suggestedModelA && (
+                  <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
@@ -233,21 +285,44 @@ export default function Configure() {
                   </SelectTrigger>
                   <SelectContent>
                     {models.map((m) => (
-                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">{m.name}</SelectItem>
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                        {m.name}
+                        {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {modelB && modelStatus.get(modelB) === false && (
+                  <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
+                )}
+                {!isCustom && suggestedModelB && modelB === suggestedModelB && (
+                  <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
+                )}
               </div>
             </div>
           </div>
 
           {/* Parameters */}
           <div className="space-y-4">
-            <div className="neural-section-label">// parameters</div>
+            <div className="neural-section-label flex items-center justify-between">
+              <span>// parameters</span>
+              {hasParamChanges && (
+                <button
+                  onClick={handleResetParams}
+                  className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                  title="Reset to preset defaults"
+                >
+                  ↺ reset
+                </button>
+              )}
+            </div>
 
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Rounds <span className="text-accent/60">[{rounds}]</span>
+                {presetDefaults && rounds !== presetDefaults.rounds && (
+                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
+                )}
               </label>
               <Slider value={[rounds]} onValueChange={(v) => setRounds(v[0])} min={1} max={15} step={1} />
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
@@ -256,10 +331,26 @@ export default function Configure() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
-                Temperature <span className="text-accent/60">[{temperature.toFixed(1)}]</span>
+              <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
+                Temp A <span className="text-accent/60">[{temperatureA.toFixed(1)}]</span>
+                {presetDefaults && temperatureA !== presetDefaults.temperatureA && (
+                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
+                )}
               </label>
-              <Slider value={[temperature]} onValueChange={(v) => setTemperature(v[0])} min={0} max={2} step={0.1} />
+              <Slider value={[temperatureA]} onValueChange={(v) => setTemperatureA(v[0])} min={0} max={2} step={0.1} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>0 precise</span><span>2 creative</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
+                Temp B <span className="text-accent/60">[{temperatureB.toFixed(1)}]</span>
+                {presetDefaults && temperatureB !== presetDefaults.temperatureB && (
+                  <span className="ml-1.5 text-model-b/70" title="modified from preset default">●</span>
+                )}
+              </label>
+              <Slider value={[temperatureB]} onValueChange={(v) => setTemperatureB(v[0])} min={0} max={2} step={0.1} />
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                 <span>0 precise</span><span>2 creative</span>
               </div>
@@ -268,10 +359,23 @@ export default function Configure() {
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Max Tokens <span className="text-accent/60">[{maxTokens}]</span>
+                {presetDefaults && maxTokens !== presetDefaults.maxTokens && (
+                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
+                )}
               </label>
               <Slider value={[maxTokens]} onValueChange={(v) => setMaxTokens(v[0])} min={100} max={4096} step={100} />
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                 <span>100</span><span>4096</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Turn Delay <span className="text-accent/60">[{turnDelay.toFixed(1)}s]</span>
+              </label>
+              <Slider value={[turnDelay]} onValueChange={(v) => setTurnDelay(v[0])} min={0} max={10} step={0.5} />
+              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                <span>0s instant</span><span>10s slow</span>
               </div>
             </div>
           </div>
@@ -306,22 +410,53 @@ export default function Configure() {
 
           {/* System Prompt */}
           <div className="space-y-2">
-            <div className="neural-section-label">
-              // system_prompt {isCustom && <span className="text-text-dim/40">(optional)</span>}
+            <div className="neural-section-label flex items-center justify-between">
+              <span>// system_prompt {isCustom && <span className="text-text-dim/40">(optional)</span>}</span>
+              {!isCustom && !promptEditing && (
+                <button
+                  onClick={() => setPromptEditing(true)}
+                  className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                >
+                  Customize &#8594;
+                </button>
+              )}
             </div>
-            <Textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={4}
-              className="resize-none font-mono text-xs"
-              placeholder={isCustom ? 'Leave empty to use the default system prompt...' : ''}
-            />
+            {promptEditing || isCustom ? (
+              <Textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                rows={4}
+                className="resize-none font-mono text-xs"
+                placeholder={isCustom ? 'Leave empty to use the default system prompt...' : ''}
+              />
+            ) : (
+              <div className="font-mono text-xs text-text-dim bg-bg-deep/80 rounded-sm p-3 max-h-32 overflow-y-auto whitespace-pre-wrap border border-border-custom/50">
+                {systemPrompt || <span className="text-text-dim/40 italic">default system prompt</span>}
+              </div>
+            )}
           </div>
 
           {/* Error */}
           {formError && (
             <p className="font-mono text-xs text-danger">// {formError}</p>
           )}
+
+          {/* Pre-launch estimate */}
+          {(() => {
+            const avgTurnSecs = 6
+            const totalSecs = rounds * 2 * (avgTurnSecs + turnDelay)
+            const mins = Math.floor(totalSecs / 60)
+            const secs = Math.round(totalSecs % 60)
+            const timeStr = mins > 0 ? `~${mins}m ${secs}s` : `~${secs}s`
+            const tokenBudget = (rounds * 2 * maxTokens).toLocaleString()
+            return (
+              <div className="font-mono text-[10px] text-text-dim/50 flex gap-4 justify-center tracking-wider">
+                <span><span className="text-accent/40">// est</span> {timeStr}</span>
+                <span className="text-accent/25">&middot;</span>
+                <span>&le;{tokenBudget} tokens</span>
+              </div>
+            )
+          })()}
 
           {/* Launch */}
           <Button

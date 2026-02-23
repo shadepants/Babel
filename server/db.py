@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS tournament_matches (
 
 CREATE INDEX IF NOT EXISTS idx_tourn_matches_tid
     ON tournament_matches(tournament_id);
+
+CREATE TABLE IF NOT EXISTS turn_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turn_id INTEGER NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
+    creativity REAL,
+    coherence REAL,
+    engagement REAL,
+    novelty REAL,
+    scored_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_turn_scores_turn ON turn_scores(turn_id);
 """
 
 
@@ -147,6 +159,19 @@ class Database:
             except Exception:
                 pass  # column already exists
 
+        for col, ddl in [
+            ("judge_model", "TEXT"),
+            ("enable_scoring", "INTEGER DEFAULT 0"),
+            ("enable_verdict", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} {ddl}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -172,6 +197,9 @@ class Database:
         config: dict[str, Any] | None = None,
         temperature_a: float = 0.7,
         temperature_b: float = 0.7,
+        judge_model: str | None = None,
+        enable_scoring: bool = False,
+        enable_verdict: bool = False,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -183,11 +211,13 @@ class Database:
                 """INSERT INTO experiments
                    (id, created_at, model_a, model_b, preset, seed,
                     system_prompt, rounds_planned, config_json,
-                    temperature_a, temperature_b)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    temperature_a, temperature_b,
+                    judge_model, enable_scoring, enable_verdict)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
-                 temperature_a, temperature_b),
+                 temperature_a, temperature_b,
+                 judge_model, int(enable_scoring), int(enable_verdict)),
             )
             await self.db.commit()
         return experiment_id
@@ -278,6 +308,36 @@ class Database:
         """Get all turns for an experiment, ordered by round and ID."""
         cursor = await self.db.execute(
             "SELECT * FROM turns WHERE experiment_id = ? ORDER BY round, id",
+            (experiment_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def insert_turn_score(
+        self,
+        turn_id: int,
+        creativity: float,
+        coherence: float,
+        engagement: float,
+        novelty: float,
+    ) -> None:
+        """Persist scores for a single turn."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO turn_scores (turn_id, creativity, coherence, engagement, novelty)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (turn_id, creativity, coherence, engagement, novelty),
+            )
+            await self.db.commit()
+
+    async def get_turn_scores(self, experiment_id: str) -> list[dict]:
+        """Get all turn scores for an experiment, joined on turn_id."""
+        cursor = await self.db.execute(
+            """SELECT ts.turn_id, ts.creativity, ts.coherence,
+                      ts.engagement, ts.novelty, ts.scored_at
+               FROM turn_scores ts
+               JOIN turns t ON t.id = ts.turn_id
+               WHERE t.experiment_id = ?
+               ORDER BY t.round, t.id""",
             (experiment_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]

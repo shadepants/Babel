@@ -13,7 +13,10 @@ _VALID_STATUSES = frozenset({"running", "completed", "failed", "stopped"})
 
 
 def _get_db(request: Request) -> Database:
-    return request.app.state.db
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(503, "Database not initialized")
+    return db
 
 
 @router.get("/")
@@ -84,3 +87,27 @@ async def get_experiment_radar(experiment_id: str, request: Request):
         raise HTTPException(404, "Experiment not found")
     data = await db.get_model_radar_stats(experiment_id)
     return {"experiment_id": experiment_id, "models": data}
+
+
+@router.get("/{experiment_id}/scores")
+async def get_experiment_scores(experiment_id: str, request: Request):
+    """Fetch judge scores for all turns in an experiment."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    scores = await db.get_turn_scores(experiment_id)
+    return {"experiment_id": experiment_id, "scores": scores}
+
+
+@router.delete("/{experiment_id}")
+async def delete_experiment(experiment_id: str, request: Request):
+    """Delete an experiment and all associated turns/vocabulary. Only non-running experiments."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    if experiment["status"] == "running":
+        raise HTTPException(409, "Cannot delete a running experiment. Stop it first.")
+    await db.delete_experiment(experiment_id)
+    return {"deleted": experiment_id}

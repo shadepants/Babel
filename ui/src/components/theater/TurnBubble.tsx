@@ -1,16 +1,18 @@
-import type { TurnEvent } from '@/api/types'
+import type { TurnEvent, ScoreEvent } from '@/api/types'
 import { cn } from '@/lib/utils'
 
 interface TurnBubbleProps {
   turn: TurnEvent
   color: 'model-a' | 'model-b'
+  score?: ScoreEvent
 }
 
 /**
  * A single conversation turn rendered as a card.
  * Color-coded by model identity (amber for A, cyan for B).
+ * Shows async judge scores below content once they arrive.
  */
-export function TurnBubble({ turn, color }: TurnBubbleProps) {
+export function TurnBubble({ turn, color, score }: TurnBubbleProps) {
   const borderColor = color === 'model-a' ? 'border-model-a/30' : 'border-model-b/30'
   const badgeBg = color === 'model-a' ? 'bg-model-a/20 text-model-a' : 'bg-model-b/20 text-model-b'
   const glowShadow = color === 'model-a'
@@ -39,6 +41,29 @@ export function TurnBubble({ turn, color }: TurnBubbleProps) {
       <div className="font-mono text-sm text-text-primary whitespace-pre-wrap break-words leading-relaxed">
         {turn.content}
       </div>
+
+      {/* Score badge — appears asynchronously after judge model scores the turn */}
+      {score && (
+        <div className="mt-3 pt-2.5 border-t border-border-custom/30 animate-fade-in">
+          <div className="flex gap-3 flex-wrap">
+            <ScorePill label="creativity" value={score.creativity} color="text-model-a" />
+            <ScorePill label="coherence" value={score.coherence} color="text-model-b" />
+            <ScorePill label="engagement" value={score.engagement} color="text-emerald-400" />
+            <ScorePill label="novelty" value={score.novelty} color="text-purple-400" />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ScorePill({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={cn('font-mono text-xs font-semibold tabular-nums', color)}>
+        {value.toFixed(2)}
+      </span>
+      <span className="font-mono text-[8px] text-text-dim/50 tracking-wider uppercase">{label}</span>
     </div>
   )
 }

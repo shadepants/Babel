@@ -17,6 +17,7 @@ export default function Dictionary() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedWord, setSelectedWord] = useState<VocabWord | null>(null)
+  const [showLowConfidence, setShowLowConfidence] = useState(true)
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
@@ -49,7 +50,7 @@ export default function Dictionary() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-bg-deep flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <span className="text-text-dim animate-pulse-slow">Loading dictionary...</span>
       </div>
     )
@@ -57,7 +58,7 @@ export default function Dictionary() {
 
   if (error || !experiment) {
     return (
-      <div className="min-h-screen bg-bg-deep flex flex-col items-center justify-center gap-4">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <p className="text-danger">{error ?? 'Experiment not found'}</p>
         <Link to="/" className="text-accent hover:underline text-sm">
           ← Back to Seed Lab
@@ -67,13 +68,13 @@ export default function Dictionary() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-deep">
+    <div className="flex-1">
       {/* Header */}
       <div className="border-b border-border-custom px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <Link to="/" className="text-xs text-text-dim hover:text-accent">
-              ← Theater
+            <Link to={`/theater/${experimentId}`} className="text-xs text-text-dim hover:text-accent">
+              &larr; Theater
             </Link>
             <h1 className="text-xl font-bold text-text-primary mt-1">
               Vocabulary Dictionary
@@ -101,33 +102,50 @@ export default function Dictionary() {
         </div>
 
         {/* View toggle */}
-        <div className="flex gap-2 mt-4">
-          <Button
-            variant={view === 'cards' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setView('cards')}
-            className={cn(
-              view === 'cards' && 'bg-accent hover:bg-accent/90',
+        <div className="flex items-center gap-4 mt-4">
+        <div className="flex gap-2">
+        <Button
+          variant={view === 'cards' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setView('cards')}
+        className={cn(
+            view === 'cards' && 'bg-accent hover:bg-accent/90',
             )}
-          >
+        >
             Cards
           </Button>
-          <Button
-            variant={view === 'constellation' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setView('constellation')}
-            className={cn(
-              view === 'constellation' && 'bg-accent hover:bg-accent/90',
+        <Button
+          variant={view === 'constellation' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setView('constellation')}
+        className={cn(
+            view === 'constellation' && 'bg-accent hover:bg-accent/90',
             )}
-          >
+        >
             Constellation
-          </Button>
+            </Button>
+          </div>
+          {words.some((w) => w.confidence === 'low') && (
+            <button
+              onClick={() => setShowLowConfidence(!showLowConfidence)}
+              className={cn(
+                'text-xs font-mono tracking-wider transition-colors',
+                showLowConfidence ? 'text-text-dim hover:text-accent' : 'text-accent hover:text-accent/80',
+              )}
+            >
+              {showLowConfidence ? 'Hide uncertain' : 'Show all'}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Content */}
       <div className="p-6">
-        {words.length === 0 ? (
+        {(() => {
+          const filteredWords = showLowConfidence
+            ? words
+            : words.filter((w) => w.confidence !== 'low')
+          return filteredWords.length === 0 ? (
           <div className="text-center text-text-dim py-16">
             <p className="text-lg">No words coined yet</p>
             <p className="text-sm mt-1">
@@ -136,7 +154,7 @@ export default function Dictionary() {
           </div>
         ) : view === 'cards' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {words.map((word) => (
+            {filteredWords.map((word) => (
               <WordCard
                 key={word.id}
                 word={word}
@@ -148,7 +166,7 @@ export default function Dictionary() {
         ) : (
           <div>
             <ConstellationGraph
-              words={words}
+              words={filteredWords}
               modelA={experiment.model_a}
               modelB={experiment.model_b}
               onNodeClick={setSelectedWord}
@@ -170,7 +188,8 @@ export default function Dictionary() {
               </div>
             )}
           </div>
-        )}
+        )
+        })()}
       </div>
     </div>
   )

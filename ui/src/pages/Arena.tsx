@@ -118,9 +118,14 @@ export default function Arena() {
   return (
     <div className="flex-1 p-6 max-w-2xl mx-auto space-y-6">
       <div>
-        <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
-          &larr; Seed Lab
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
+            &larr; Seed Lab
+          </Link>
+          <Link to="/tournaments" className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase">
+            Past Tournaments &rarr;
+          </Link>
+        </div>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-3">
           <ScrambleText>Arena</ScrambleText>
         </h1>
@@ -226,36 +231,33 @@ export default function Arena() {
             </div>
           </div>
 
-          {seed && (
-            <div className="space-y-2">
-              <div className="neural-section-label">// seed_message</div>
-              {presetId ? (
-                <div className="font-mono text-xs text-text-dim bg-bg-deep/80 rounded-sm p-3 max-h-32 overflow-y-auto whitespace-pre-wrap border border-border-custom/50">
-                  {seed}
-                </div>
-              ) : (
-                <Textarea
-                  value={seed}
-                  onChange={(e) => setSeed(e.target.value)}
-                  rows={4}
-                  className="resize-none font-mono text-sm"
-                  placeholder="Enter the opening message..."
-                />
-              )}
-            </div>
-          )}
-
-          {systemPrompt && (
-            <div className="space-y-2">
-              <div className="neural-section-label">// system_prompt</div>
+          <div className="space-y-2">
+            <div className="neural-section-label">// seed_message</div>
+            {presetId ? (
+              <div className="font-mono text-xs text-text-dim bg-bg-deep/80 rounded-sm p-3 max-h-32 overflow-y-auto whitespace-pre-wrap border border-border-custom/50">
+                {seed}
+              </div>
+            ) : (
               <Textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                rows={3}
+                value={seed}
+                onChange={(e) => setSeed(e.target.value)}
+                rows={4}
                 className="resize-none font-mono text-sm"
+                placeholder="Enter the opening message..."
               />
-            </div>
-          )}
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="neural-section-label">// system_prompt</div>
+            <Textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={3}
+              className="resize-none font-mono text-sm"
+              placeholder="Enter a system prompt for both models..."
+            />
+          </div>
 
           {selectedModels.size >= 3 && (
             <div className="space-y-2">

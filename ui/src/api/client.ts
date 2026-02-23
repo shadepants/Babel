@@ -8,6 +8,7 @@ import type {
   ExperimentsListResponse,
   ExperimentStats,
   TurnsResponse,
+  TurnScoresResponse,
   TournamentStartRequest,
   TournamentStartResponse,
   TournamentDetail,
@@ -15,6 +16,7 @@ import type {
   TournamentLeaderboard,
   ExperimentRadarResponse,
   ModelStatusResponse,
+  EnvStatusResponse,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -101,8 +103,36 @@ export const api = {
   getExperimentRadar: (experimentId: string) =>
     fetchJson<ExperimentRadarResponse>(`/api/experiments/${experimentId}/radar`),
 
+  /** Get judge scores for all turns in an experiment */
+  getExperimentScores: (experimentId: string) =>
+    fetchJson<TurnScoresResponse>(`/api/experiments/${experimentId}/scores`),
+
+  /** Stop a running experiment */
+  stopExperiment: (matchId: string) =>
+    fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/stop`, { method: 'POST' }),
+
+  /** Delete a non-running experiment */
+  deleteExperiment: (experimentId: string) =>
+    fetchJson<{ deleted: string }>(`/api/experiments/${experimentId}`, { method: 'DELETE' }),
+
+  /** Test a provider's API key with a tiny LLM call */
+  testProvider: (provider: string) =>
+    fetchJson<{ ok: boolean; provider: string; latency_ms?: number; error?: string }>(
+      `/api/relay/models/test/${provider}`, { method: 'POST' },
+    ),
+
   /** Check which models have API keys configured */
   getModelStatus: () => fetchJson<ModelStatusResponse>('/api/relay/models/status'),
+
+  /** Check whether a .env file exists at the project root */
+  getEnvStatus: () => fetchJson<EnvStatusResponse>('/api/relay/env-status'),
+
+  /** Write an API key to .env and update the server process immediately */
+  setApiKey: (envVar: string, value: string) =>
+    fetchJson<{ ok: boolean; env_var: string; key_preview: string }>('/api/relay/keys', {
+      method: 'POST',
+      body: JSON.stringify({ env_var: envVar, value }),
+    }),
 
   // ── Tournament endpoints ──────────────────────────────────
 
@@ -112,6 +142,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /** Cancel a running tournament */
+  cancelTournament: (tournamentId: string) =>
+    fetchJson<{ tournament_id: string; status: string }>(`/api/tournaments/${tournamentId}/cancel`, { method: 'POST' }),
 
   /** List all tournaments */
   listTournaments: (params?: { limit?: number; offset?: number }) => {

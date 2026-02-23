@@ -6,6 +6,7 @@ API rate limits. Publishes tournament-level SSE events via EventHub.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -26,6 +27,7 @@ class TournamentEvent:
     MATCH_STARTED = "tournament.match_started"
     MATCH_COMPLETE = "tournament.match_complete"
     COMPLETE = "tournament.complete"
+    CANCELLED = "tournament.cancelled"
     ERROR = "tournament.error"
 
 
@@ -33,6 +35,7 @@ async def run_tournament(
     tournament_id: str,
     hub: EventHub,
     db: Database,
+    cancel_event: asyncio.Event | None = None,
 ) -> None:
     """Run all matches in a tournament sequentially.
 
@@ -60,6 +63,29 @@ async def run_tournament(
     completed = 0
     try:
         for match in matches:
+            # Check for cancellation before starting next match
+            if cancel_event and cancel_event.is_set():
+                # Mark remaining pending matches as skipped
+                for m in matches:
+                    if m["status"] == "pending":
+                        await db.update_tournament_match(m["id"], "skipped")
+                elapsed = time.time() - start_time
+                await db.update_tournament_status(
+                    tournament_id, "cancelled", completed_matches=completed,
+                )
+                hub.publish(TournamentEvent.CANCELLED, {
+                    "match_id": tournament_id,
+                    "tournament_id": tournament_id,
+                    "completed_matches": completed,
+                    "total_matches": tournament["total_matches"],
+                    "elapsed_s": round(elapsed, 1),
+                })
+                logger.info(
+                    "Tournament %s cancelled after %d matches",
+                    tournament_id, completed,
+                )
+                return
+
             # Create experiment for this match
             experiment_id = await db.create_experiment(
                 model_a=match["model_a"],
@@ -120,6 +146,8 @@ async def run_tournament(
                     rounds=tournament["rounds"],
                     hub=hub,
                     db=db,
+                    cancel_event=cancel_event,
+                    preset=tournament.get("preset"),
                 )
                 await db.update_tournament_match(match["id"], "completed")
                 completed += 1  # only count successfully completed matches

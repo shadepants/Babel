@@ -7,11 +7,13 @@
  * automatically (backend's include_history=true parameter).
  */
 import { useMemo } from 'react';
-import type { RelaySSEEvent, TurnEvent, VocabEvent } from './types';
+import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent } from './types';
 
 export interface ExperimentState {
   turns: TurnEvent[];
   vocab: VocabEvent[];
+  scores: Record<number, ScoreEvent>;  // keyed by turn_id
+  verdict: VerdictEvent | null;
   currentRound: number;
   totalRounds: number;
   thinkingSpeaker: string | null;
@@ -25,6 +27,8 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
     const state: ExperimentState = {
       turns: [],
       vocab: [],
+      scores: {},
+      verdict: null,
       currentRound: 0,
       totalRounds: 0,
       thinkingSpeaker: null,
@@ -67,6 +71,12 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           }
           break;
         }
+        case 'relay.score':
+          state.scores[event.turn_id] = event;
+          break;
+        case 'relay.verdict':
+          state.verdict = event;
+          break;
       }
     }
 

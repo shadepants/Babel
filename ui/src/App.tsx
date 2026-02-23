@@ -12,6 +12,7 @@ import Analytics from './pages/Analytics'
 import Arena from './pages/Arena'
 import Tournament from './pages/Tournament'
 import Settings from './pages/Settings'
+import Tournaments from './pages/Tournaments'
 
 /** Map current route to a neural network connection tint color */
 function routeTint(pathname: string): string {
@@ -51,6 +52,14 @@ function AppInner() {
           <Route path="/arena"                      element={<Arena />} />
           <Route path="/tournament/:tournamentId"   element={<Tournament />} />
           <Route path="/settings"                   element={<Settings />} />
+          <Route path="/tournaments"                 element={<Tournaments />} />
+          <Route path="*" element={
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              <h1 className="font-display text-2xl text-text-primary tracking-widest">404</h1>
+              <p className="font-mono text-sm text-text-dim">Page not found</p>
+              <a href="/" className="font-mono text-xs text-accent hover:underline">Back to Seed Lab</a>
+            </div>
+          } />
         </Route>
       </Routes>
     </>

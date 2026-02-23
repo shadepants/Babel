@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { TurnEvent } from '@/api/types'
+import type { TurnEvent, ScoreEvent } from '@/api/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { TurnBubble } from './TurnBubble'
 import { ThinkingIndicator } from './ThinkingIndicator'
@@ -11,6 +11,7 @@ interface ConversationColumnProps {
   turns: TurnEvent[]
   thinkingSpeaker: string | null
   color: 'model-a' | 'model-b'
+  scores?: Record<number, ScoreEvent>
 }
 
 /**
@@ -24,6 +25,7 @@ export function ConversationColumn({
   turns,
   thinkingSpeaker,
   color,
+  scores,
 }: ConversationColumnProps) {
   const bottomRef     = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -92,7 +94,7 @@ export function ConversationColumn({
             return (
               <div key={turn.turn_id}>
                 {showDivider && <RoundDivider round={turn.round} />}
-                <TurnBubble turn={turn} color={color} />
+                <TurnBubble turn={turn} color={color} score={scores?.[turn.turn_id]} />
               </div>
             )
           })}

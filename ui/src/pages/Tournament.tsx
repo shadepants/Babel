@@ -7,7 +7,6 @@ import type {
   LeaderboardEntry,
   RadarDataPoint,
 } from '@/api/types'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RadarChart } from '@/components/analytics/RadarChart'
@@ -29,7 +28,9 @@ function StatusBadge({ status }: { status: string }) {
         ? 'bg-accent/20 text-accent'
         : status === 'failed'
           ? 'bg-danger/20 text-danger'
-          : 'bg-text-dim/20 text-text-dim'
+          : status === 'cancelled' || status === 'skipped'
+            ? 'bg-amber-500/20 text-amber-400'
+            : 'bg-text-dim/20 text-text-dim'
   return <Badge variant="secondary" className={`text-xs ${styles}`}>{status}</Badge>
 }
 
@@ -51,6 +52,7 @@ export default function Tournament() {
   const [leaderboard, setLeaderboard] = useState<TournamentLeaderboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!tournamentId) return
@@ -123,6 +125,25 @@ export default function Tournament() {
         </p>
       </div>
 
+      {/* Cancel button for running tournaments */}
+      {tournament.status === 'running' && tournamentId && (
+        <Button
+          variant="outline"
+          className="border-danger/50 text-danger hover:bg-danger/10"
+          disabled={cancelling}
+          onClick={async () => {
+            setCancelling(true)
+            try {
+              await api.cancelTournament(tournamentId)
+            } catch {
+              setCancelling(false)
+            }
+          }}
+        >
+          {cancelling ? 'Cancelling...' : 'Cancel Tournament'}
+        </Button>
+      )}
+
       {/* Progress bar */}
       {tournament.status === 'running' && (
         <div className="w-full bg-bg-deep rounded-full h-2">
@@ -138,11 +159,11 @@ export default function Tournament() {
         <h2 className="text-lg font-semibold text-text-primary mb-3">Matches</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {tournament.matches.map((match) => (
-            <Card
+            <div
               key={match.id}
-              className="bg-bg-card border-border-custom"
+              className="neural-card"
             >
-              <CardContent className="p-4 space-y-2">
+              <div className="p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-text-dim">Match {match.match_order}</span>
                   <StatusBadge status={match.status} />
@@ -176,8 +197,8 @@ export default function Tournament() {
                     </Link>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -248,7 +269,7 @@ export default function Tournament() {
       )}
 
       {/* Actions */}
-      {tournament.status === 'completed' && (
+      {(tournament.status === 'completed' || tournament.status === 'cancelled') && (
         <div className="flex gap-3">
           <Link to="/arena">
             <Button variant="outline">New Tournament</Button>

@@ -21,8 +21,11 @@ from server.config import (
     DEFAULT_MODEL_B,
     DEFAULT_ROUNDS,
     DEFAULT_SEED,
+    DEFAULT_SCORING_ENABLED,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TEMPERATURE,
+    DEFAULT_VERDICT_ENABLED,
+    JUDGE_MODEL,
     MODEL_REGISTRY,
     get_display_name,
 )
@@ -54,6 +57,9 @@ class RelayStartRequest(BaseModel):
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=100, le=4096)
     preset: str | None = Field(default=None, description="Preset name (if from Seed Lab)")
     turn_delay_seconds: float = Field(default=2.0, ge=0.0, le=10.0, description="Seconds to pause between turns")
+    judge_model: str | None = Field(default=None, description="litellm model string for the judge (None = use server default)")
+    enable_scoring: bool = Field(default=DEFAULT_SCORING_ENABLED, description="Fire-and-forget per-turn scoring via judge model")
+    enable_verdict: bool = Field(default=DEFAULT_VERDICT_ENABLED, description="Final verdict from judge after all rounds")
 
 
 class RelayStartResponse(BaseModel):
@@ -93,6 +99,11 @@ async def start_relay(body: RelayStartRequest, request: Request):
         if model not in _ALLOWED_MODELS:
             raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
 
+    # Resolve judge model — use request value if provided, else fall back to server default
+    resolved_judge = body.judge_model or JUDGE_MODEL
+    if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
+        raise HTTPException(400, f"Judge model '{resolved_judge}' is not in the allowed registry")
+
     # Resolve preset if specified (server is authoritative source of truth)
     seed = body.seed
     system_prompt = body.system_prompt
@@ -119,6 +130,9 @@ async def start_relay(body: RelayStartRequest, request: Request):
         config=config,
         temperature_a=body.temperature_a,
         temperature_b=body.temperature_b,
+        judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+        enable_scoring=body.enable_scoring,
+        enable_verdict=body.enable_verdict,
     )
 
     # Build agents
@@ -150,6 +164,9 @@ async def start_relay(body: RelayStartRequest, request: Request):
             turn_delay_seconds=body.turn_delay_seconds,
             cancel_event=cancel_event,
             preset=body.preset,
+            judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+            enable_scoring=body.enable_scoring,
+            enable_verdict=body.enable_verdict,
         )
     )
     _running_relays[match_id] = (task, cancel_event)
@@ -369,3 +386,54 @@ async def test_provider_connection(provider: str):
         return {"ok": True, "provider": provider, "latency_ms": latency_ms}
     except Exception as e:
         return {"ok": False, "provider": provider, "error": str(e)}
+
+
+# ── API Key Management ──────────────────────────────────────────────────
+
+_ALLOWED_ENV_VARS: frozenset[str] = frozenset({
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "SAMBANOVA_API_KEY",
+    "OPENROUTER_API_KEY",
+    "CEREBRAS_API_KEY",
+})
+
+
+class SetKeyRequest(BaseModel):
+    env_var: str
+    value: str
+
+
+@router.post("/keys")
+async def set_api_key(body: SetKeyRequest):
+    """Write an API key to .env and update os.environ immediately.
+
+    The key takes effect for new LLM calls without restarting the server.
+    Only env vars in the provider allowlist are accepted.
+    """
+    import os
+    from pathlib import Path
+
+    if body.env_var not in _ALLOWED_ENV_VARS:
+        raise HTTPException(400, f"Unknown env var '{body.env_var}'. Must be one of: {sorted(_ALLOWED_ENV_VARS)}")
+    value = body.value.strip()
+    if not value:
+        raise HTTPException(400, "Key value cannot be empty")
+
+    # Write to .env so the key persists after restart
+    env_path = Path(os.getcwd()) / ".env"
+    try:
+        from dotenv import set_key
+        set_key(str(env_path), body.env_var, value, quote_mode="never")
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to write .env: {exc}") from exc
+
+    # Update current process immediately — no restart required
+    os.environ[body.env_var] = value
+
+    preview = f"{value[:4]}...{value[-4:]}" if len(value) >= 8 else "****"
+    return {"ok": True, "env_var": body.env_var, "key_preview": preview}

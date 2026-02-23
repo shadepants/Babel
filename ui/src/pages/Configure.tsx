@@ -44,6 +44,11 @@ export default function Configure() {
   const [starting, setStarting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // -- Referee / scoring --
+  const [judgeModel, setJudgeModel] = useState<string | null>(null)
+  const [enableScoring, setEnableScoring] = useState(false)
+  const [enableVerdict, setEnableVerdict] = useState(false)
+
   // Preset defaults — for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
   // Suggested model strings from preset (for C3 indicator)
@@ -157,6 +162,9 @@ export default function Configure() {
         temperature_b: temperatureB,
         max_tokens: maxTokens,
         turn_delay_seconds: turnDelay,
+        enable_scoring: enableScoring,
+        enable_verdict: enableVerdict,
+        ...(judgeModel ? { judge_model: judgeModel } : {}),
       }
       if (!isCustom && presetId) {
         request.preset = presetId
@@ -434,6 +442,64 @@ export default function Configure() {
                 {systemPrompt || <span className="text-text-dim/40 italic">default system prompt</span>}
               </div>
             )}
+          </div>
+
+          {/* Referee Config */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// referee_config</div>
+
+            <button
+              type="button"
+              onClick={() => { setEnableScoring(!enableScoring); if (enableScoring) setEnableVerdict(false) }}
+              className="flex items-center gap-3 group w-full text-left"
+            >
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${enableScoring ? 'bg-accent/70' : 'bg-border-custom'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableScoring ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                Enable per-turn scoring
+              </span>
+            </button>
+
+            {enableScoring && (
+              <div className="space-y-3 pl-4 border-l border-accent/20">
+                <div className="space-y-1.5">
+                  <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                    Referee Model
+                  </label>
+                  <Select value={judgeModel ?? ''} onValueChange={(v) => setJudgeModel(v || null)}>
+                    <SelectTrigger className="font-mono text-xs">
+                      <SelectValue placeholder="Auto (gemini-2.5-flash)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="" className="font-mono text-xs">Auto (gemini-2.5-flash)</SelectItem>
+                      {models.map((m) => (
+                        <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEnableVerdict(!enableVerdict)}
+                  className="flex items-center gap-3 group w-full text-left"
+                >
+                  <div className={`relative w-8 h-4 rounded-full transition-colors ${enableVerdict ? 'bg-accent/70' : 'bg-border-custom'}`}>
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableVerdict ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                  </div>
+                  <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                    Enable final verdict
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // scoring fires async &mdash; relay loop never pauses
+            </p>
           </div>
 
           {/* Error */}

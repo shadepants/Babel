@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord, ExperimentStats, ExperimentRadarResponse, RadarDataPoint, VocabWord, TurnRecord } from '@/api/types'
+import type { ExperimentRecord, ExperimentStats, ExperimentRadarResponse, RadarDataPoint, VocabWord, TurnRecord, TurnScore } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VocabGrowthChart } from '@/components/analytics/VocabGrowthChart'
 import { LatencyChart } from '@/components/analytics/LatencyChart'
 import { TokenChart } from '@/components/analytics/TokenChart'
 import { RadarChart } from '@/components/analytics/RadarChart'
+import { RoundScoreChart } from '@/components/analytics/RoundScoreChart'
 import { formatDuration } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
 
@@ -51,19 +52,22 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [radar, setRadar] = useState<RadarDataPoint[]>([])
+  const [scores, setScores] = useState<TurnScore[]>([])
   const [exporting, setExporting] = useState(false)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
     try {
-      const [exp, st, radarRes] = await Promise.all([
+      const [exp, st, radarRes, scoresRes] = await Promise.all([
         api.getExperiment(experimentId),
         api.getExperimentStats(experimentId),
         api.getExperimentRadar(experimentId).catch(() => null),
+        api.getExperimentScores(experimentId).catch(() => null),
       ])
       setExperiment(exp)
       setStats(st)
+      if (scoresRes) setScores(scoresRes.scores)
       if (radarRes && radarRes.models.length > 0) {
         setRadar(radarRes.models.map((m, i) => ({
           model: m.model,
@@ -332,6 +336,9 @@ export default function Analytics() {
         {experiment.temperature_b != null && (
           <StatCard label={`Temp (${modelB})`} value={experiment.temperature_b.toFixed(1)} />
         )}
+        {experiment.judge_model && (
+          <StatCard label="Referee" value={experiment.judge_model.split('/').pop() ?? experiment.judge_model} />
+        )}
       </div>
 
       {/* Charts */}
@@ -377,6 +384,15 @@ export default function Analytics() {
           </div>
         )}
       </div>
+
+      {experiment.enable_scoring && (
+        <div className="neural-card">
+          <div className="p-5">
+            <h2 className="text-sm font-semibold text-text-primary mb-4">Turn Scores</h2>
+            <RoundScoreChart scores={scores} />
+          </div>
+        </div>
+      )}
 
       {/* Quick links */}
       <div className="flex gap-3">

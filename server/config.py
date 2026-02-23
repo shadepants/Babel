@@ -36,6 +36,14 @@ DEFAULT_ROUNDS = 5
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 1500
 
+# ── Judge / Scoring Defaults ────────────────────────────────────────────
+# judge_model is used for per-turn scoring and final verdicts.
+# Both features are opt-in (disabled by default).
+
+JUDGE_MODEL = "gemini/gemini-2.5-flash"
+DEFAULT_SCORING_ENABLED = False
+DEFAULT_VERDICT_ENABLED = False
+
 
 # ── Model Registry ─────────────────────────────────────────────────────
 # Display name → litellm model string.

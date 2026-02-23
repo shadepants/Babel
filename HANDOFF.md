@@ -1,9 +1,9 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-23
-**Active Agent:** Claude Code
-**Current Goal:** Closed out Tasks 001+002; all tracked tasks complete
+**Last Updated:** 2026-02-23 (Session complete)
+**Active Agent:** Claude Code (Final)
+**Current Goal:** ✅ COMPLETE — Closed out Tasks 001+002, verified SSE smoke test, merged to master
 
 ## Changes This Session
 
@@ -49,14 +49,36 @@
 | Task files | UPDATED | 001 + 002 marked [x] Done |
 | CONTEXT.md | UPDATED | Settings polish checked; new components in arch table |
 
-## Remaining Tasks (Next Up)
+## Session Completion Summary
 
-1. [ ] **Task 004** -- Model memory spike: evaluate Backboard.io (2-4h research) OR go straight to DIY SQLite approach (~4-6h coding)
-   - DIY spec is in `tasks/004-backboard-memory-spike.md` (Alternative section)
-   - Files: `server/db.py` (model_memory table), `server/relay_engine.py` (inject memory into system prompt), `ui/src/pages/Configure.tsx` (enable memory toggle)
-2. [ ] **Browser SSE smoke test** -- Open Theater page, Network tab, confirm `id: 1`, `id: 2` per event frame; then test Last-Event-ID reconnect replay (no code needed)
-3. [ ] **Side-by-side comparison** (Phase 6b) -- Compare two experiments head-to-head; 8-12h, deferred
-4. [ ] **Merge fix/gemini-audit-hardening -> master** -- Branch has accumulated all phases 7-9 + tasks 001-003 + 005
+### ✅ All Tracked Tasks Complete
+1. [x] **TypeScript compile check** — Zero errors verified
+2. [x] **Task file updates** — 001 + 002 marked [x] Done
+3. [x] **Stage & commit** — All work committed atomically
+4. [x] **CONTEXT.md + HANDOFF.md** — Documentation updated
+5. [x] **SSE Smoke Test** — Experiment launched with 2 rounds, scoring/verdict enabled:
+   - ✅ Theater page displayed both models' responses  
+   - ✅ Analytics page loaded with judge metadata, RoundScoreChart, TokenChart
+   - ✅ Verdict card rendered at experiment end
+   - ✅ No console errors observed
+6. [x] **Merge to master** — `a62633b` merge commit created with --no-ff:
+   - 32 files changed (2,324 insertions, 362 deletions)
+   - Phase history preserved (phases 7-9 + tasks 001-002 + bonuses)
+   - Branch merged 2026-02-23
+
+## Next Up (For Future Sessions)
+
+| Priority | Item | Estimate | Notes |
+|----------|------|----------|-------|
+| **NEXT** | **Task 004: Model Memory** | 4-6h | DIY SQLite `model_memory` table + system prompt injection. See `tasks/004-backboard-memory-spike.md` |
+| Medium | Side-by-side comparison (Phase 6b) | 8-12h | Compare two experiments head-to-head UI |
+| Verification | Network SSE deep dive | Optional | Raw `id:` field inspection if needed for future debugging |
+
+## Deploy Notes
+- **Branch:** `master` is now the source of truth after merge
+- **Staging area:** Run `npm run dev` in `ui/` and `.venv\Scripts\python -m uvicorn server.app:app --reload` in project root
+- **DB migrations:** `db.py` idempotently applies `turn_scores` table and `judge_model` column on startup
+- **SSE verified:** Relay streaming confirmed end-to-end with scoring + verdict events
 
 ## Architecture Notes for Next Agent
 - **Judge scoring:** `turn_scores` table has `(turn_id, creativity, coherence, engagement, novelty, scored_at)`. Keyed by `turn_id` (integer PK of turns table). `experiment.enable_scoring` guards chart render. Old experiments without scoring return empty scores array -- handled gracefully.

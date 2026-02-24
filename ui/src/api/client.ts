@@ -116,11 +116,11 @@ export const api = {
   resumeExperiment: (matchId: string) =>
     fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/resume`, { method: 'POST' }),
 
-  /** Inject a human turn while paused */
-  injectTurn: (matchId: string, content: string) =>
+  /** Inject a human turn (paused relay or RPG mode) */
+  injectTurn: (matchId: string, content: string, speaker?: string) =>
     fetchJson<{ match_id: string; round: number; status: string }>(`/api/relay/${matchId}/inject`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, ...(speaker ? { speaker } : {}) }),
     }),
 
   /** Stop a running experiment */

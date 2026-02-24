@@ -47,6 +47,7 @@ class RelayEvent:
     PAUSED = "relay.paused"           # Relay yielded at pause checkpoint
     RESUMED = "relay.resumed"         # Relay continuing after pause
     OBSERVER = "relay.observer"       # Observer/narrator model commentary
+    AWAITING_HUMAN = "relay.awaiting_human"  # RPG engine waiting for human input
 
 
 # ── Task Exception Logging ──────────────────────────────────────────────

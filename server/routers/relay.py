@@ -63,6 +63,9 @@ class RelayStartRequest(BaseModel):
     enable_memory: bool = Field(default=False, description="Inject past session vocabulary as memory context")
     observer_model: str | None = Field(default=None, description="Optional observer/narrator model (None = disabled)")
     observer_interval: int = Field(default=3, ge=1, le=10, description="Observer fires every N turns")
+    # Phase 13b: RPG mode
+    mode: str = Field(default="standard", description="'standard' or 'rpg'")
+    participants: list[dict] | None = Field(default=None, description="RPG participant configs [{name, model, role}]")
 
 
 class RelayStartResponse(BaseModel):
@@ -120,11 +123,13 @@ async def start_relay(body: RelayStartRequest, request: Request):
             system_prompt = preset_data.get("system_prompt", system_prompt)
 
     # Create experiment record
+    import json as _json
     config = {
         "temperature_a": body.temperature_a,
         "temperature_b": body.temperature_b,
         "max_tokens": body.max_tokens,
     }
+    participants_json = _json.dumps(body.participants) if body.participants else None
     match_id = await db.create_experiment(
         model_a=body.model_a,
         model_b=body.model_b,
@@ -138,8 +143,52 @@ async def start_relay(body: RelayStartRequest, request: Request):
         judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
         enable_scoring=body.enable_scoring,
         enable_verdict=body.enable_verdict,
+        mode=body.mode,
+        participants_json=participants_json,
     )
 
+    cancel_event = asyncio.Event()
+
+    # ── RPG mode: launch rpg_engine instead of relay ──
+    if body.mode == "rpg" and body.participants:
+        human_event = asyncio.Event()
+        request.app.state.human_events[match_id] = human_event
+
+        from server.rpg_engine import run_rpg_match
+        task = asyncio.create_task(run_rpg_match(
+            match_id=match_id,
+            participants=body.participants,
+            seed=seed,
+            system_prompt=system_prompt,
+            rounds=body.rounds,
+            hub=hub,
+            db=db,
+            human_event=human_event,
+            cancel_event=cancel_event,
+        ))
+        resume_event = asyncio.Event()
+        resume_event.set()
+        _running_relays[match_id] = (task, cancel_event, resume_event)
+
+        def _cleanup_rpg(t: asyncio.Task):
+            _running_relays.pop(match_id, None)
+            request.app.state.human_events.pop(match_id, None)
+        task.add_done_callback(_cleanup_rpg)
+
+        logger.info(
+            "RPG started: %s — %d participants, %d rounds",
+            match_id, len(body.participants), body.rounds,
+        )
+
+        return RelayStartResponse(
+            match_id=match_id,
+            model_a=body.model_a,
+            model_b=body.model_b,
+            rounds=body.rounds,
+            status="running",
+        )
+
+    # ── Standard relay mode ──
     # Build agents
     agent_a = RelayAgent(
         name=get_display_name(body.model_a),
@@ -155,7 +204,6 @@ async def start_relay(body: RelayStartRequest, request: Request):
     )
 
     # Launch relay as background task (doesn't block the response)
-    cancel_event = asyncio.Event()
     resume_event = asyncio.Event()
     resume_event.set()  # Initially running (not paused)
     task = asyncio.create_task(
@@ -241,38 +289,61 @@ async def resume_relay(match_id: str):
 
 class InjectTurnRequest(BaseModel):
     content: str = Field(..., min_length=1, description="Human turn content to inject")
+    speaker: str = Field(default="Human", description="Speaker name for the injected turn")
 
 
 @router.post("/{match_id}/inject")
 async def inject_turn(match_id: str, body: InjectTurnRequest, request: Request):
-    """Inject a human turn while the experiment is paused."""
+    """Inject a human turn. Works for both paused standard relays and RPG mode."""
     entry = _running_relays.get(match_id)
     if not entry:
         raise HTTPException(404, "Experiment is not running")
-    _task, _cancel, resume_event = entry
-    if resume_event.is_set():
-        raise HTTPException(409, "Experiment must be paused before injecting a turn")
     db = _get_db(request)
     hub = _get_hub(request)
+    from server.relay_engine import RelayEvent
 
     # Infer round number from current turn count
     turns = await db.get_turns(match_id)
     round_num = len(turns) // 2 + 1
 
+    # -- RPG mode: save turn then signal the engine to continue --
+    human_events = getattr(request.app.state, "human_events", {})
+    if match_id in human_events:
+        await db.add_turn(
+            experiment_id=match_id,
+            round_num=round_num,
+            speaker=body.speaker,
+            model="human",
+            content=body.content,
+        )
+        hub.publish(RelayEvent.TURN, {
+            "match_id": match_id,
+            "speaker": body.speaker,
+            "model": "human",
+            "content": body.content,
+            "round": round_num,
+        })
+        human_events[match_id].set()
+        return {"match_id": match_id, "round": round_num, "status": "injected"}
+
+    # -- Standard relay mode: must be paused first --
+    _task, _cancel, resume_event = entry
+    if resume_event.is_set():
+        raise HTTPException(409, "Experiment must be paused before injecting a turn")
+
     # Save to DB
     await db.add_turn(
         experiment_id=match_id,
         round_num=round_num,
-        speaker="Human",
+        speaker=body.speaker,
         model="human",
         content=body.content,
     )
 
     # Publish SSE event so the UI shows it immediately
-    from server.relay_engine import RelayEvent
     hub.publish(RelayEvent.TURN, {
         "match_id": match_id,
-        "speaker": "Human",
+        "speaker": body.speaker,
         "model": "human",
         "content": body.content,
         "round": round_num,

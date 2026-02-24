@@ -1,60 +1,59 @@
-﻿# AI Agent Handoff Protocol
+# AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-23 (Session 8)
+**Last Updated:** 2026-02-23 (Session 9)
 **Active Agent:** Claude Code
-**Current Goal:** Planning session -- Phase 14+15 comprehensive spec written; no code changed
+**Current Goal:** Phase 13b Virtual Tabletop RPG expansion -- fully implemented and committed
 
 ## What Was Done This Session
 
-### Planning Only (Session 8)
-- Read CONTEXT.md, HANDOFF.md, and all modified working-tree files
-- Explored relay_engine.py, relay.py, db.py, vocab_extractor.py, Dictionary.tsx, Theater.tsx,
-  Configure.tsx, VocabTimeline.tsx, participantColors.ts, ConstellationGraph.tsx, app.py
-- Wrote comprehensive Phase 14+15 implementation plan to:
-  `~/.claude/plans/sunny-chasing-sutton.md`
+### Phase 13b: Virtual Tabletop RPG Mode (Session 9)
+- Pivoted from Phase 14+15 to RPG expansion (smaller scope, ~365 lines vs ~1400)
+- Read and adapted GEM spec (`GEM_The_Virtual_Tabletop_expansion.md`) -- fixed 7 bugs
+- Created `server/rpg_engine.py` (NEW, ~175 lines) -- human-yielding RPG engine
+- Added DB migrations (mode, participants_json, metadata columns)
+- Added `app.state.human_events = {}` for per-match asyncio.Event registry
+- Added `RelayEvent.AWAITING_HUMAN` constant to relay_engine.py
+- Updated relay.py: mode branching in POST /start, dual-mode POST /inject
+- Added `AwaitingHumanEvent` + `isAwaitingHuman` to frontend types/hooks
+- Created `HumanInput.tsx` (NEW) -- emerald command input bar
+- Created `RPGTheater.tsx` (NEW) -- full RPG session view with party roster
+- Updated Configure.tsx: RPG mode toggle, party member builder, "Begin Campaign"
+- Updated App.tsx: /rpg/:matchId route, emerald tint
+- Updated client.ts: injectTurn() accepts optional speaker param
 
-### No code changes this session (plan only)
+### Committed as Phase 12+13+13b
+- Phase 12+13 changes were previously uncommitted; all committed together with Phase 13b
 
 ## Verification Status
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| Phase 12+13 code | DONE but uncommitted | Working tree changes need git commit before Phase 14 |
-| Phase 14+15 plan | WRITTEN | ~/.claude/plans/sunny-chasing-sutton.md |
-| TypeScript (last known) | PASSED | tsc --noEmit 0 errors (verified end of session 7) |
+| Python syntax | PASSED | py_compile on all 5 modified backend files |
+| TypeScript | PASSED | tsc --noEmit exits 0, zero errors |
+| Runtime import | BLOCKED | Zombie Python processes (litellm/Defender issue); kill in Task Manager to test |
+| Live RPG test | NOT YET | Needs server start + real API keys; deferred to next session |
 
-## Phase 12+13 Uncommitted Files (commit these first)
-```
-server/relay_engine.py   server/routers/relay.py   server/app.py
-ui/src/api/types.ts      ui/src/api/hooks.ts        ui/src/api/client.ts
-ui/src/pages/Configure.tsx   ui/src/pages/Dictionary.tsx   ui/src/pages/Theater.tsx
-ui/src/components/dictionary/ConstellationGraph.tsx
-ui/src/components/dictionary/WordCard.tsx
-ui/src/components/dictionary/VocabTimeline.tsx
-ui/src/lib/format.ts     ui/src/lib/participantColors.ts
-CONTEXT.md  HANDOFF.md   ui/vite.config.ts
-```
-Suggested message: `feat(phase-12+13): dictionary revamp, pause/resume, human inject, observer model`
+## GEM Spec Bugs Fixed During Implementation
 
-## Next Steps (from plan sunny-chasing-sutton.md)
+| Bug | Fix |
+|-----|-----|
+| `content, latency = await call_model(...)` | Destructure 3 values: `content, latency, tokens` |
+| Uses `useRelayStream` hook | Used `useSSE` + `useExperimentState` (Babel's actual pattern) |
+| Raw string event types | Used `RelayEvent.AWAITING_HUMAN` constant |
+| No cancel_event in rpg_engine | Added cancel_event param + check between turns |
+| InjectTurnRequest has match_id body field | Babel uses path param `/{match_id}/inject` |
+| round_num=0 in inject | Infer from DB turn count |
+| No cleanup of human_events | Added cleanup in _cleanup_rpg callback |
 
-1. [ ] **COMMIT** Phase 12+13 working-tree changes (see list above)
-2. [ ] **14-A** VocabBurstChart.tsx -- D3 burst chart in Dictionary (~0.5 day)
-   - New file: ui/src/components/dictionary/VocabBurstChart.tsx
-   - Modify: ui/src/pages/Dictionary.tsx (import + render below swimlane)
-   - Data: GET /api/experiments/:id/stats vocab_by_round (no new backend needed)
-3. [ ] **14-B** Experiment forking (~2 days)
-   - server/db.py: ALTER TABLE experiments ADD COLUMN parent_experiment_id/fork_from_turn; get_turns_up_to()
-   - server/relay_engine.py: initial_history param
-   - server/routers/relay.py: fork_from_experiment_id/fork_from_turn in RelayStartRequest
-   - ui: types.ts + TurnBubble fork button + Theater onFork handler + Configure fork banner
-4. [ ] **14-C** Cross-run vocabulary provenance (~1.5 days)
-   - server/db.py: ALTER TABLE vocabulary ADD COLUMN origin_experiment_id; tag_word_origins(); updated get_vocabulary() JOIN
-   - server/relay_engine.py: fire tag_word_origins() background task at completion
-   - ui: VocabWord type + WordCard provenance badge
-5. [ ] **15-A** N-way conversations (~4 days)
-6. [ ] **15-B** Branch tree (~2 days)
+## Next Steps
+
+1. [ ] **Runtime smoke test** -- kill zombie Python processes, start server, test RPG flow end-to-end
+2. [ ] **14-A** VocabBurstChart.tsx -- D3 burst chart in Dictionary
+3. [ ] **14-B** Experiment forking -- DB migrations, initial_history, fork button
+4. [ ] **14-C** Cross-run vocabulary provenance
+5. [ ] **15-A** N-way conversations
+6. [ ] **15-B** Branch tree
 
 ## Key Patterns (carry forward)
 
@@ -64,3 +63,5 @@ Suggested message: `feat(phase-12+13): dictionary revamp, pause/resume, human in
 - **win_write + HTML entities**: never raw Unicode in JSX/TS source files
 - **Pause state transient**: asyncio.Event per relay, no DB column
 - **Write lock**: db._write_lock wraps ALL db write methods
+- **RPG human_events**: separate dict from _running_relays; cleanup removes both
+- **RPG global perspective**: all participants see full conversation; current speaker = assistant, others = user with [name]: prefix

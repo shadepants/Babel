@@ -60,6 +60,12 @@ export default function Configure() {
   const [observerModel, setObserverModel] = useState<string>('none')
   const [observerInterval, setObserverInterval] = useState(3)
 
+  // -- RPG Mode --
+  const [rpgMode, setRpgMode] = useState(false)
+  const [rpgParticipants, setRpgParticipants] = useState<Array<{ name: string; model: string; role: string }>>([
+    { name: 'Player', model: 'human', role: 'player' },
+  ])
+
   // Preset defaults — for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
   // Suggested model strings from preset (for C3 indicator)
@@ -165,8 +171,8 @@ export default function Configure() {
   }
 
   async function handleLaunch() {
-    if (!modelA || !modelB) {
-      setFormError('Please select both models.')
+    if (!modelA || (!rpgMode && !modelB)) {
+      setFormError(rpgMode ? 'Please select a DM model.' : 'Please select both models.')
       return
     }
     if (!seed.trim()) {
@@ -178,18 +184,23 @@ export default function Configure() {
     setFormError(null)
 
     try {
+      const allParticipants = rpgMode
+        ? [{ name: 'DM', model: modelA, role: 'dm' }, ...rpgParticipants]
+        : undefined
+
       const request: Parameters<typeof api.startRelay>[0] = {
         model_a: modelA,
-        model_b: modelB,
+        model_b: rpgMode ? modelA : modelB,
         seed: seed.trim(),
         rounds,
         temperature_a: temperatureA,
-        temperature_b: temperatureB,
+        temperature_b: rpgMode ? temperatureA : temperatureB,
         max_tokens: maxTokens,
         turn_delay_seconds: turnDelay,
         enable_scoring: enableScoring,
         enable_verdict: enableVerdict,
         enable_memory: enableMemory,
+        ...(rpgMode ? { mode: 'rpg' as const, participants: allParticipants } : {}),
         ...(judgeModel && judgeModel !== 'auto' ? { judge_model: judgeModel } : {}),
         ...(observerModel && observerModel !== 'none' ? { observer_model: observerModel, observer_interval: observerInterval } : {}),
       }
@@ -202,11 +213,15 @@ export default function Configure() {
 
       const res = await api.startRelay(request)
 
-      const nameA = models.find((m) => m.model === modelA)?.name ?? modelA
-      const nameB = models.find((m) => m.model === modelB)?.name ?? modelB
-      navigate(`/theater/${res.match_id}`, {
-        state: { modelAName: nameA, modelBName: nameB },
-      })
+      if (rpgMode) {
+        navigate(`/rpg/${res.match_id}`)
+      } else {
+        const nameA = models.find((m) => m.model === modelA)?.name ?? modelA
+        const nameB = models.find((m) => m.model === modelB)?.name ?? modelB
+        navigate(`/theater/${res.match_id}`, {
+          state: { modelAName: nameA, modelBName: nameB },
+        })
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to start experiment')
     } finally {
@@ -285,10 +300,32 @@ export default function Configure() {
         <div className="neural-card-bar" />
         <div className="p-6 space-y-6">
 
+          {/* RPG Mode Toggle */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// mode</div>
+            <button
+              type="button"
+              onClick={() => setRpgMode(!rpgMode)}
+              className="flex items-center gap-3 group w-full text-left"
+            >
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${rpgMode ? 'bg-emerald-500/70' : 'bg-border-custom'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${rpgMode ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                RPG Mode
+              </span>
+            </button>
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              {rpgMode
+                ? '// AI dungeon master + human player. Model A becomes the DM.'
+                : '// Standard two-model relay conversation'}
+            </p>
+          </div>
+
           {/* Models */}
           <div className="space-y-3">
             <div className="neural-section-label flex items-center justify-between">
-              <span>// model_selection</span>
+              <span>// {rpgMode ? 'dm_model' : 'model_selection'}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -301,10 +338,10 @@ export default function Configure() {
                 &#8646; swap
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid ${rpgMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
-                  &#9671; Model A
+                  &#9671; {rpgMode ? 'Dungeon Master' : 'Model A'}
                 </label>
                 <Select value={modelA} onValueChange={setModelA}>
                   <SelectTrigger className="font-mono text-xs border-model-a/30 focus:ring-model-a/40">
@@ -326,32 +363,128 @@ export default function Configure() {
                   <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
                 )}
               </div>
-              <div className="space-y-1.5">
-                <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
-                  &#9671; Model B
-                </label>
-                <Select value={modelB} onValueChange={setModelB}>
-                  <SelectTrigger className="font-mono text-xs border-model-b/30 focus:ring-model-b/40">
-                    <SelectValue placeholder="Select model..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                        {m.name}
-                        {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {modelB && modelStatus.get(modelB) === false && (
-                  <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
-                )}
-                {!isCustom && suggestedModelB && modelB === suggestedModelB && (
-                  <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
-                )}
-              </div>
+              {!rpgMode && (
+                <div className="space-y-1.5">
+                  <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
+                    &#9671; Model B
+                  </label>
+                  <Select value={modelB} onValueChange={setModelB}>
+                    <SelectTrigger className="font-mono text-xs border-model-b/30 focus:ring-model-b/40">
+                      <SelectValue placeholder="Select model..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((m) => (
+                        <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                          {m.name}
+                          {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {modelB && modelStatus.get(modelB) === false && (
+                    <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
+                  )}
+                  {!isCustom && suggestedModelB && modelB === suggestedModelB && (
+                    <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* RPG Participants */}
+          {rpgMode && (
+            <div className="space-y-3">
+              <div className="neural-section-label flex items-center justify-between">
+                <span>// party_members</span>
+                <button
+                  type="button"
+                  onClick={() => setRpgParticipants([...rpgParticipants, { name: '', model: 'human', role: 'player' }])}
+                  className="font-mono text-[9px] text-emerald-400/60 hover:text-emerald-400 tracking-wider uppercase transition-colors"
+                >
+                  + add member
+                </button>
+              </div>
+              {rpgParticipants.map((p, i) => (
+                <div key={i} className="flex gap-2 items-end">
+                  <div className="flex-1 space-y-1">
+                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Name</label>
+                    <input
+                      type="text"
+                      value={p.name}
+                      onChange={(e) => {
+                        const next = [...rpgParticipants]
+                        next[i] = { ...next[i], name: e.target.value }
+                        setRpgParticipants(next)
+                      }}
+                      className="w-full bg-bg-deep/80 border border-border-custom/50 rounded-sm px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-emerald-500/50"
+                      placeholder="Character name"
+                    />
+                  </div>
+                  <div className="w-28 space-y-1">
+                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Role</label>
+                    <Select
+                      value={p.role}
+                      onValueChange={(v) => {
+                        const next = [...rpgParticipants]
+                        next[i] = { ...next[i], role: v }
+                        setRpgParticipants(next)
+                      }}
+                    >
+                      <SelectTrigger className="font-mono text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="player" className="font-mono text-xs">Player</SelectItem>
+                        <SelectItem value="npc" className="font-mono text-xs">NPC (AI)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-40 space-y-1">
+                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Model</label>
+                    {p.role === 'player' ? (
+                      <div className="bg-bg-deep/80 border border-emerald-500/20 rounded-sm px-2 py-1.5 font-mono text-xs text-emerald-400/70">
+                        Human
+                      </div>
+                    ) : (
+                      <Select
+                        value={p.model === 'human' ? (models[0]?.model ?? '') : p.model}
+                        onValueChange={(v) => {
+                          const next = [...rpgParticipants]
+                          next[i] = { ...next[i], model: v }
+                          setRpgParticipants(next)
+                        }}
+                      >
+                        <SelectTrigger className="font-mono text-xs">
+                          <SelectValue placeholder="Select model..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models.map((m) => (
+                            <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  {rpgParticipants.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setRpgParticipants(rpgParticipants.filter((_, j) => j !== i))}
+                      className="text-danger/50 hover:text-danger font-mono text-xs pb-1.5 transition-colors"
+                      title="Remove"
+                    >
+                      &#10005;
+                    </button>
+                  )}
+                </div>
+              ))}
+              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+                // DM is auto-added from the model above. Players use human input; NPCs use AI.
+              </p>
+            </div>
+          )}
 
           {/* Parameters */}
           <div className="space-y-4">
@@ -632,10 +765,10 @@ export default function Configure() {
           {/* Launch */}
           <Button
             onClick={handleLaunch}
-            disabled={starting || !modelA || !modelB}
+            disabled={starting || !modelA || (!rpgMode && !modelB)}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
-            {starting ? '// Launching...' : 'Launch Experiment'}
+            {starting ? '// Launching...' : rpgMode ? 'Begin Campaign' : 'Launch Experiment'}
           </Button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 ﻿&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 8 &mdash; Phase 14+15 plan written; Phase 12+13 uncommitted)
+**Last Updated:** 2026-02-23 (session 9 &mdash; Phase 13b RPG expansion implemented)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -177,8 +177,20 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **Theater controls** &mdash; Pause/Resume buttons (yellow/accent), Inject textarea (visible when paused), Inject button, Stop button; observer events render inline
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 
+### Phase 13b: Virtual Tabletop RPG Mode (DONE)
+- [x] **RPG Engine** &mdash; `server/rpg_engine.py` (NEW, ~175 lines): human-yielding loop; DM (AI) narrates, Player (human) types actions; AI party members participate; cancel_event support
+- [x] **DB migrations** &mdash; `mode`, `participants_json` columns on experiments; `metadata` on turns; `create_experiment()` accepts new params
+- [x] **App state** &mdash; `app.state.human_events = {}` per-match asyncio.Event registry for RPG human yielding
+- [x] **RelayEvent.AWAITING_HUMAN** &mdash; new SSE event constant in relay_engine.py
+- [x] **Relay router** &mdash; mode branching in POST `/start` (rpg vs standard); dual-mode POST `/inject` (checks human_events first for RPG, falls back to standard pause inject)
+- [x] **Frontend types** &mdash; `AwaitingHumanEvent` interface; `mode`/`participants` on request types; `isAwaitingHuman` state in hooks
+- [x] **HumanInput.tsx** (NEW) &mdash; emerald-glowing command input bar; POST inject with speaker param
+- [x] **RPGTheater.tsx** (NEW) &mdash; full RPG session view; party roster sidebar; chronological chat log; role-colored speakers (DM=amber, Player=emerald, AI=cyan)
+- [x] **Configure.tsx** &mdash; RPG mode toggle; party member builder (name + role + model); "Begin Campaign" launch; navigates to `/rpg/:matchId`
+- [x] **App.tsx** &mdash; `/rpg/:matchId` route; emerald tint for RPG routes
+- [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
+
 ### Next Up
-- [ ] **COMMIT FIRST** &mdash; Phase 12+13 working-tree changes uncommitted (feat(phase-12+13) needed before Phase 14)
 - [ ] **14-A** &mdash; VocabBurstChart.tsx: D3 per-round coinage bars + burst detection in Dictionary
 - [ ] **14-B** &mdash; Experiment forking: DB migrations, initial_history in relay, fork button in Theater, Configure fork banner
 - [ ] **14-C** &mdash; Cross-run provenance: origin_experiment_id on vocabulary, tag_word_origins(), WordCard badge
@@ -193,11 +205,14 @@ Full specs in `~/.claude/plans/sunny-chasing-sutton.md` (comprehensive Phase 14+
 | **~~11~~** | ~~Quick Wins &amp; Polish~~ | ~~done~~ | ~~Remix button, tab title, hover timestamps, vocab linking, model swap, nickname~~ |
 | **~~12~~** | ~~Dictionary Revamp~~ | ~~done~~ | ~~Stats bar, search/filter/sort, constellation upgrades, swimlane timeline~~ |
 | **~~13~~** | ~~Interactive Experiments~~ | ~~done~~ | ~~Pause/resume, inject human turn, observer/narrator model~~ |
+| **~~13b~~** | ~~Virtual Tabletop RPG~~ | ~~done~~ | ~~RPG engine, human-in-the-loop, party builder, RPGTheater~~ |
 | **14** | Cross-Experiment Intelligence | 4&ndash;5 d | Vocab burst timeline, experiment forking, cross-run vocabulary provenance |
 | **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
 | **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
 
 **Recommended next:** Phase 14 (cross-exp intelligence, build lore) &rarr; Phase 15 (N-way conversations)
+
+**RPG follow-ups (defer to post-14):** runtime smoke test with real models, RPG-specific presets (campaign seeds), multi-human support, campaign persistence/save-load
 
 ### Tracked Tasks
  (tasks/ directory)
@@ -214,7 +229,8 @@ Babel/
     app.py                     FastAPI app &mdash; mounts relay, experiments, presets, tournaments routers
     config.py                  Settings, model registry (7 models across 5 providers)
     presets.py                 YAML preset loader (resilient, logs malformed files)
-    relay_engine.py            Core relay loop &mdash; call_model, build_messages, vocab extraction
+    relay_engine.py            Core relay loop &mdash; call_model, build_messages, vocab extraction, RelayEvent constants
+    rpg_engine.py              RPG mode &mdash; human-yielding loop, DM+player+AI party
     tournament_engine.py       Round-robin tournament runner &mdash; sequential matches, SSE events
     vocab_extractor.py         Regex-based invented word detection
     db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments, model_memory)
@@ -250,14 +266,14 @@ Babel/
         Tournaments.tsx        Tournament history list at /tournaments
         Settings.tsx           API key status + model registry + in-app key config
       components/
-        theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas
+        theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas, RPGTheater, HumanInput
         dictionary/            WordCard, ConstellationGraph (incremental D3)
         analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
         common/                Layout (nav+transitions+glitch+babel-glitch listener), StarField (canvas neural net),
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
         ui/                    9 Shadcn primitives
       api/
-        types.ts               All REST + SSE types including tournament + radar types + pause/resume/inject/observer types
+        types.ts               All REST + SSE types including tournament + radar + pause/resume/inject/observer/RPG types
         client.ts              fetchJson + api object (18+ endpoints including pause/resume/inject)
         sse.ts                 useSSE hook (EventSource, typed events)
         hooks.ts               useExperimentState (event sourcing, pause/resume/observer state)
@@ -307,5 +323,6 @@ Set-Location ui && .\run_npm.cmd dev
 - **Model memory:** `model_memory` table keyed on `(model_a, model_b)` canonical sorted pair. `generate_memory_summary()` is deterministic (vocab-based, no LLM call). `enable_memory` toggle in Configure. Memory injected at experiment start; saved as background task after verdict/completion.
 - **Pause/Resume:** `resume_event` is an asyncio.Event per relay (initially set, pause clears, resume sets). Checkpoints before A and B turns; on resume, history is refreshed from DB. No DB schema changes needed &mdash; pause is transient SSE-only state.
 - **Human turn injection:** Saved to DB with `speaker="Human"`, round inferred. Republished as `relay.turn` SSE event. `build_messages()` treats unknown speakers as "user" role &mdash; no code changes needed.
+- **RPG mode:** `mode='rpg'` on experiments table. `human_events` dict on app.state holds per-match asyncio.Event. RPG engine (`rpg_engine.py`) publishes `relay.awaiting_human` then `await human_event.wait()`; POST `/inject` calls `event.set()` to resume. `participants_json` stores party config. DM is Model A; Player is human; AI party members call `call_model()` with global-perspective messages. Cleanup removes both `_running_relays` and `human_events` entries.
 - **Observer model:** Optional fire-and-forget background task. Fires every N turns (configurable 1-10). Rendered inline as centered cards in Theater, not as a 3rd column.
 - **Serena regex DOTALL gotcha:** `.*` in Serena replace_content regex (DOTALL mode) matches newlines &mdash; can greedily consume the rest of the file. Use literal mode or specific anchor text instead of `.*` at line boundaries.

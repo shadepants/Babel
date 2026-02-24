@@ -195,6 +195,27 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Phase 13b: RPG mode columns
+        for col, ddl in [
+            ("mode", "TEXT DEFAULT 'standard'"),
+            ("participants_json", "TEXT"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} {ddl}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
+        try:
+            await self._db.execute(
+                "ALTER TABLE turns ADD COLUMN metadata TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -223,6 +244,8 @@ class Database:
         judge_model: str | None = None,
         enable_scoring: bool = False,
         enable_verdict: bool = False,
+        mode: str = "standard",
+        participants_json: str | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -235,12 +258,14 @@ class Database:
                    (id, created_at, model_a, model_b, preset, seed,
                     system_prompt, rounds_planned, config_json,
                     temperature_a, temperature_b,
-                    judge_model, enable_scoring, enable_verdict)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    judge_model, enable_scoring, enable_verdict,
+                    mode, participants_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
-                 judge_model, int(enable_scoring), int(enable_verdict)),
+                 judge_model, int(enable_scoring), int(enable_verdict),
+                 mode, participants_json),
             )
             await self.db.commit()
         return experiment_id

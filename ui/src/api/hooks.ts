@@ -7,7 +7,7 @@
  * automatically (backend's include_history=true parameter).
  */
 import { useMemo } from 'react';
-import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent } from './types';
+import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent, AwaitingHumanEvent } from './types';
 
 export interface ExperimentState {
   turns: TurnEvent[];
@@ -21,6 +21,7 @@ export interface ExperimentState {
   observers: ObserverEvent[];
   elapsed: number | null;
   errorMessage: string | null;
+  isAwaitingHuman: boolean;
 }
 
 export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
@@ -37,6 +38,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
       elapsed: null,
       errorMessage: null,
       observers: [],
+      isAwaitingHuman: false,
     };
 
     for (const event of events) {
@@ -49,6 +51,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           state.turns.push(event);
           state.thinkingSpeaker = null;
           state.currentRound = event.round;
+          state.isAwaitingHuman = false;
           break;
         case 'relay.round':
           state.currentRound = event.round;
@@ -88,6 +91,10 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           break;
         case 'relay.observer':
           state.observers.push(event);
+          break;
+        case 'relay.awaiting_human':
+          state.isAwaitingHuman = true;
+          state.thinkingSpeaker = null;
           break;
       }
     }

@@ -18,6 +18,8 @@ export interface RelayStartRequest {
   enable_memory?: boolean;
   observer_model?: string | null;
   observer_interval?: number;
+  mode?: 'standard' | 'rpg';
+  participants?: Array<{ name: string; model: string; role: string }>;
 }
 
 /** POST /api/relay/start response */
@@ -141,6 +143,13 @@ export interface ObserverEvent extends BaseSSEEvent {
   after_turn: number;
 }
 
+/** relay.awaiting_human — RPG engine waiting for player input */
+export interface AwaitingHumanEvent extends BaseSSEEvent {
+  type: 'relay.awaiting_human';
+  speaker: string;
+  round: number;
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
@@ -153,7 +162,8 @@ export type RelaySSEEvent =
   | VerdictEvent
   | PausedEvent
   | ResumedEvent
-  | ObserverEvent;
+  | ObserverEvent
+  | AwaitingHumanEvent;
 
 // ── Preset Types ─────────────────────────────────────────────
 
@@ -224,6 +234,8 @@ export interface ExperimentRecord {
   winner?: string | null;
   verdict_reasoning?: string | null;
   label?: string | null;
+  mode?: string;
+  participants_json?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

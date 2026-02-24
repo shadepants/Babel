@@ -13,6 +13,7 @@ import Arena from './pages/Arena'
 import Tournament from './pages/Tournament'
 import Settings from './pages/Settings'
 import Tournaments from './pages/Tournaments'
+import RPGTheater from './components/theater/RPGTheater'
 
 /** Map current route to a neural network connection tint color */
 function routeTint(pathname: string): string {
@@ -21,6 +22,9 @@ function routeTint(pathname: string): string {
   }
   if (pathname.startsWith('/arena') || pathname.startsWith('/tournament')) {
     return '245,158,11'   // amber — competition
+  }
+  if (pathname.startsWith('/rpg')) {
+    return '16,185,129'    // emerald — RPG mode
   }
   if (pathname.startsWith('/theater')) {
     return '139,92,246'   // purple — live experiment
@@ -53,6 +57,7 @@ function AppInner() {
           <Route path="/tournament/:tournamentId"   element={<Tournament />} />
           <Route path="/settings"                   element={<Settings />} />
           <Route path="/tournaments"                 element={<Tournaments />} />
+          <Route path="/rpg/:matchId"                  element={<RPGTheater />} />
           <Route path="*" element={
             <div className="flex-1 flex flex-col items-center justify-center gap-4">
               <h1 className="font-display text-2xl text-text-primary tracking-widest">404</h1>

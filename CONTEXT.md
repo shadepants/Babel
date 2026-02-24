@@ -191,6 +191,10 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 
 ### Next Up
+- [ ] **RPG smoke test** &mdash; kill zombie Python processes, start server, test RPG flow end-to-end with real API keys
+- [ ] **RPG SAO metadata** &mdash; populate `metadata` column with structured Subject-Action-Object events from DM (DF SIM Finding #6; column already exists)
+- [ ] **RPG campaign recap** &mdash; parse metadata into narrative summary page after session ends
+- [ ] **RPG campaign persistence** &mdash; DM remembers past sessions via model_memory (DF SIM Finding #4 LOD tiers)
 - [ ] **14-A** &mdash; VocabBurstChart.tsx: D3 per-round coinage bars + burst detection in Dictionary
 - [ ] **14-B** &mdash; Experiment forking: DB migrations, initial_history in relay, fork button in Theater, Configure fork banner
 - [ ] **14-C** &mdash; Cross-run provenance: origin_experiment_id on vocabulary, tag_word_origins(), WordCard badge

@@ -196,6 +196,7 @@ export interface ExperimentRecord {
   enable_verdict?: boolean;
   winner?: string | null;
   verdict_reasoning?: string | null;
+  label?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

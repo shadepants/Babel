@@ -115,6 +115,13 @@ export const api = {
   deleteExperiment: (experimentId: string) =>
     fetchJson<{ deleted: string }>(`/api/experiments/${experimentId}`, { method: 'DELETE' }),
 
+  /** Set or clear a human-readable nickname for an experiment */
+  setExperimentLabel: (experimentId: string, label: string | null) =>
+    fetchJson<{ id: string; label: string | null }>(`/api/experiments/${experimentId}/label`, {
+      method: 'PATCH',
+      body: JSON.stringify({ label }),
+    }),
+
   /** Test a provider's API key with a tiny LLM call */
   testProvider: (provider: string) =>
     fetchJson<{ ok: boolean; provider: string; latency_ms?: number; error?: string }>(

@@ -187,6 +187,14 @@ class Database:
             except Exception:
                 pass  # column already exists
 
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN label TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -305,6 +313,15 @@ class Database:
         """Delete an experiment and all associated data (cascades via FK)."""
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+            await self.db.commit()
+
+    async def set_label(self, experiment_id: str, label: str | None) -> None:
+        """Set or clear a human-readable nickname for an experiment."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                "UPDATE experiments SET label = ? WHERE id = ?",
+                (label, experiment_id),
+            )
             await self.db.commit()
 
     # ── Turns ────────────────────────────────────────────────────────

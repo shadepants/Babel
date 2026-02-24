@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { TurnEvent, ScoreEvent } from '@/api/types'
+import type { TurnEvent, ScoreEvent, VocabEvent } from '@/api/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { TurnBubble } from './TurnBubble'
 import { ThinkingIndicator } from './ThinkingIndicator'
@@ -14,6 +14,10 @@ interface ConversationColumnProps {
   scores?: Record<number, ScoreEvent>
   /** turn_id of the most recent turn — enables typewriter effect on that bubble */
   latestTurnId?: string | null
+  /** Vocab events for inline word linking */
+  vocab?: VocabEvent[]
+  /** Experiment ID for dictionary deep links */
+  experimentId?: string
 }
 
 /**
@@ -29,6 +33,8 @@ export function ConversationColumn({
   color,
   scores,
   latestTurnId,
+  vocab,
+  experimentId,
 }: ConversationColumnProps) {
   const bottomRef     = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -98,6 +104,8 @@ export function ConversationColumn({
                   color={color}
                   score={scores?.[turn.turn_id]}
                   isLatest={turn.turn_id === latestTurnId}
+                  vocab={vocab}
+                  experimentId={experimentId}
                 />
               </div>
             )

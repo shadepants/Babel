@@ -3,51 +3,67 @@
 ## Current Session Status
 **Last Updated:** 2026-02-23
 **Active Agent:** Claude Code
-**Current Goal:** Planning session &mdash; brainstormed and phased upgrade roadmap
+**Current Goal:** Phase 11 complete &mdash; all 7 quick-win features shipped
 
-## Changes This Session
+## Commits Pushed This Session
+- *(commit pending &mdash; see below)*
 
-### No code changes &mdash; planning only
-- [x] Reviewed priority list of remaining work (smoke tests + Phase 6b deferred)
-- [x] Brainstormed upgrades small&rarr;large across 6 categories
-- [x] Created phase plans 11&ndash;16 in `~/.claude/plans/wise-sleeping-key.md`
-- [x] Updated `CONTEXT.md` &mdash; added Roadmap section with Phases 11&ndash;16 table
+## What Was Done
+
+### Phase 11: Quick Wins &amp; Polish (ALL DONE)
+
+**Backend (server/)**
+- `server/db.py` &mdash; `label TEXT` idempotent migration + `set_label()` method
+- `server/routers/experiments.py` &mdash; `PATCH /{id}/label` endpoint with Pydantic `_LabelBody`
+
+**API layer (ui/src/api/)**
+- `types.ts` &mdash; `label?: string | null` added to `ExperimentRecord`
+- `client.ts` &mdash; `setExperimentLabel(experimentId, label)` method
+
+**Frontend features**
+- `Theater.tsx` &mdash; tab title live state (`&bull; R.N | Babel` / `&check; Done | Babel`); `effectiveVocab` SSE+DB fallback pattern; passes vocab+experimentId to ConversationColumns
+- `ConversationColumn.tsx` &mdash; `vocab?` and `experimentId?` props forwarded to TurnBubble
+- `TurnBubble.tsx` &mdash; hover timestamps (latency badge &rarr; wall-clock on hover); `linkifyVocab()` wraps coined words in `&lt;Link&gt;` to dictionary anchors; skips on `isLatest` turn
+- `Configure.tsx` &mdash; `&#8646; swap` button (swaps model A&harr;B + temperatures); `useSearchParams` reads `?remix=<id>` and pre-fills models/temps/seed from that experiment
+- `Analytics.tsx` &mdash; inline nickname editor (`// add nickname...` &rarr; input &rarr; Enter/save/cancel); Remix button in quick links
+- `Gallery.tsx` &mdash; label display in metadata row; Remix button navigates to `/configure/:preset?remix=<id>`
+- `Dictionary.tsx` &mdash; `id="word-{slug}"` anchors on each WordCard for deep linking
+
+**Also from prior session (Playwright smoke tests)**
+- `ui/playwright.config.ts` + `ui/e2e/` &mdash; 4 of 6 smoke tests automated (tests 5+6 skipped: require live data)
+- `ui/package.json` / `ui/package-lock.json` &mdash; `@playwright/test` devDependency added
 
 ## Verification Status
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| TypeScript `tsc --noEmit` | PASSED | 0 errors (carried from last session) |
-| Verdict persistence (manual) | SKIPPED | Requires live experiment with enable_verdict=true |
-| DB fallback after restart | SKIPPED | Requires server restart + Theater reload |
-| Gallery sprites visible | SKIPPED | Visual smoke test needed |
-| Analytics sprites visible | SKIPPED | Visual smoke test needed |
-| Configure preset border | SKIPPED | Visual smoke test needed |
-| BABEL glitch on turn arrival | SKIPPED | Requires live experiment |
+| TypeScript `tsc --noEmit` | PASSED | Confirmed 0 errors (session 5) |
+| Phase 11 code review | VISUAL PASS | All 14 file edits applied cleanly via diff |
+| Playwright tests 1-4 | READY | Config/e2e files in place; run `npm run test:e2e` when servers up |
+| Playwright tests 5-6 | SKIPPED | Require completed experiment with verdict in DB |
 | SSE reconnect / Last-Event-ID | SKIPPED | Manual: disable network mid-run, re-enable, verify replay |
+| Live experiment smoke test | SKIPPED | Run experiment to verify sprites, glitch, timestamps |
 
-## Phase Roadmap Summary
+## New Patterns Introduced (Phase 11)
 
-| Phase | Theme | Effort |
-|-------|-------|--------|
-| **11** | Quick Wins &amp; Polish | ~1 day |
-| **12** | Spectator &amp; Shareability | 2&ndash;3 d |
-| **13** | Interactive Experiments | 3&ndash;4 d |
-| **14** | Cross-Experiment Intelligence | 4&ndash;5 d |
-| **15** | New Conversation Structures | 5&ndash;7 d |
-| **16** | Depth &amp; Legacy | 1&ndash;3 wk |
-
-Full specs: `~/.claude/plans/wise-sleeping-key.md`
+- **`effectiveVocab`** &mdash; same SSE-first/DB-fallback pattern as `effectiveTurns`/`effectiveScores`/`effectiveVerdict`. Theater fetches `api.getVocabulary()` for completed experiments and maps VocabWord &rarr; VocabEvent shape.
+- **Experiment label/nickname** &mdash; `label TEXT` column nullable. `PATCH /api/experiments/{id}/label` with `{"label": "string | null"}`. Gallery + Analytics display/edit it.
+- **Remix flow** &mdash; `?remix=<id>` query param on Configure page. `useSearchParams()` reads it; `api.getExperiment(remixId)` fetches source; overrides modelA/B/temps/seed. Gallery + Analytics both have Remix buttons.
+- **Dictionary deep links** &mdash; `id="word-{slug}"` on WordCard wrappers. Slug: `word.toLowerCase().replace(/\s+/g, '-')`. TurnBubble links: `/dictionary/${experimentId}#word-${slug}`.
+- **linkifyVocab** &mdash; sorts vocab by word length desc (longest first wins overlap), escapes regex chars via function `(m) =&gt; '\\' + m` (NOT `'\\$&amp;'` &mdash; mcp__filesystem__edit_file `$&amp;` replacement bug). Skips on `isLatest` turn (TypewriterText still animating).
 
 ## Next Steps
 
-1. [ ] **Manual smoke tests** &mdash; run a live experiment; verify Gallery sprites, Analytics sprites, Configure border, verdict persistence, BABEL glitch
-2. [ ] **SSE reconnect test** &mdash; disable network mid-experiment, re-enable, confirm only missed turns replay
-3. [ ] **Phase 11** &mdash; Quick Wins (~1 day): Remix button, tab title live state, hover timestamps, vocab inline linking, model A&harr;B swap, experiment nickname
-4. [ ] **Phase 12** &mdash; Spectator &amp; Shareability: `/watch/:id` route, Share button, highlight reel, speed control
+1. [ ] **Run `npm run test:e2e`** against live servers to confirm smoke tests 1-4 pass
+2. [ ] **Phase 12** (2-3 days): `/watch/:id` spectator mode, Share button, highlight reel, speed control mid-run
+3. [ ] **Phase 13b** (3-4 days): Virtual Tabletop RPG mode &mdash; full spec in `~/.claude/plans/wise-sleeping-key.md`
+4. [ ] **SSE reconnect test** &mdash; manual: disable network mid-experiment, verify Last-Event-ID replay on reconnect
 
 ## Key Patterns (carry forward)
-- **SSE-first / DB-fallback**: `effectiveX = sse.x ?? dbX` &mdash; turns, scores, verdict all follow this
-- **Decoupled event bus**: `window.dispatchEvent(new CustomEvent('babel-glitch'))` &mdash; no prop drilling
-- **Shared color util**: `ui/src/lib/presetColors.ts` &mdash; single source of truth for preset glow colors
-- **Idempotent migrations**: always use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pattern in db.py
+
+- **SSE-first / DB-fallback**: `effectiveX = sse.x ?? dbX` &mdash; turns, scores, verdict, **vocab** (new in Phase 11)
+- **Decoupled event bus**: `window.dispatchEvent(new CustomEvent('babel-glitch'))`
+- **Shared color util**: `ui/src/lib/presetColors.ts`
+- **Idempotent migrations**: catch-except on `ALTER TABLE ... ADD COLUMN` in db.py
+- **win_write + HTML entities**: avoid raw Unicode in JSX/TS to prevent encoding mismatch
+- **mcp__filesystem__edit_file danger**: `$&amp;` / `$'` / `$\`` in newText cause duplication via JS replace(). Use function-based regex escapers; use win_write for full rewrites.

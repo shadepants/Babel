@@ -201,10 +201,16 @@ export default function Gallery() {
                         </span>
                       )}
                     </div>
-                    <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5">
+                    <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span>{formatDate(exp.created_at)}</span>
                       <span className="text-accent/25">&middot;</span>
                       <span>{formatDuration(exp.elapsed_seconds)}</span>
+                      {exp.label && (
+                        <>
+                          <span className="text-accent/25">&middot;</span>
+                          <span className="text-accent/55 italic">{exp.label}</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -230,6 +236,12 @@ export default function Gallery() {
                         Theater
                       </button>
                     )}
+                    <button
+                      className="neural-btn"
+                      onClick={() => navigate(`/configure/${exp.preset ?? 'custom'}?remix=${exp.id}`)}
+                    >
+                      Remix
+                    </button>
                     <button
                       className="neural-btn"
                       onClick={() => navigate(`/dictionary/${exp.id}`)}

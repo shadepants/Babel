@@ -11,7 +11,7 @@ import { TheaterCanvas } from '@/components/theater/TheaterCanvas'
 import { ArenaStage } from '@/components/theater/ArenaStage'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { TypewriterText } from '@/components/theater/TypewriterText'
-import type { TurnEvent, ScoreEvent } from '@/api/types'
+import type { TurnEvent, ScoreEvent, VocabEvent } from '@/api/types'
 
 const COLOR_A       = '#F59E0B'
 const COLOR_B       = '#06B6D4'
@@ -33,6 +33,7 @@ export default function Theater() {
   const [dbTurns, setDbTurns]     = useState<TurnEvent[]>([])
   const [dbScores, setDbScores]   = useState<Record<number, ScoreEvent>>({})
   const [dbVerdict, setDbVerdict] = useState<{ winner: string; winner_model: string; reasoning: string } | null>(null)
+  const [dbVocab, setDbVocab] = useState<VocabEvent[]>([])
 
   // Track which speaker is currently "talking" (typewriter active)
   const [talkingSpeaker, setTalkingSpeaker] = useState<string | null>(null)
@@ -81,6 +82,21 @@ export default function Theater() {
               setDbScores(map)
             })
             .catch(console.error)
+          api.getVocabulary(matchId)
+            .then(({ words }) => {
+              setDbVocab(words.map((w) => ({
+                type: 'relay.vocab' as const,
+                word: w.word,
+                meaning: w.meaning ?? null,
+                coined_by: w.coined_by,
+                coined_round: w.coined_round,
+                category: w.category ?? null,
+                parent_words: w.parent_words ?? [],
+                timestamp: 0,
+                match_id: matchId,
+              })))
+            })
+            .catch(console.error)
           if (exp.winner && exp.verdict_reasoning) {
             setDbVerdict({
               winner: exp.winner,
@@ -102,6 +118,7 @@ export default function Theater() {
   const effectiveTurns   = experiment.turns.length  > 0 ? experiment.turns  : dbTurns
   const effectiveScores  = Object.keys(experiment.scores).length > 0 ? experiment.scores : dbScores
   const effectiveVerdict = experiment.verdict ?? dbVerdict
+  const effectiveVocab   = experiment.vocab.length > 0 ? experiment.vocab : dbVocab
 
   // Derived: last turn + last vocab for canvas
   const lastTurn  = effectiveTurns.length > 0
@@ -130,6 +147,17 @@ export default function Theater() {
     if (experiment.status !== 'running' || !lastTurn) return
     window.dispatchEvent(new CustomEvent('babel-glitch'))
   }, [lastTurn?.turn_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tab title — live round counter while running, done indicator when complete
+  useEffect(() => {
+    const base = 'Babel'
+    if (experiment.status === 'running') {
+      document.title = `\u25CF R.${lastTurn?.round ?? 0} | ${base}`
+    } else if (experiment.status === 'completed' || experiment.status === 'stopped') {
+      document.title = `\u2713 Done | ${base}`
+    }
+    return () => { document.title = base }
+  }, [experiment.status, lastTurn?.round]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sprite status derivation -- verdict overrides all
   const statusA: SpriteStatus = effectiveVerdict
@@ -232,6 +260,8 @@ export default function Theater() {
           color="model-a"
           scores={effectiveScores}
           latestTurnId={latestTurnId}
+          vocab={effectiveVocab}
+          experimentId={matchId}
         />
         <ConversationColumn
           speakerName={modelBName}
@@ -240,6 +270,8 @@ export default function Theater() {
           color="model-b"
           scores={effectiveScores}
           latestTurnId={latestTurnId}
+          vocab={effectiveVocab}
+          experimentId={matchId}
         />
       </div>
 

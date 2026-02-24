@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { ExperimentRecord, ExperimentStats, ExperimentRadarResponse, RadarDataPoint, VocabWord, TurnRecord, TurnScore } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +57,9 @@ export default function Analytics() {
   const [scores, setScores] = useState<TurnScore[]>([])
   const [exporting, setExporting] = useState(false)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [labelEditing, setLabelEditing] = useState(false)
+  const [labelValue, setLabelValue] = useState('')
+  const navigate = useNavigate()
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
@@ -68,6 +71,7 @@ export default function Analytics() {
         api.getExperimentScores(experimentId).catch(() => null),
       ])
       setExperiment(exp)
+      setLabelValue(exp.label ?? '')
       setStats(st)
       if (scoresRes) setScores(scoresRes.scores)
       if (radarRes && radarRes.models.length > 0) {
@@ -292,6 +296,45 @@ export default function Analytics() {
                 <Badge variant="secondary" className="text-xs">{experiment.preset}</Badge>
               )}
             </div>
+            {/* Inline nickname editor */}
+            {labelEditing ? (
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  className="font-mono text-xs bg-bg-deep border border-accent/30 rounded-sm px-2 py-0.5 text-text-primary focus:outline-none focus:border-accent/60 w-52"
+                  value={labelValue}
+                  onChange={(e) => setLabelValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      api.setExperimentLabel(experimentId!, labelValue.trim() || null)
+                        .then(() => { setExperiment((ex) => ex ? { ...ex, label: labelValue.trim() || null } : ex); setLabelEditing(false) })
+                        .catch(console.error)
+                    }
+                    if (e.key === 'Escape') setLabelEditing(false)
+                  }}
+                  placeholder="add nickname..."
+                  autoFocus
+                />
+                <button
+                  className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase"
+                  onClick={() => {
+                    api.setExperimentLabel(experimentId!, labelValue.trim() || null)
+                      .then(() => { setExperiment((ex) => ex ? { ...ex, label: labelValue.trim() || null } : ex); setLabelEditing(false) })
+                      .catch(console.error)
+                  }}
+                >save</button>
+                <button
+                  className="font-mono text-[9px] text-text-dim/40 hover:text-text-dim tracking-wider uppercase"
+                  onClick={() => setLabelEditing(false)}
+                >cancel</button>
+              </div>
+            ) : (
+              <button
+                className="font-mono text-[10px] text-text-dim/50 hover:text-accent/70 tracking-wider mt-1.5 block text-left transition-colors"
+                onClick={() => setLabelEditing(true)}
+              >
+                {experiment.label ? `// ${experiment.label}` : '// add nickname...'}
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
@@ -420,6 +463,14 @@ export default function Analytics() {
             View Dictionary
           </Button>
         </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-border-custom text-text-dim"
+          onClick={() => navigate(`/configure/${experiment.preset ?? 'custom'}?remix=${experiment.id}`)}
+        >
+          Remix
+        </Button>
       </div>
     </div>
   )

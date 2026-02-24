@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 5 &mdash; Task 004 memory, verdict persistence, Theater cohesion)
+**Last Updated:** 2026-02-23 (session 6 &mdash; Phase 11 complete: remix, nickname, swap, timestamps, vocab linking, tab title)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -150,23 +150,34 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **`ui/src/pages/Theater.tsx`** &mdash; dispatches `babel-glitch` event on each turn arrival (live experiments only)
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 
+### Phase 11: Quick Wins &amp; Polish (DONE)
+- [x] **Experiment nickname** &mdash; `label TEXT` column in experiments table (idempotent migration); `set_label()` in db.py; `PATCH /experiments/{id}/label` endpoint; `label?` field on `ExperimentRecord`; `setExperimentLabel()` in client.ts
+- [x] **Analytics inline editor** &mdash; click `// add nickname...` to edit in-place (Enter/Escape/save/cancel); updates local state optimistically
+- [x] **Gallery label display** &mdash; experiment label shown in metadata row when present
+- [x] **Tab title live state** &mdash; Theater.tsx: `&#9679; R.N | Babel` while running, `&#10003; Done | Babel` on complete; resets to `Babel` on unmount
+- [x] **Hover timestamps on TurnBubble** &mdash; hover the latency badge to switch from `Xs` to wall-clock time (toLocaleTimeString)
+- [x] **Vocab inline linking** &mdash; `linkifyVocab()` in TurnBubble wraps coined words in `&lt;Link&gt;` to `/dictionary/:id#word-{slug}`; skips `isLatest` turn (TypewriterText still active); Dictionary.tsx adds `id` anchors
+- [x] **Model A&harr;B swap button** &mdash; `&#8646; swap` button in Configure model_selection header; swaps both models and temperatures atomically
+- [x] **Remix button** &mdash; Gallery + Analytics buttons navigate to `/configure/:presetId?remix=<id>`; Configure reads `?remix=` param, fetches that experiment, pre-fills models/temps/seed
+- [x] **effectiveVocab pattern** &mdash; Theater.tsx: SSE vocab events preferred, falls back to DB `api.getVocabulary()` for completed experiments; maps VocabWord &rarr; VocabEvent shape
+
 ### Next Up
 - [ ] **Browser smoke test** &mdash; Last-Event-ID reconnect: disable network mid-experiment, re-enable &rarr; confirm only missed turns replay
-- [ ] **Visual smoke tests** &mdash; Gallery sprites, Analytics sprites, Configure preset border, BABEL glitch on turn arrival (all SKIPPED last session)
+- [ ] **Visual smoke tests** &mdash; Gallery sprites, Analytics sprites, Configure preset border, BABEL glitch on turn arrival
 
-### Roadmap &mdash; Phases 11&ndash;16
+### Roadmap &mdash; Phases 12&ndash;16
 Full specs in `~/.claude/plans/wise-sleeping-key.md`
 
 | Phase | Theme | Effort | Key Features |
 |-------|-------|--------|--------------|
-| **11** | Quick Wins &amp; Polish | ~1 day | Remix button, tab title live state, hover timestamps, vocab linking, model swap, experiment nickname |
+| **~~11~~** | ~~Quick Wins &amp; Polish~~ | ~~done~~ | ~~Remix button, tab title, hover timestamps, vocab linking, model swap, nickname~~ |
 | **12** | Spectator &amp; Shareability | 2&ndash;3 d | `/watch/:id` spectator mode, Share button, highlight reel, speed control mid-run |
 | **13** | Interactive Experiments | 3&ndash;4 d | Pause/resume, inject human turn, observer/narrator model (3rd column) |
 | **14** | Cross-Experiment Intelligence | 4&ndash;5 d | Vocab burst timeline, experiment forking, cross-run vocabulary provenance |
 | **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
 | **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
 
-**Recommended next:** Phase 11 (1 day, immediate QoL) &rarr; Phase 12 (shareability, highest viral leverage)
+**Recommended next:** Phase 12 (shareability, highest viral leverage) &rarr; Phase 13b (Virtual Tabletop RPG mode)
 
 ### Tracked Tasks
  (tasks/ directory)

@@ -4,12 +4,17 @@ Separate from the relay router which handles lifecycle (start/stream).
 """
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from server.db import Database
 
 router = APIRouter(tags=["experiments"])
 
 _VALID_STATUSES = frozenset({"running", "completed", "failed", "stopped"})
+
+
+class _LabelBody(BaseModel):
+    label: str | None = None
 
 
 def _get_db(request: Request) -> Database:
@@ -98,6 +103,17 @@ async def get_experiment_scores(experiment_id: str, request: Request):
         raise HTTPException(404, "Experiment not found")
     scores = await db.get_turn_scores(experiment_id)
     return {"experiment_id": experiment_id, "scores": scores}
+
+
+@router.patch("/{experiment_id}/label")
+async def set_experiment_label(experiment_id: str, body: _LabelBody, request: Request):
+    """Set or clear a human-readable nickname for an experiment."""
+    db = _get_db(request)
+    row = await db.get_experiment(experiment_id)
+    if row is None:
+        raise HTTPException(404, "Experiment not found")
+    await db.set_label(experiment_id, body.label)
+    return {"id": experiment_id, "label": body.label}
 
 
 @router.delete("/{experiment_id}")

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Preset, ModelInfo, ModelStatusInfo } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,8 @@ export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const isCustom = presetId === 'custom'
+  const [searchParams] = useSearchParams()
+  const remixId = searchParams.get('remix')
   const formAccentColor = isCustom ? null : getPresetGlow(presetId)
 
   // -- Data loading --
@@ -119,6 +121,20 @@ export default function Configure() {
           setSuggestedModelA(resolvedA)
           setSuggestedModelB(resolvedB)
         }
+
+        // Remix: if ?remix=<id> is set, pre-fill models/temps/seed from that experiment
+        if (remixId) {
+          try {
+            const remixExp = await api.getExperiment(remixId)
+            setModelA(remixExp.model_a)
+            setModelB(remixExp.model_b)
+            if (remixExp.temperature_a != null) setTemperatureA(remixExp.temperature_a)
+            if (remixExp.temperature_b != null) setTemperatureB(remixExp.temperature_b)
+            if (remixExp.seed) { setSeed(remixExp.seed); setSeedEditing(true) }
+          } catch {
+            // remix experiment not found — continue with preset defaults
+          }
+        }
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Failed to load configuration')
       } finally {
@@ -126,7 +142,7 @@ export default function Configure() {
       }
     }
     loadData()
-  }, [presetId, isCustom])
+  }, [presetId, isCustom, remixId])
 
   // Whether any parameter slider has been moved from the preset default
   const hasParamChanges = presetDefaults !== null && (
@@ -266,7 +282,20 @@ export default function Configure() {
 
           {/* Models */}
           <div className="space-y-3">
-            <div className="neural-section-label">// model_selection</div>
+            <div className="neural-section-label flex items-center justify-between">
+              <span>// model_selection</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const tmpModel = modelA; setModelA(modelB); setModelB(tmpModel)
+                  const tmpTemp = temperatureA; setTemperatureA(temperatureB); setTemperatureB(tmpTemp)
+                }}
+                className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                title="Swap Model A and Model B"
+              >
+                &#8646; swap
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">

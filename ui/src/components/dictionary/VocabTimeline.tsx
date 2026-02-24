@@ -128,7 +128,7 @@ export function VocabTimeline({
     const totalH = totalChips * CHIP_H + (totalChips - 1) * CHIP_GAP
     const startY = midY - totalH / 2
 
-    const result = visible.map((w, i) => ({
+    const result: { word: VocabWord | null; x: number; y: number; overflow?: number }[] = visible.map((w, i) => ({
       word: w,
       x: cx - CHIP_W / 2,
       y: startY + i * (CHIP_H + CHIP_GAP),

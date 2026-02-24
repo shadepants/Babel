@@ -14,6 +14,7 @@ import Tournament from './pages/Tournament'
 import Settings from './pages/Settings'
 import Tournaments from './pages/Tournaments'
 import RPGTheater from './components/theater/RPGTheater'
+import BranchTree from './pages/BranchTree'
 
 /** Map current route to a neural network connection tint color */
 function routeTint(pathname: string): string {
@@ -26,8 +27,8 @@ function routeTint(pathname: string): string {
   if (pathname.startsWith('/rpg')) {
     return '16,185,129'    // emerald — RPG mode
   }
-  if (pathname.startsWith('/theater')) {
-    return '139,92,246'   // purple — live experiment
+  if (pathname.startsWith('/theater') || pathname.startsWith('/tree')) {
+    return '139,92,246'   // purple — live experiment / branch tree
   }
   return '139,92,246'     // default — purple
 }
@@ -58,6 +59,7 @@ function AppInner() {
           <Route path="/settings"                   element={<Settings />} />
           <Route path="/tournaments"                 element={<Tournaments />} />
           <Route path="/rpg/:matchId"                  element={<RPGTheater />} />
+          <Route path="/tree/:experimentId"             element={<BranchTree />} />
           <Route path="*" element={
             <div className="flex-1 flex flex-col items-center justify-center gap-4">
               <h1 className="font-display text-2xl text-text-primary tracking-widest">404</h1>

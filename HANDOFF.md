@@ -1,67 +1,100 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-23 (Session 10)
+**Last Updated:** 2026-02-23 (Session 11)
 **Active Agent:** Claude Code
-**Current Goal:** Phase 14 complete; commit pending + RPG smoke test + Phase 15
+**Current Goal:** Phase 15 complete (N-way conversations + Branch Tree)
 
 ## What Was Done This Session
 
-### Phase 14-A: VocabBurstChart
-- Created `ui/src/components/dictionary/VocabBurstChart.tsx` (NEW)
-  - Pure-SVG per-round vocabulary coinage bar chart
-  - Burst detection: rounds where count > mean + 1.5sigma highlighted amber
-  - Hover tooltip lists all words coined in that round; click bar calls onSelectWord
-  - ResizeObserver for responsive width
-- Updated `ui/src/pages/Dictionary.tsx`: added `'burst'` to ViewMode + 4th tab button
+### Phase 15-A Backend: N-Way Conversations
+- `server/db.py`:
+  - Idempotent migration: `agents_config_json TEXT` on experiments table
+  - `create_experiment()` accepts `agents: list[dict] | None`; serializes to JSON; populates model_a/model_b from agents[0]/[1] for backward compat
+  - `get_agents_for_experiment(row)` helper: parses agents_config_json if set, else builds 2-agent list from model_a/model_b
+  - `get_experiment_tree(root_id)`: recursive CTE query returning nested TreeNode dict
+- `server/relay_engine.py`:
+  - `run_relay()` signature: `agents: list[RelayAgent]` replaces agent_a/agent_b (backward compat shim kept)
+  - Relay loop: `for round in 1..rounds: for (idx, agent) in enumerate(agents):`
+  - `build_messages()`: non-self turns prefixed `[AgentName]: ` as "user" role; self turns as "assistant"
+  - `speaker` in SSE events: `"agent_0"`, `"agent_1"`, etc. (replaces `"model_a"`, `"model_b"`)
+  - `final_verdict()`: valid winners extended to `["agent_0", "agent_1", ..., "tie"]`
+- `server/routers/relay.py`:
+  - `AgentConfig` Pydantic model: `{model, temperature, name}`
+  - `RelayStartRequest`: `agents: list[AgentConfig] | None`; old model_a/b/temp fields kept optional for backward compat
+  - POST `/start`: if `agents` provided use directly; else auto-convert from old fields
+- `server/routers/experiments.py`:
+  - New `GET /api/experiments/{id}/tree` endpoint: calls `db.get_experiment_tree(id)`
 
-### Phase 14-B: Experiment Forking
-- `server/db.py`: 2 idempotent migrations (parent_experiment_id TEXT, fork_at_round INTEGER); create_experiment() stores both
-- `server/relay_engine.py`: initial_history + parent_experiment_id params; pre-populates turns[] before loop
-- `server/routers/relay.py`: 3 new fields on RelayStartRequest; forwarded to db + relay
-- `ui/src/api/types.ts`: fork fields on ExperimentRecord + RelayStartRequest
-- `ui/src/pages/Theater.tsx`: Fork button (visible when status completed or stopped)
-- `ui/src/pages/Configure.tsx`: ?fork= param; forkHistory state; fork banner; launch body includes fork fields
+### Phase 15-A Frontend: N-Way Theater + Configure
+- `ui/src/api/types.ts`:
+  - Added `AgentConfig { model, temperature, name? }`
+  - `RelayStartRequest.agents?: AgentConfig[]`; model_a/b/temp fields now optional
+  - `VerdictEvent.winner` widened from union to `string`
+  - `ExperimentRecord.agents_config_json?: string | null`
+  - Added `TreeNode` interface (id, label, status, model_a, model_b, rounds, fork_at_round, preset, children)
+- `ui/src/api/client.ts`: added `getExperimentTree(id)` method
+- `ui/src/components/theater/ConversationColumn.tsx`:
+  - Exports `AGENT_COLORS = ['#F59E0B', '#06B6D4', '#10B981', '#8B5CF6']`
+  - New `agentIndex: number` prop (required); `color` deprecated
+  - Dynamic border/glow via `AGENT_COLORS[agentIndex]` inline styles
+- `ui/src/components/theater/SpriteAvatar.tsx`:
+  - Added `accentColor?: string` (overrides color-derived accent)
+  - Added `instanceId?: string` (parameterizes SVG clipPath id to prevent DOM collision with N sprites)
+- `ui/src/components/theater/ArenaStage.tsx`: full rewrite
+  - N-agent support: 2 agents = VS divider layout; 3+ = no divider, row with `justify-around`
+  - Props: `agents?: AgentStageSlot[]` (preferred) + legacy props kept
+- `ui/src/pages/Theater.tsx`: full rewrite
+  - `parseAgents()` helper: parses agents_config_json, falls back to legacy model_a/model_b
+  - `resolveWinnerIndex()`: handles both "agent_0"/"agent_1" (new) and "model_a"/"model_b" (legacy)
+  - Dynamic grid: `style={{ gridTemplateColumns: repeat(N, 1fr) }}`
+  - N-column ConversationColumn render loop
+  - Tree link button (violet, visible when parent_experiment_id set)
+- `ui/src/pages/Configure.tsx`: full rewrite
+  - State: `agents: AgentSlot[]` (default 2) replaces modelA/modelB/temperatureA/temperatureB
+  - Per-agent temperature card; Add Agent (max 4) / Remove (min 2) buttons
+  - AGENT_COLORS[idx] labels; estimate bar scales with agent count
 
-### Phase 14-C: Cross-Run Vocabulary Provenance
-- `server/db.py`: origin_experiment_id migration on vocabulary; tag_word_origins() bulk UPDATE (LOWER case-insensitive)
-- `server/relay_engine.py`: asyncio.create_task(tag_word_origins()) at end when parent set
-- `ui/src/api/types.ts`: origin_experiment_id on VocabWord
-- `ui/src/components/dictionary/WordCard.tsx`: [INHERITED] badge links to /analytics/:origin_experiment_id
+### Phase 15-B: Branch Tree
+- `ui/src/pages/BranchTree.tsx` (NEW):
+  - D3 tree layout (horizontal, root-left, children-right)
+  - Nodes: status-colored border, preset glow tint, label/ID, model A (amber) + model B (cyan), round counter R{n}/{planned}
+  - Edges: cubic bezier, preset-tinted stroke, "fork @ R{n}" labels
+  - Click node: navigate to /analytics/:id
+  - Fork > button: navigate to /configure/:preset?fork=:id (stopPropagation)
+  - HUD bracket frame + "// BRANCH TREE" section label
+- `ui/src/App.tsx`: added `/tree/:experimentId` route + violet tint for `/tree` prefix
+- `ui/src/pages/Analytics.tsx`: "View Tree" button (violet) visible when parent_experiment_id set
 
 ## Verification Status
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| Python syntax | PASSED | py_compile on db.py, relay_engine.py, routers/relay.py |
+| Python syntax | PASSED | py_compile on all 4 backend files: db.py, relay_engine.py, routers/relay.py, routers/experiments.py |
 | TypeScript | PASSED | tsc --noEmit exits 0, zero errors |
 | Runtime test | NOT RUN | Server not started this session |
-| Git commit | PENDING | Phase 14 changes not yet committed |
+| Git commit | PENDING | Phase 14 + Phase 15 changes not yet committed |
 
 ## Next Steps (Priority Order)
 
-1. [ ] **Commit Phase 14** -- 9 files: VocabBurstChart.tsx (new), Dictionary.tsx, server/db.py,
-       server/relay_engine.py, server/routers/relay.py, ui/src/api/types.ts,
-       Theater.tsx, Configure.tsx, WordCard.tsx
-2. [ ] **RPG smoke test** -- kill zombie Python processes in Task Manager first, then start server, test RPG + standard flow
-3. [ ] **Phase 15-A** -- N-way conversations (N-agent relay loop, N columns in Theater, N-model selector)
-4. [ ] **Phase 15-B** -- Branch tree (/tree/:id, D3 BranchTree, lineage endpoint)
-5. [ ] **RPG SAO metadata** -- prompt DM to emit SAO events; parse into metadata column (DF SIM Finding #6)
+1. [ ] **Kill zombie Python processes** (Task Manager > Details if any python.exe still running from last session)
+2. [ ] **Commit Phase 14 + 15** -- large staged commit or two separate commits
+3. [ ] **Runtime smoke test** -- start server, test 3-way Configure launch, Theater 3-column render, branch tree
+4. [ ] **2-way backward compat check** -- old experiments still load in Theater (legacy speaker strings)
+5. [ ] **RPG smoke test** -- test RPG flow end-to-end (deferred since session 9)
+6. [ ] **RPG SAO metadata** -- prompt DM to emit SAO events; parse into metadata column
 
 ## Key Patterns (carry forward)
 
+- **AGENT_COLORS**: `['#F59E0B', '#06B6D4', '#10B981', '#8B5CF6']` (amber/cyan/emerald/violet) -- exported from ConversationColumn.tsx
+- **Dynamic Tailwind grid**: use `style={{ gridTemplateColumns: 'repeat(N, 1fr)' }}` -- NOT `grid-cols-${n}` (purged in prod)
+- **Speaker name format**: relay engine now emits `agent_0`, `agent_1`, etc. Old DB records have `model_a`, `model_b`. `resolveWinnerIndex()` handles both.
+- **SpriteAvatar instanceId**: with N sprites, SVG clipPath IDs must be unique. Pass `instanceId={String(idx)}` to each.
+- **D3 tree horizontal**: d3.tree() puts root at d.y=0, children extend rightward. Horizontal SVG: `svg_x = d.y + offset`, `svg_y = d.x + offset`. Cubic bezier from source right edge to target left edge.
 - **SSE-first / DB-fallback**: effectiveX = sseX.length > 0 ? sseX : dbX
 - **Idempotent migrations**: try/except on ALTER TABLE ADD COLUMN
-- **Background tasks**: asyncio.create_task() + _log_task_exception callback
-- **win_write + HTML entities**: never raw Unicode in JSX/TS source files
-- **Forking**: initial_history pre-populates turns[] before relay loop; parent_experiment_id passed to db.create_experiment() + tag_word_origins()
-- **VocabBurstChart**: pure SVG bars (no D3 lifecycle); ResizeObserver width; burst = mean + 1.5sigma
-- **tag_word_origins**: dynamic IN (?,?,?) placeholders; case-insensitive LOWER() match; background task only when parent set
-- **RPG human_events**: separate dict from _running_relays; cleanup removes both
-- **metadata column**: already exists on turns table, ready for SAO structured events (RPG follow-up)
-- **DF SIM reference**: C:\Users\User\Repositories\DF SIM\findings.md -- #4 (LOD tiers) + #6 (SAO events) most relevant for RPG
+- **win_write + HTML entities**: never raw Unicode in JSX; use \uXXXX escapes in JS strings
 
 ## Zombie Python Processes Warning
-12+ zombie Python processes from litellm import hangs (Windows Defender scanning .venv).
-PowerShell CANNOT kill them. Must use Task Manager > Details > kill all python.exe manually.
+PowerShell CANNOT kill litellm zombie processes. Must use Task Manager > Details > kill all python.exe manually.
 After killing, server starts normally. See MEMORY.md for permanent Defender exclusion fix.

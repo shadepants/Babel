@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { TournamentRecord } from '@/api/types'
 import { ScrambleText } from '@/components/common/ScrambleText'
-import { formatDuration } from '@/lib/format'
 
 export default function Tournaments() {
   const [tournaments, setTournaments] = useState<TournamentRecord[]>([])

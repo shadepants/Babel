@@ -238,6 +238,15 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Phase 15-A: N-way agents config
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN agents_config_json TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -270,11 +279,21 @@ class Database:
         participants_json: str | None = None,
         parent_experiment_id: str | None = None,
         fork_at_round: int | None = None,
+        agents: list[dict] | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
         now = datetime.now(timezone.utc).isoformat()
         config_json = json.dumps(config) if config else None
+
+        # Phase 15-A: N-way agents — populate legacy columns from first two agents
+        agents_config_json: str | None = None
+        if agents and len(agents) >= 2:
+            agents_config_json = json.dumps(agents)
+            model_a = agents[0]["model"]
+            model_b = agents[1]["model"]
+            temperature_a = agents[0].get("temperature", 0.7)
+            temperature_b = agents[1].get("temperature", 0.7)
 
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute(
@@ -284,17 +303,34 @@ class Database:
                     temperature_a, temperature_b,
                     judge_model, enable_scoring, enable_verdict,
                     mode, participants_json,
-                    parent_experiment_id, fork_at_round)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    parent_experiment_id, fork_at_round, agents_config_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
                  judge_model, int(enable_scoring), int(enable_verdict),
                  mode, participants_json,
-                 parent_experiment_id, fork_at_round),
+                 parent_experiment_id, fork_at_round, agents_config_json),
             )
             await self.db.commit()
         return experiment_id
+
+    def get_agents_for_experiment(self, row: dict) -> list[dict]:
+        """Parse agents from agents_config_json, or build 2-agent list from legacy fields.
+
+        Returns list of dicts with keys: model, temperature, name (optional).
+        """
+        agents_json = row.get("agents_config_json")
+        if agents_json:
+            try:
+                return json.loads(agents_json)
+            except Exception:
+                pass
+        # Legacy fallback: 2-agent list from model_a/model_b columns
+        return [
+            {"model": row["model_a"], "temperature": row.get("temperature_a", 0.7), "name": None},
+            {"model": row["model_b"], "temperature": row.get("temperature_b", 0.7), "name": None},
+        ]
 
     async def get_experiment(self, experiment_id: str) -> dict | None:
         """Fetch a single experiment by ID."""
@@ -525,6 +561,48 @@ class Database:
                 (parent_experiment_id, experiment_id, *parent_words),
             )
             await self.db.commit()
+
+    async def get_experiment_tree(self, root_id: str) -> dict | None:
+        """Fetch all experiments in a fork lineage as a nested tree.
+
+        Uses a recursive CTE to traverse parent -> children relationships.
+        Returns a nested dict {id, ..., children: [...]} rooted at root_id,
+        or None if root_id does not exist.
+        """
+        cursor = await self.db.execute(
+            """WITH RECURSIVE tree AS (
+                   SELECT id, parent_experiment_id, fork_at_round, label, status,
+                          model_a, model_b, rounds_planned, rounds_completed,
+                          created_at, preset
+                   FROM experiments WHERE id = ?
+                   UNION ALL
+                   SELECT e.id, e.parent_experiment_id, e.fork_at_round, e.label, e.status,
+                          e.model_a, e.model_b, e.rounds_planned, e.rounds_completed,
+                          e.created_at, e.preset
+                   FROM experiments e JOIN tree t ON e.parent_experiment_id = t.id
+               )
+               SELECT * FROM tree""",
+            (root_id,),
+        )
+        rows = [dict(row) for row in await cursor.fetchall()]
+        if not rows:
+            return None
+
+        # Build lookup map and attach children lists
+        by_id: dict[str, dict] = {}
+        for row in rows:
+            row["children"] = []
+            by_id[row["id"]] = row
+
+        root: dict | None = None
+        for row in rows:
+            parent_id = row.get("parent_experiment_id")
+            if parent_id and parent_id in by_id:
+                by_id[parent_id]["children"].append(row)
+            else:
+                root = row
+
+        return root
 
     # ── Analytics ─────────────────────────────────────────────────────
 

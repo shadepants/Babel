@@ -17,13 +17,16 @@ import type {
   ExperimentRadarResponse,
   ModelStatusResponse,
   EnvStatusResponse,
+  TreeNode,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = 'ApiError';
   }
 }
@@ -185,6 +188,12 @@ export const api = {
   /** Get tournament leaderboard with radar data */
   getTournamentLeaderboard: (tournamentId: string) =>
     fetchJson<TournamentLeaderboard>(`/api/tournaments/${tournamentId}/leaderboard`),
+
+  // ── Phase 15-B: Branch Tree ──────────────────────────────────
+
+  /** Get forking lineage tree rooted at the ancestor of the given experiment */
+  getExperimentTree: (experimentId: string) =>
+    fetchJson<TreeNode>(`/api/experiments/${experimentId}/tree`),
 };
 
 export { ApiError };

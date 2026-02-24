@@ -28,7 +28,7 @@ interface TheaterCanvasProps {
 export function TheaterCanvas({ lastTurn, lastVocab, modelAName }: TheaterCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animsRef  = useRef<Animation[]>([])
-  const rafRef    = useRef<number>()
+  const rafRef    = useRef<number>(undefined)
 
   // Track last-seen IDs to avoid double-firing on re-render
   const lastTurnIdRef  = useRef<string | number | null>(null)

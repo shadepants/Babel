@@ -17,6 +17,13 @@ import {
 import { getSymbol } from '@/lib/symbols'
 import { getPrefs } from '@/lib/prefs'
 import { getPresetGlow } from '@/lib/presetColors'
+import { AGENT_COLORS } from '@/components/theater/ConversationColumn'
+
+// Agent slot state -- model + temperature per agent
+interface AgentSlot { model: string; temperature: number }
+
+// Tailwind can't purge dynamic class names; use explicit per-index color labels
+const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
 
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
@@ -35,11 +42,12 @@ export default function Configure() {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   // -- Form state --
-  const [modelA, setModelA] = useState('')
-  const [modelB, setModelB] = useState('')
+  // Phase 15-A: N-way agents (2-4 slots, each with model + temperature)
+  const [agents, setAgents] = useState<AgentSlot[]>([
+    { model: '', temperature: 0.7 },
+    { model: '', temperature: 0.7 },
+  ])
   const [rounds, setRounds] = useState(5)
-  const [temperatureA, setTemperatureA] = useState(0.7)
-  const [temperatureB, setTemperatureB] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(1500)
   const [seed, setSeed] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -70,11 +78,10 @@ export default function Configure() {
     { name: 'Player', model: 'human', role: 'player' },
   ])
 
-  // Preset defaults — for divergence indicators + reset (null when custom)
-  const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
+  // Preset defaults -- for divergence indicators + reset (null when custom)
+  const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperature: number; maxTokens: number } | null>(null)
   // Suggested model strings from preset (for C3 indicator)
-  const [suggestedModelA, setSuggestedModelA] = useState('')
-  const [suggestedModelB, setSuggestedModelB] = useState('')
+  const [suggestedModels, setSuggestedModels] = useState<[string, string]>(['', ''])
 
   // Load models + preset data
   useEffect(() => {
@@ -93,16 +100,15 @@ export default function Configure() {
 
         if (isCustom) {
           if (modelsRes.models.length >= 2) {
-            setModelA(modelsRes.models[0].model)
-            setModelB(modelsRes.models[1].model)
+            const prefs = getPrefs()
+            setAgents([
+              { model: modelsRes.models[0].model, temperature: prefs.defaultTemperature },
+              { model: modelsRes.models[1].model, temperature: prefs.defaultTemperature },
+            ])
+            setRounds(prefs.defaultRounds)
+            setMaxTokens(prefs.defaultMaxTokens)
+            setTurnDelay(prefs.defaultTurnDelay)
           }
-          // Apply user's saved defaults for the custom path
-          const prefs = getPrefs()
-          setRounds(prefs.defaultRounds)
-          setTemperatureA(prefs.defaultTemperature)
-          setTemperatureB(prefs.defaultTemperature)
-          setMaxTokens(prefs.defaultMaxTokens)
-          setTurnDelay(prefs.defaultTurnDelay)
           setSeedEditing(true)
         } else if (presetsRes) {
           const found = presetsRes.presets.find((p) => p.id === presetId)
@@ -114,14 +120,10 @@ export default function Configure() {
           setSeed(found.seed)
           setSystemPrompt(found.system_prompt)
           setRounds(found.defaults.rounds)
-          setTemperatureA(found.defaults.temperature)
-          setTemperatureB(found.defaults.temperature)
           setMaxTokens(found.defaults.max_tokens)
-          // Store for divergence tracking (C1/C2)
           setPresetDefaults({
             rounds: found.defaults.rounds,
-            temperatureA: found.defaults.temperature,
-            temperatureB: found.defaults.temperature,
+            temperature: found.defaults.temperature,
             maxTokens: found.defaults.max_tokens,
           })
 
@@ -129,42 +131,46 @@ export default function Configure() {
           const sugB = modelsRes.models.find((m) => m.name === found.suggested_models.b)
           const resolvedA = sugA?.model ?? modelsRes.models[0]?.model ?? ''
           const resolvedB = sugB?.model ?? modelsRes.models[1]?.model ?? ''
-          setModelA(resolvedA)
-          setModelB(resolvedB)
-          // Store for C3 "preset suggestion" label
-          setSuggestedModelA(resolvedA)
-          setSuggestedModelB(resolvedB)
+          setAgents([
+            { model: resolvedA, temperature: found.defaults.temperature },
+            { model: resolvedB, temperature: found.defaults.temperature },
+          ])
+          setSuggestedModels([resolvedA, resolvedB])
         }
 
-        // Remix: if ?remix=<id> is set, pre-fill models/temps/seed from that experiment
+        // Remix: pre-fill models/temps/seed from that experiment
         if (remixId) {
           try {
             const remixExp = await api.getExperiment(remixId)
-            setModelA(remixExp.model_a)
-            setModelB(remixExp.model_b)
-            if (remixExp.temperature_a != null) setTemperatureA(remixExp.temperature_a)
-            if (remixExp.temperature_b != null) setTemperatureB(remixExp.temperature_b)
+            setAgents(prev => {
+              const next = [...prev]
+              next[0] = { model: remixExp.model_a, temperature: remixExp.temperature_a ?? prev[0].temperature }
+              next[1] = { model: remixExp.model_b, temperature: remixExp.temperature_b ?? prev[1].temperature }
+              return next
+            })
             if (remixExp.seed) { setSeed(remixExp.seed); setSeedEditing(true) }
           } catch {
-            // remix experiment not found — continue with preset defaults
+            // remix experiment not found -- continue with preset defaults
           }
         }
 
-        // Fork: if ?fork=<id> is set, pre-fill settings + load turn history as initial_history
+        // Fork: pre-fill settings + load turn history as initial_history
         if (forkId) {
           try {
             const [forkExp, forkTurns] = await Promise.all([
               api.getExperiment(forkId),
               api.getExperimentTurns(forkId),
             ])
-            setModelA(forkExp.model_a)
-            setModelB(forkExp.model_b)
-            if (forkExp.temperature_a != null) setTemperatureA(forkExp.temperature_a)
-            if (forkExp.temperature_b != null) setTemperatureB(forkExp.temperature_b)
+            setAgents(prev => {
+              const next = [...prev]
+              next[0] = { model: forkExp.model_a, temperature: forkExp.temperature_a ?? prev[0].temperature }
+              next[1] = { model: forkExp.model_b, temperature: forkExp.temperature_b ?? prev[1].temperature }
+              return next
+            })
             if (forkExp.seed) { setSeed(forkExp.seed); setSeedEditing(true) }
             setForkHistory(forkTurns.turns.map((t) => ({ speaker: t.speaker, content: t.content })))
           } catch {
-            // fork experiment not found — continue with preset defaults
+            // fork experiment not found -- continue with preset defaults
           }
         }
       } catch (err) {
@@ -176,25 +182,46 @@ export default function Configure() {
     loadData()
   }, [presetId, isCustom, remixId, forkId])
 
-  // Whether any parameter slider has been moved from the preset default
+  // Whether any parameter has been moved from the preset default
   const hasParamChanges = presetDefaults !== null && (
     rounds !== presetDefaults.rounds ||
-    temperatureA !== presetDefaults.temperatureA ||
-    temperatureB !== presetDefaults.temperatureB ||
-    maxTokens !== presetDefaults.maxTokens
+    maxTokens !== presetDefaults.maxTokens ||
+    agents.some(a => a.temperature !== presetDefaults.temperature)
   )
 
   function handleResetParams() {
     if (!presetDefaults) return
     setRounds(presetDefaults.rounds)
-    setTemperatureA(presetDefaults.temperatureA)
-    setTemperatureB(presetDefaults.temperatureB)
     setMaxTokens(presetDefaults.maxTokens)
+    setAgents(prev => prev.map(a => ({ ...a, temperature: presetDefaults.temperature })))
+  }
+
+  // Agent slot helpers
+  function updateAgent(idx: number, patch: Partial<AgentSlot>) {
+    setAgents(prev => prev.map((a, i) => i === idx ? { ...a, ...patch } : a))
+  }
+  function addAgent() {
+    if (agents.length >= 4) return
+    setAgents(prev => [...prev, { model: '', temperature: 0.7 }])
+  }
+  function removeAgent(idx: number) {
+    if (agents.length <= 2) return
+    setAgents(prev => prev.filter((_, i) => i !== idx))
+  }
+  function swapAB() {
+    setAgents(prev => {
+      const next = [...prev]
+      const tmp = next[0]
+      next[0] = next[1]
+      next[1] = tmp
+      return next
+    })
   }
 
   async function handleLaunch() {
-    if (!modelA || (!rpgMode && !modelB)) {
-      setFormError(rpgMode ? 'Please select a DM model.' : 'Please select both models.')
+    const activeModel = agents[0]?.model
+    if (!activeModel || (!rpgMode && agents.some(a => !a.model))) {
+      setFormError(rpgMode ? 'Please select a DM model.' : 'Please select models for all agents.')
       return
     }
     if (!seed.trim()) {
@@ -207,16 +234,26 @@ export default function Configure() {
 
     try {
       const allParticipants = rpgMode
-        ? [{ name: 'DM', model: modelA, role: 'dm' }, ...rpgParticipants]
+        ? [{ name: 'DM', model: activeModel, role: 'dm' }, ...rpgParticipants]
         : undefined
 
+      // Build the agents array with display names for speaker identification
+      const agentsPayload = rpgMode ? undefined : agents.map((a) => ({
+        model: a.model,
+        temperature: a.temperature,
+        name: models.find((m) => m.model === a.model)?.name ?? a.model.split('/').pop() ?? a.model,
+      }))
+
       const request: Parameters<typeof api.startRelay>[0] = {
-        model_a: modelA,
-        model_b: rpgMode ? modelA : modelB,
+        // Phase 15-A: N-way agents path
+        ...(agentsPayload ? { agents: agentsPayload } : {}),
+        // Legacy fields kept for RPG mode and backward compat
+        model_a: activeModel,
+        model_b: rpgMode ? activeModel : (agents[1]?.model ?? ''),
         seed: seed.trim(),
         rounds,
-        temperature_a: temperatureA,
-        temperature_b: rpgMode ? temperatureA : temperatureB,
+        temperature_a: agents[0]?.temperature ?? 0.7,
+        temperature_b: rpgMode ? (agents[0]?.temperature ?? 0.7) : (agents[1]?.temperature ?? 0.7),
         max_tokens: maxTokens,
         turn_delay_seconds: turnDelay,
         enable_scoring: enableScoring,
@@ -243,10 +280,11 @@ export default function Configure() {
       if (rpgMode) {
         navigate(`/rpg/${res.match_id}`)
       } else {
-        const nameA = models.find((m) => m.model === modelA)?.name ?? modelA
-        const nameB = models.find((m) => m.model === modelB)?.name ?? modelB
         navigate(`/theater/${res.match_id}`, {
-          state: { modelAName: nameA, modelBName: nameB },
+          state: {
+            modelAName: agentsPayload?.[0]?.name ?? agents[0]?.model ?? '',
+            modelBName: agentsPayload?.[1]?.name ?? agents[1]?.model ?? '',
+          },
         })
       }
     } catch (err) {
@@ -286,7 +324,6 @@ export default function Configure() {
         </Link>
 
         <div className="mt-4 flex items-center gap-4">
-          {/* Geometric symbol — replaces emoji */}
           {preset && (
             <span className="font-mono text-3xl text-accent/50 leading-none select-none">
               {getSymbol(preset.emoji)}
@@ -307,7 +344,6 @@ export default function Configure() {
           </div>
         </div>
 
-        {/* Tags */}
         {preset && preset.tags.length > 0 && (
           <div className="flex gap-1.5 mt-3">
             {preset.tags.map((tag) => (
@@ -355,77 +391,106 @@ export default function Configure() {
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
               {rpgMode
                 ? '// AI dungeon master + human player. Model A becomes the DM.'
-                : '// Standard two-model relay conversation'}
+                : '// Standard N-way relay conversation (2-4 models)'}
             </p>
           </div>
 
-          {/* Models */}
+          {/* Models -- N-way agent slots */}
           <div className="space-y-3">
             <div className="neural-section-label flex items-center justify-between">
               <span>// {rpgMode ? 'dm_model' : 'model_selection'}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const tmpModel = modelA; setModelA(modelB); setModelB(tmpModel)
-                  const tmpTemp = temperatureA; setTemperatureA(temperatureB); setTemperatureB(tmpTemp)
-                }}
-                className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
-                title="Swap Model A and Model B"
-              >
-                &#8646; swap
-              </button>
-            </div>
-            <div className={`grid ${rpgMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-              <div className="space-y-1.5">
-                <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
-                  &#9671; {rpgMode ? 'Dungeon Master' : 'Model A'}
-                </label>
-                <Select value={modelA} onValueChange={setModelA}>
-                  <SelectTrigger className="font-mono text-xs border-model-a/30 focus:ring-model-a/40">
-                    <SelectValue placeholder="Select model..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                        {m.name}
-                        {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {modelA && modelStatus.get(modelA) === false && (
-                  <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
+              <div className="flex items-center gap-3">
+                {!rpgMode && (
+                  <button
+                    type="button"
+                    onClick={swapAB}
+                    className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                    title="Swap Model A and Model B"
+                  >
+                    &#8646; swap A&#8596;B
+                  </button>
                 )}
-                {!isCustom && suggestedModelA && modelA === suggestedModelA && (
-                  <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
+                {!rpgMode && agents.length < 4 && (
+                  <button
+                    type="button"
+                    onClick={addAgent}
+                    className="font-mono text-[9px] text-emerald-400/60 hover:text-emerald-400 tracking-wider uppercase transition-colors"
+                    title="Add a third or fourth model"
+                  >
+                    + Add Agent
+                  </button>
                 )}
               </div>
-              {!rpgMode && (
-                <div className="space-y-1.5">
-                  <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
-                    &#9671; Model B
-                  </label>
-                  <Select value={modelB} onValueChange={setModelB}>
-                    <SelectTrigger className="font-mono text-xs border-model-b/30 focus:ring-model-b/40">
-                      <SelectValue placeholder="Select model..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {models.map((m) => (
-                        <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                          {m.name}
-                          {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {modelB && modelStatus.get(modelB) === false && (
-                    <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
-                  )}
-                  {!isCustom && suggestedModelB && modelB === suggestedModelB && (
-                    <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
-                  )}
-                </div>
-              )}
+            </div>
+
+            <div className="space-y-3">
+              {(rpgMode ? agents.slice(0, 1) : agents).map((agent, idx) => {
+                const agentColor = AGENT_COLORS[idx] ?? AGENT_COLORS[0]
+                const label = AGENT_LABELS[idx] ?? `Agent ${idx + 1}`
+                const isSuggested = !isCustom && suggestedModels[idx] && agent.model === suggestedModels[idx]
+                const keyUnavailable = agent.model && modelStatus.get(agent.model) === false
+                return (
+                  <div key={idx} className="space-y-2 p-3 border border-border-custom/40 rounded-sm bg-bg-deep/30">
+                    <div className="flex items-center justify-between">
+                      <label
+                        className="font-mono text-[10px] tracking-wider uppercase"
+                        style={{ color: agentColor }}
+                      >
+                        &#9671; {label}
+                      </label>
+                      {!rpgMode && agents.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeAgent(idx)}
+                          className="font-mono text-[10px] text-danger/50 hover:text-danger transition-colors"
+                          title="Remove this agent"
+                        >
+                          &#10005;
+                        </button>
+                      )}
+                    </div>
+                    <Select value={agent.model} onValueChange={(v) => updateAgent(idx, { model: v })}>
+                      <SelectTrigger
+                        className="font-mono text-xs"
+                        style={{ borderColor: agentColor + '4d' }}
+                      >
+                        <SelectValue placeholder="Select model..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {models.map((m) => (
+                          <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                            {m.name}
+                            {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {keyUnavailable && (
+                      <p className="font-mono text-[9px] text-danger/80 tracking-wider">// api key not configured</p>
+                    )}
+                    {isSuggested && (
+                      <p className="font-mono text-[9px] text-accent/45 tracking-wider">// preset suggestion</p>
+                    )}
+                    {/* Per-agent temperature */}
+                    <div className="space-y-1 pt-1">
+                      <label className="font-mono text-[9px] tracking-wider uppercase block" style={{ color: agentColor + 'aa' }}>
+                        Temperature <span className="text-accent/60">[{agent.temperature.toFixed(1)}]</span>
+                        {presetDefaults && agent.temperature !== presetDefaults.temperature && (
+                          <span className="ml-1.5 opacity-70" title="modified from preset default" style={{ color: agentColor }}>&#9679;</span>
+                        )}
+                      </label>
+                      <Slider
+                        value={[agent.temperature]}
+                        onValueChange={(v) => updateAgent(idx, { temperature: v[0] })}
+                        min={0} max={2} step={0.1}
+                      />
+                      <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                        <span>0 precise</span><span>2 creative</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -533,7 +598,7 @@ export default function Configure() {
                   className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
                   title="Reset to preset defaults"
                 >
-                  ↺ reset
+                  &#8635; reset
                 </button>
               )}
             </div>
@@ -542,7 +607,7 @@ export default function Configure() {
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Rounds <span className="text-accent/60">[{rounds}]</span>
                 {presetDefaults && rounds !== presetDefaults.rounds && (
-                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
+                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">&#9679;</span>
                 )}
               </label>
               <Slider value={[rounds]} onValueChange={(v) => setRounds(v[0])} min={1} max={15} step={1} />
@@ -552,36 +617,10 @@ export default function Configure() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] text-model-a tracking-wider uppercase block">
-                Temp A <span className="text-accent/60">[{temperatureA.toFixed(1)}]</span>
-                {presetDefaults && temperatureA !== presetDefaults.temperatureA && (
-                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
-                )}
-              </label>
-              <Slider value={[temperatureA]} onValueChange={(v) => setTemperatureA(v[0])} min={0} max={2} step={0.1} />
-              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
-                <span>0 precise</span><span>2 creative</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="font-mono text-[10px] text-model-b tracking-wider uppercase block">
-                Temp B <span className="text-accent/60">[{temperatureB.toFixed(1)}]</span>
-                {presetDefaults && temperatureB !== presetDefaults.temperatureB && (
-                  <span className="ml-1.5 text-model-b/70" title="modified from preset default">●</span>
-                )}
-              </label>
-              <Slider value={[temperatureB]} onValueChange={(v) => setTemperatureB(v[0])} min={0} max={2} step={0.1} />
-              <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
-                <span>0 precise</span><span>2 creative</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
                 Max Tokens <span className="text-accent/60">[{maxTokens}]</span>
                 {presetDefaults && maxTokens !== presetDefaults.maxTokens && (
-                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">●</span>
+                  <span className="ml-1.5 text-model-a/70" title="modified from preset default">&#9679;</span>
                 )}
               </label>
               <Slider value={[maxTokens]} onValueChange={(v) => setMaxTokens(v[0])} min={100} max={4096} step={100} />
@@ -610,7 +649,7 @@ export default function Configure() {
                   onClick={() => setSeedEditing(true)}
                   className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
                 >
-                  Customize &#8594;
+                  Customize &rarr;
                 </button>
               )}
             </div>
@@ -638,7 +677,7 @@ export default function Configure() {
                   onClick={() => setPromptEditing(true)}
                   className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
                 >
-                  Customize &#8594;
+                  Customize &rarr;
                 </button>
               )}
             </div>
@@ -785,16 +824,20 @@ export default function Configure() {
           {/* Pre-launch estimate */}
           {(() => {
             const avgTurnSecs = 6
-            const totalSecs = rounds * 2 * (avgTurnSecs + turnDelay)
+            const n = rpgMode ? 1 : agents.length
+            const totalSecs = rounds * n * (avgTurnSecs + turnDelay)
             const mins = Math.floor(totalSecs / 60)
             const secs = Math.round(totalSecs % 60)
             const timeStr = mins > 0 ? `~${mins}m ${secs}s` : `~${secs}s`
-            const tokenBudget = (rounds * 2 * maxTokens).toLocaleString()
+            const tokenBudget = (rounds * n * maxTokens).toLocaleString()
             return (
               <div className="font-mono text-[10px] text-text-dim/50 flex gap-4 justify-center tracking-wider">
                 <span><span className="text-accent/40">// est</span> {timeStr}</span>
                 <span className="text-accent/25">&middot;</span>
                 <span>&le;{tokenBudget} tokens</span>
+                {!rpgMode && agents.length > 2 && (
+                  <span className="text-accent/40">&middot; {agents.length} agents</span>
+                )}
               </div>
             )
           })()}
@@ -802,7 +845,7 @@ export default function Configure() {
           {/* Launch */}
           <Button
             onClick={handleLaunch}
-            disabled={starting || !modelA || (!rpgMode && !modelB)}
+            disabled={starting || !agents[0]?.model || (!rpgMode && agents.some(a => !a.model))}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
             {starting ? '// Launching...' : rpgMode ? 'Begin Campaign' : 'Launch Experiment'}

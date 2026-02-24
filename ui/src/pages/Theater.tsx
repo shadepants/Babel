@@ -4,33 +4,76 @@ import { api } from '@/api/client'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
 import { Button } from '@/components/ui/button'
-import { ConversationColumn } from '@/components/theater/ConversationColumn'
+import { ConversationColumn, AGENT_COLORS } from '@/components/theater/ConversationColumn'
 import { ExperimentHeader } from '@/components/theater/ExperimentHeader'
 import { VocabPanel } from '@/components/theater/VocabPanel'
 import { TheaterCanvas } from '@/components/theater/TheaterCanvas'
 import { ArenaStage } from '@/components/theater/ArenaStage'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { TypewriterText } from '@/components/theater/TypewriterText'
-import type { TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
+import type { AgentConfig, ExperimentRecord, TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
 
-const COLOR_A       = '#F59E0B'
-const COLOR_B       = '#06B6D4'
 const COLOR_DEFAULT = '#8b5cf6'
+
+// ── helpers ─────────────────────────────────────────────────────
+
+interface AgentSlot { name: string; model: string }
+
+/** Parse agent display slots from an experiment record.
+ *  Prefers agents_config_json; falls back to legacy model_a/model_b columns.
+ *  locationNames: [nameA, nameB] from router state (accurate display names for legacy experiments). */
+function parseAgents(exp: ExperimentRecord, locationNames: [string, string]): AgentSlot[] {
+  if (exp.agents_config_json) {
+    try {
+      const parsed = JSON.parse(exp.agents_config_json) as AgentConfig[]
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed.map((a) => ({
+          model: a.model,
+          name: a.name || a.model.split('/').pop() || a.model,
+        }))
+      }
+    } catch { /* fall through */ }
+  }
+  // Legacy 2-agent: prefer location.state display names, fall back to split heuristic
+  const nameA = locationNames[0] || exp.model_a.split('/').pop() || exp.model_a
+  const nameB = locationNames[1] || exp.model_b.split('/').pop() || exp.model_b
+  return [
+    { model: exp.model_a, name: nameA },
+    { model: exp.model_b, name: nameB },
+  ]
+}
+
+/** Resolve the winner agent index from a verdict winner string.
+ *  Handles both new-style ("agent_0", "agent_1") and legacy ("model_a", "model_b"). */
+function resolveWinnerIndex(winner: string): number | null {
+  if (winner === 'tie') return null
+  const m = winner.match(/^agent_(\d+)$/)
+  if (m) return parseInt(m[1], 10)
+  if (winner === 'model_a') return 0
+  if (winner === 'model_b') return 1
+  return null
+}
+
+// ── component ───────────────────────────────────────────────────
 
 export default function Theater() {
   const { matchId }  = useParams<{ matchId: string }>()
   const location     = useLocation()
   const navigate     = useNavigate()
 
-  const [modelAName, setModelAName] = useState(
-    (location.state as { modelAName?: string })?.modelAName ?? ''
-  )
-  const [modelBName, setModelBName] = useState(
-    (location.state as { modelBName?: string })?.modelBName ?? ''
-  )
-  const [preset, setPreset] = useState<string | null>(null)
+  // Legacy location.state names (Configure passes these for old 2-agent path)
+  const locNameA = (location.state as { modelAName?: string })?.modelAName ?? ''
+  const locNameB = (location.state as { modelBName?: string })?.modelBName ?? ''
 
-  // DB fallback: turns + scores + verdict loaded when SSE history is gone (e.g. server restart)
+  // Agent slots: source of truth for display names + models
+  const [agentSlots, setAgentSlots] = useState<AgentSlot[]>([
+    { name: locNameA, model: '' },
+    { name: locNameB, model: '' },
+  ])
+  const [preset, setPreset] = useState<string | null>(null)
+  const [parentId, setParentId] = useState<string | null>(null)
+
+  // DB fallback: turns + scores + verdict loaded when SSE history is gone
   const [dbTurns, setDbTurns]     = useState<TurnEvent[]>([])
   const [dbScores, setDbScores]   = useState<Record<number, ScoreEvent>>({})
   const [dbVerdict, setDbVerdict] = useState<{ winner: string; winner_model: string; reasoning: string } | null>(null)
@@ -47,12 +90,11 @@ export default function Theater() {
     if (!matchId) return
     api.getExperiment(matchId)
       .then((exp) => {
-        if (!modelAName) setModelAName(exp.model_a.split('/').pop() ?? exp.model_a)
-        if (!modelBName) setModelBName(exp.model_b.split('/').pop() ?? exp.model_b)
+        const slots = parseAgents(exp, [locNameA, locNameB])
+        setAgentSlots(slots)
         setPreset(exp.preset ?? null)
+        setParentId(exp.parent_experiment_id ?? null)
 
-        // For completed/stopped experiments, pre-load turns/scores/verdict from DB so Theater
-        // is never empty when SSE history has been wiped (e.g. server restart).
         if (exp.status === 'completed' || exp.status === 'stopped' || exp.status === 'error') {
           api.getExperimentTurns(matchId)
             .then(({ turns }) => {
@@ -103,11 +145,10 @@ export default function Theater() {
             })
             .catch(console.error)
           if (exp.winner && exp.verdict_reasoning) {
+            const winnerIdx = resolveWinnerIndex(exp.winner)
             setDbVerdict({
               winner: exp.winner,
-              winner_model: exp.winner === 'model_a' ? exp.model_a
-                : exp.winner === 'model_b' ? exp.model_b
-                : 'tie',
+              winner_model: winnerIdx != null ? (slots[winnerIdx]?.model ?? 'tie') : 'tie',
               reasoning: exp.verdict_reasoning,
             })
           }
@@ -125,6 +166,10 @@ export default function Theater() {
   const effectiveVerdict = experiment.verdict ?? dbVerdict
   const effectiveVocab   = experiment.vocab.length > 0 ? experiment.vocab : dbVocab
 
+  // Derived shorthands for legacy 2-agent props
+  const modelAName = agentSlots[0]?.name ?? ''
+  const modelBName = agentSlots[1]?.name ?? ''
+
   // Derived: last turn + last vocab for canvas
   const lastTurn  = effectiveTurns.length > 0
     ? effectiveTurns[effectiveTurns.length - 1]
@@ -133,7 +178,7 @@ export default function Theater() {
     ? experiment.vocab[experiment.vocab.length - 1]
     : null
 
-  // Typewriter sync -- set talkingSpeaker when a new turn arrives, clear after estimated duration
+  // Typewriter sync
   useEffect(() => {
     if (!lastTurn) return
     setTalkingSpeaker(lastTurn.speaker)
@@ -153,7 +198,7 @@ export default function Theater() {
     window.dispatchEvent(new CustomEvent('babel-glitch'))
   }, [lastTurn?.turn_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab title — live round counter while running, done indicator when complete
+  // Tab title
   useEffect(() => {
     const base = 'Babel'
     if (experiment.status === 'running' || experiment.status === 'paused') {
@@ -164,45 +209,37 @@ export default function Theater() {
     return () => { document.title = base }
   }, [experiment.status, lastTurn?.round]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sprite status derivation -- verdict overrides all
-  const statusA: SpriteStatus = effectiveVerdict
-    ? effectiveVerdict.winner === 'model_a' ? 'winner'
-    : effectiveVerdict.winner === 'tie'     ? 'idle'
-    : 'loser'
-    : experiment.status === 'error'            ? 'error'
-    : experiment.thinkingSpeaker === modelAName ? 'thinking'
-    : talkingSpeaker === modelAName             ? 'talking'
-    : 'idle'
+  // Sprite statuses -- N-way: derive status for each agent slot
+  const winnerIndex = effectiveVerdict ? resolveWinnerIndex(effectiveVerdict.winner) : null
+  const spriteStatuses: SpriteStatus[] = agentSlots.map((slot, idx) => {
+    if (experiment.status === 'error') return 'error'
+    if (effectiveVerdict) {
+      if (effectiveVerdict.winner === 'tie') return 'idle'
+      return winnerIndex === idx ? 'winner' : 'loser'
+    }
+    if (experiment.thinkingSpeaker === slot.name) return 'thinking'
+    if (talkingSpeaker === slot.name) return 'talking'
+    return 'idle'
+  })
 
-  const statusB: SpriteStatus = effectiveVerdict
-    ? effectiveVerdict.winner === 'model_b' ? 'winner'
-    : effectiveVerdict.winner === 'tie'     ? 'idle'
-    : 'loser'
-    : experiment.status === 'error'            ? 'error'
-    : experiment.thinkingSpeaker === modelBName ? 'thinking'
-    : talkingSpeaker === modelBName             ? 'talking'
-    : 'idle'
-
-  // Color bleed -- update body data-attr so CSS transitions the nav border
+  // Color bleed -- keep for first two agents
   useEffect(() => {
     const root = document.documentElement
     const speaking = experiment.thinkingSpeaker
-
-    if (speaking === modelAName) {
-      root.setAttribute('data-active-model', 'a')
-      root.style.setProperty('--color-active', COLOR_A)
-    } else if (speaking === modelBName) {
-      root.setAttribute('data-active-model', 'b')
-      root.style.setProperty('--color-active', COLOR_B)
+    const activeIdx = agentSlots.findIndex(s => s.name === speaking)
+    if (activeIdx >= 0) {
+      root.setAttribute('data-active-model', activeIdx === 0 ? 'a' : 'b')
+      root.style.setProperty('--color-active', AGENT_COLORS[activeIdx] ?? COLOR_DEFAULT)
     } else if (effectiveTurns.length > 0) {
       const last = effectiveTurns[effectiveTurns.length - 1]
-      const isA  = last.speaker === modelAName
-      root.setAttribute('data-active-model', isA ? 'a' : 'b')
-      root.style.setProperty('--color-active', isA ? COLOR_A : COLOR_B)
+      const lastIdx = agentSlots.findIndex(s => s.name === last.speaker)
+      if (lastIdx >= 0) {
+        root.setAttribute('data-active-model', lastIdx === 0 ? 'a' : 'b')
+        root.style.setProperty('--color-active', AGENT_COLORS[lastIdx] ?? COLOR_DEFAULT)
+      }
     }
-  }, [experiment.thinkingSpeaker, effectiveTurns, modelAName, modelBName])
+  }, [experiment.thinkingSpeaker, effectiveTurns, agentSlots])
 
-  // Reset color bleed when leaving Theater
   useEffect(() => {
     return () => {
       document.documentElement.removeAttribute('data-active-model')
@@ -242,45 +279,38 @@ export default function Theater() {
         modelA={modelAName}
       />
 
-      {/* Arena stage -- sprites + preset gradient */}
+      {/* Arena stage -- N sprites */}
       <ArenaStage
-        modelAName={modelAName}
-        modelBName={modelBName}
-        statusA={statusA}
-        statusB={statusB}
+        agents={agentSlots.map((slot, idx) => ({ name: slot.name, status: spriteStatuses[idx] ?? 'idle' }))}
         preset={preset}
       />
 
-      {/* Split conversation columns */}
-      <div className="flex-1 relative grid grid-cols-2 gap-3 p-3 min-h-0">
+      {/* N-way conversation columns -- dynamic grid */}
+      <div
+        className="flex-1 relative grid gap-3 p-3 min-h-0"
+        style={{ gridTemplateColumns: `repeat(${agentSlots.length}, 1fr)` }}
+      >
         <TheaterCanvas
           lastTurn={lastTurn}
           lastVocab={lastVocab}
           modelAName={modelAName}
         />
-        <ConversationColumn
-          speakerName={modelAName}
-          turns={effectiveTurns}
-          thinkingSpeaker={experiment.thinkingSpeaker}
-          color="model-a"
-          scores={effectiveScores}
-          latestTurnId={latestTurnId}
-          vocab={effectiveVocab}
-          experimentId={matchId}
-        />
-        <ConversationColumn
-          speakerName={modelBName}
-          turns={effectiveTurns}
-          thinkingSpeaker={experiment.thinkingSpeaker}
-          color="model-b"
-          scores={effectiveScores}
-          latestTurnId={latestTurnId}
-          vocab={effectiveVocab}
-          experimentId={matchId}
-        />
+        {agentSlots.map((slot, idx) => (
+          <ConversationColumn
+            key={slot.name || idx}
+            speakerName={slot.name}
+            turns={effectiveTurns}
+            thinkingSpeaker={experiment.thinkingSpeaker}
+            agentIndex={idx}
+            scores={effectiveScores}
+            latestTurnId={latestTurnId}
+            vocab={effectiveVocab}
+            experimentId={matchId}
+          />
+        ))}
       </div>
 
-      {/* Observer commentary -- inline centered cards */}
+      {/* Observer commentary */}
       {experiment.observers.length > 0 && (
         <div className="px-4 py-2 space-y-2">
           {experiment.observers.map((obs: ObserverEvent, i: number) => (
@@ -298,7 +328,7 @@ export default function Theater() {
         </div>
       )}
 
-      {/* Verdict -- typewriter reveal for the reasoning text */}
+      {/* Verdict */}
       {effectiveVerdict && (
         <div className="px-6 py-4 border-t border-accent/25 bg-bg-card/60">
           <div className="max-w-3xl mx-auto space-y-2">
@@ -306,16 +336,21 @@ export default function Theater() {
             <div className="font-display font-black tracking-widest text-base">
               {effectiveVerdict.winner === 'tie' ? (
                 <span className="text-accent">TIE</span>
-              ) : (
-                <>
-                  <span className="font-mono text-[10px] text-text-dim/60 font-normal tracking-wider uppercase">
-                    winner:{' '}
-                  </span>
-                  <span className={effectiveVerdict.winner === 'model_a' ? 'text-model-a' : 'text-model-b'}>
-                    {effectiveVerdict.winner === 'model_a' ? modelAName : modelBName}
-                  </span>
-                </>
-              )}
+              ) : (() => {
+                const idx = resolveWinnerIndex(effectiveVerdict.winner)
+                const winnerSlot = idx != null ? agentSlots[idx] : null
+                const winnerColor = idx != null ? (AGENT_COLORS[idx] ?? AGENT_COLORS[0]) : AGENT_COLORS[0]
+                return (
+                  <>
+                    <span className="font-mono text-[10px] text-text-dim/60 font-normal tracking-wider uppercase">
+                      winner:{' '}
+                    </span>
+                    <span style={{ color: winnerColor }}>
+                      {winnerSlot?.name ?? effectiveVerdict.winner_model}
+                    </span>
+                  </>
+                )
+              })()}
             </div>
             <p className="font-mono text-xs text-text-dim/70 leading-relaxed">
               <TypewriterText text={effectiveVerdict.reasoning} active speedMs={6} />
@@ -326,7 +361,6 @@ export default function Theater() {
 
       {(experiment.status === 'running' || experiment.status === 'paused') && (
         <div className="px-4 py-2 border-t border-border-custom space-y-2">
-          {/* Human injection textarea — only visible when paused */}
           {experiment.status === 'paused' && (
             <div className="flex gap-2 items-end">
               <textarea
@@ -399,13 +433,20 @@ export default function Theater() {
       )}
 
       {(experiment.status === 'completed' || experiment.status === 'stopped') && (
-        <div className="px-4 py-3 border-t border-border-custom flex items-center justify-center gap-3">
+        <div className="px-4 py-3 border-t border-border-custom flex items-center justify-center gap-3 flex-wrap">
           <Link to={`/analytics/${matchId}`}>
             <Button variant="outline" className="font-mono text-xs">Analytics</Button>
           </Link>
           <Link to={`/dictionary/${matchId}`}>
             <Button variant="outline" className="font-mono text-xs">Dictionary</Button>
           </Link>
+          {parentId && (
+            <Link to={`/tree/${parentId}`}>
+              <Button variant="outline" className="font-mono text-xs border-violet-500/50 text-violet-400 hover:bg-violet-500/10">
+                // Tree
+              </Button>
+            </Link>
+          )}
           <Button
             variant="outline"
             className="font-mono text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"

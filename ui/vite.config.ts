@@ -18,13 +18,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: false, // Prevents original code from being visible in DevTools
-    minify: 'terser', // Advanced minification (if you install terser) or 'esbuild' (default)
-    terserOptions: {
-      compress: {
-        drop_console: true, // Optional: remove logs for the external audience
-        drop_debugger: true,
-      }
-    }
+    minify: 'esbuild', // Built-in minifier (fast and secure)
+    sourcemap: false,
+    target: 'es2015',
+    cssMinify: true,
   },
 })

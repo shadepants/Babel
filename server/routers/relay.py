@@ -46,7 +46,20 @@ _running_relays: dict[str, tuple[asyncio.Task, asyncio.Event, asyncio.Event]] = 
 
 # ── Request / Response Models ───────────────────────────────────────────
 
+class AgentConfig(BaseModel):
+    """Config for one agent in an N-way relay (Phase 15-A)."""
+    model: str
+    temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    name: str | None = Field(default=None, description="Display name override (defaults to registry name)")
+
+
 class RelayStartRequest(BaseModel):
+    # Phase 15-A: N-way agents list (preferred)
+    agents: list[AgentConfig] | None = Field(
+        default=None,
+        description="2-4 agent configs. If provided, overrides model_a/model_b/temperature_a/temperature_b.",
+    )
+    # Legacy 2-agent fields (still supported for backward compat)
     model_a: str = Field(default=DEFAULT_MODEL_A, description="litellm model string for agent A")
     model_b: str = Field(default=DEFAULT_MODEL_B, description="litellm model string for agent B")
     seed: str = Field(default=DEFAULT_SEED, description="Starting message / seed vocabulary")
@@ -104,10 +117,24 @@ async def start_relay(body: RelayStartRequest, request: Request):
     db = _get_db(request)
     hub = _get_hub(request)
 
-    # Validate model strings against the registry
-    for model in (body.model_a, body.model_b):
-        if model not in _ALLOWED_MODELS:
-            raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
+    # ── Resolve agents list (N-way preferred; fall back to legacy model_a/model_b) ──
+    if body.agents and len(body.agents) >= 2:
+        if len(body.agents) > 4:
+            raise HTTPException(400, "Maximum 4 agents supported")
+        for ac in body.agents:
+            if ac.model not in _ALLOWED_MODELS:
+                raise HTTPException(400, f"Model '{ac.model}' is not in the allowed registry")
+        resolved_agents = body.agents
+    else:
+        # Legacy 2-agent path — validate model_a / model_b
+        for model in (body.model_a, body.model_b):
+            if model not in _ALLOWED_MODELS:
+                raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
+        resolved_agents = None  # signals "use legacy model_a/model_b path"
+
+    # Validate model strings against the registry (legacy path guard kept above)
+    if resolved_agents is None:
+        pass  # already validated above
 
     # Resolve judge model — use request value if provided, else fall back to server default
     resolved_judge = body.judge_model or JUDGE_MODEL
@@ -134,6 +161,12 @@ async def start_relay(body: RelayStartRequest, request: Request):
         "max_tokens": body.max_tokens,
     }
     participants_json = _json.dumps(body.participants) if body.participants else None
+    # Serialise agents list for create_experiment (it handles model_a/model_b population)
+    agents_dicts = (
+        [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+         for ac in resolved_agents]
+        if resolved_agents else None
+    )
     match_id = await db.create_experiment(
         model_a=body.model_a,
         model_b=body.model_b,
@@ -151,6 +184,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
         participants_json=participants_json,
         parent_experiment_id=body.parent_experiment_id,
         fork_at_round=body.fork_at_round,
+        agents=agents_dicts,
     )
 
     cancel_event = asyncio.Event()
@@ -195,19 +229,32 @@ async def start_relay(body: RelayStartRequest, request: Request):
         )
 
     # ── Standard relay mode ──
-    # Build agents
-    agent_a = RelayAgent(
-        name=get_display_name(body.model_a),
-        model=body.model_a,
-        temperature=body.temperature_a,
-        max_tokens=body.max_tokens,
-    )
-    agent_b = RelayAgent(
-        name=get_display_name(body.model_b),
-        model=body.model_b,
-        temperature=body.temperature_b,
-        max_tokens=body.max_tokens,
-    )
+    # Build RelayAgent list: N-way if agents provided, else legacy 2-agent
+    if resolved_agents:
+        relay_agents = [
+            RelayAgent(
+                name=ac.name or get_display_name(ac.model),
+                model=ac.model,
+                temperature=ac.temperature,
+                max_tokens=body.max_tokens,
+            )
+            for ac in resolved_agents
+        ]
+    else:
+        relay_agents = [
+            RelayAgent(
+                name=get_display_name(body.model_a),
+                model=body.model_a,
+                temperature=body.temperature_a,
+                max_tokens=body.max_tokens,
+            ),
+            RelayAgent(
+                name=get_display_name(body.model_b),
+                model=body.model_b,
+                temperature=body.temperature_b,
+                max_tokens=body.max_tokens,
+            ),
+        ]
 
     # Launch relay as background task (doesn't block the response)
     resume_event = asyncio.Event()
@@ -215,8 +262,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
     task = asyncio.create_task(
         run_relay(
             match_id=match_id,
-            agent_a=agent_a,
-            agent_b=agent_b,
+            agents=relay_agents,
             seed=seed,
             system_prompt=system_prompt,
             rounds=body.rounds,
@@ -242,15 +288,16 @@ async def start_relay(body: RelayStartRequest, request: Request):
         _running_relays.pop(match_id, None)
     task.add_done_callback(_cleanup_task)
 
+    agent_names = " / ".join(a.name for a in relay_agents)
     logger.info(
-        "Relay started: %s — %s vs %s, %d rounds",
-        match_id, agent_a.name, agent_b.name, body.rounds,
+        "Relay started: %s — %s, %d rounds",
+        match_id, agent_names, body.rounds,
     )
 
     return RelayStartResponse(
         match_id=match_id,
-        model_a=body.model_a,
-        model_b=body.model_b,
+        model_a=relay_agents[0].model,
+        model_b=relay_agents[1].model if len(relay_agents) > 1 else relay_agents[0].model,
         rounds=body.rounds,
         status="running",
     )

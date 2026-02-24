@@ -13,19 +13,23 @@ interface ExperimentHeaderProps {
  * Top bar showing model names, status, round progress, and connection state.
  */
 export function ExperimentHeader({ modelA, modelB, state, connected }: ExperimentHeaderProps) {
-  const statusColor = {
+  const statusColor: Record<string, string> = {
     idle: 'bg-text-dim',
     running: 'bg-info',
+    paused: 'bg-warning',
     completed: 'bg-success',
     error: 'bg-danger',
-  }[state.status]
+  }
+  const color = statusColor[state.status] || 'bg-text-dim'
 
-  const statusLabel = {
+  const statusLabel: Record<string, string> = {
     idle: 'Idle',
     running: 'Running',
+    paused: 'Paused',
     completed: 'Completed',
     error: 'Error',
-  }[state.status]
+  }
+  const label = statusLabel[state.status] || 'Unknown'
 
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b border-border-custom bg-bg-card rounded-t-lg">
@@ -55,8 +59,8 @@ export function ExperimentHeader({ modelA, modelB, state, connected }: Experimen
         )}
 
         <div className="flex items-center gap-2">
-          <div className={cn('w-2 h-2 rounded-full', statusColor)} />
-          <span className="text-xs text-text-dim">{statusLabel}</span>
+          <div className={cn('w-2 h-2 rounded-full', color)} />
+          <span className="text-xs text-text-dim">{label}</span>
         </div>
 
         {/* Connection indicator */}

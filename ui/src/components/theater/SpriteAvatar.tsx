@@ -4,7 +4,12 @@ export type SpriteStatus = 'idle' | 'thinking' | 'talking' | 'error' | 'winner' 
 
 interface SpriteAvatarProps {
   status: SpriteStatus
-  color: 'model-a' | 'model-b'
+  /** Legacy 2-color prop; if accentColor is provided, this is only used for aria-label fallback */
+  color?: 'model-a' | 'model-b'
+  /** Phase 15-A: explicit hex color overriding the color-derived palette */
+  accentColor?: string
+  /** Unique id suffix for SVG clipPath to avoid DOM collisions with multiple sprites */
+  instanceId?: string
   size?: number
 }
 
@@ -18,7 +23,7 @@ const GOLD  = '#FCD34D'
  * idle=float+blink, thinking=scan bar, talking=eye pulse, error=X+shake,
  * winner=glow burst, loser=dim+shake.
  */
-export function SpriteAvatar({ status, color, size = 64 }: SpriteAvatarProps) {
+export function SpriteAvatar({ status, color, accentColor, instanceId, size = 64 }: SpriteAvatarProps) {
   const [blinking, setBlinking] = useState(false)
 
   useEffect(() => {
@@ -37,7 +42,7 @@ export function SpriteAvatar({ status, color, size = 64 }: SpriteAvatarProps) {
     return () => { alive = false }
   }, [status])
 
-  const accent    = color === 'model-a' ? AMBER : CYAN
+  const accent    = accentColor ?? (color === 'model-b' ? CYAN : AMBER)
   const eyeColor  = status === 'error' || status === 'loser' ? RED : status === 'winner' ? GOLD : accent
   const wrapClass = status === 'idle' ? 'sprite-float'
     : status === 'error' || status === 'loser' ? 'sprite-shake'
@@ -55,10 +60,10 @@ export function SpriteAvatar({ status, color, size = 64 }: SpriteAvatarProps) {
         width={size}
         height={h}
         style={{ shapeRendering: 'crispEdges', overflow: 'visible' }}
-        aria-label={`${color === 'model-a' ? 'Model A' : 'Model B'} avatar — ${status}`}
+        aria-label={`${color ? (color === 'model-a' ? 'Model A' : 'Model B') : 'Agent'} avatar — ${status}`}
       >
         <defs>
-          <clipPath id={`face-clip-${color}`}>
+          <clipPath id={`face-clip-${instanceId ?? color ?? 'default'}`}>
             <rect x="8" y="14" width="48" height="44" />
           </clipPath>
         </defs>
@@ -140,7 +145,7 @@ export function SpriteAvatar({ status, color, size = 64 }: SpriteAvatarProps) {
             x="8" y="14" width="20" height="44"
             fill={accent} opacity="0"
             className="sprite-scan-bar"
-            clipPath={`url(#face-clip-${color})`}
+            clipPath={`url(#face-clip-${instanceId ?? color ?? 'default'})`}
           />
         )}
 

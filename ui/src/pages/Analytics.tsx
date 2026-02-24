@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord, ExperimentStats, ExperimentRadarResponse, RadarDataPoint, VocabWord, TurnRecord, TurnScore } from '@/api/types'
+import type { ExperimentRecord, ExperimentStats, RadarDataPoint, VocabWord, TurnRecord, TurnScore } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VocabGrowthChart } from '@/components/analytics/VocabGrowthChart'
@@ -336,7 +336,17 @@ export default function Analytics() {
               </button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {experiment.parent_experiment_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-violet-500/40 text-violet-300/80 hover:text-violet-200"
+                onClick={() => navigate(`/tree/${experiment.parent_experiment_id}`)}
+              >
+                View Tree
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

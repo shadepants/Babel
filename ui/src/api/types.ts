@@ -1,14 +1,24 @@
 // ── API Request/Response Types ─────────────────────────────────
 
+/** Phase 15-A: single agent config in N-way relay */
+export interface AgentConfig {
+  model: string;
+  temperature: number;
+  name?: string;
+}
+
 /** POST /api/relay/start request body */
 export interface RelayStartRequest {
-  model_a: string;
-  model_b: string;
+  // Phase 15-A: preferred N-way path (2-4 agents)
+  agents?: AgentConfig[];
+  // Legacy 2-agent fields (still accepted for backward compat)
+  model_a?: string;
+  model_b?: string;
   seed: string;
   system_prompt?: string;
   rounds: number;
-  temperature_a: number;
-  temperature_b: number;
+  temperature_a?: number;
+  temperature_b?: number;
   max_tokens: number;
   turn_delay_seconds?: number;
   preset?: string;
@@ -120,7 +130,7 @@ export interface ScoreEvent extends BaseSSEEvent {
 /** relay.verdict — judge declared a final winner after all rounds */
 export interface VerdictEvent extends BaseSSEEvent {
   type: 'relay.verdict';
-  winner: 'model_a' | 'model_b' | 'tie';
+  winner: string;  // 'agent_0' | 'agent_1' | ... | 'tie'
   winner_model: string;  // litellm model string of the winner, or 'tie'
   reasoning: string;
 }
@@ -243,6 +253,8 @@ export interface ExperimentRecord {
   participants_json?: string | null;
   parent_experiment_id?: string | null;
   fork_at_round?: number | null;
+  // Phase 15-A: N-way agents
+  agents_config_json?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */
@@ -482,4 +494,21 @@ export interface EnvStatusResponse {
 
 export interface ModelStatusResponse {
   models: ModelStatusInfo[];
+}
+
+// ── Phase 15-B: Branch Tree ──────────────────────────────────
+
+/** Recursive tree node returned by GET /api/experiments/:id/tree */
+export interface TreeNode {
+  id: string;
+  label: string | null;
+  status: string;
+  model_a: string;
+  model_b: string;
+  rounds_planned: number;
+  rounds_completed: number;
+  fork_at_round: number | null;
+  created_at: string;
+  preset: string | null;
+  children: TreeNode[];
 }

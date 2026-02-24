@@ -27,7 +27,7 @@ export function ScrambleText({
     ).join('')
   )
 
-  const frameRef   = useRef<number>()
+  const frameRef   = useRef<number>(undefined)
   const mountedRef = useRef(true)
 
   useEffect(() => {

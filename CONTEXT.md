@@ -1,6 +1,6 @@
 ﻿&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 10 &mdash; Phase 14 cross-experiment intelligence implemented)
+**Last Updated:** 2026-02-23 (session 11 &mdash; Phase 15 N-way conversations + branch tree implemented)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -197,14 +197,21 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 - [x] **Python syntax** &mdash; `py_compile` on db.py, relay_engine.py, routers/relay.py: OK
 
+### Phase 15: New Conversation Structures (DONE)
+- [x] **15-A backend** &mdash; `agents_config_json` column; N-agent relay loop; tagged turns `[AgentName]: `; `get_experiment_tree()` recursive CTE; `GET /api/experiments/{id}/tree` endpoint
+- [x] **15-A frontend** &mdash; `AgentConfig` + `TreeNode` types; `getExperimentTree` client; `AGENT_COLORS` palette; N-column Theater; N-agent Configure (add/remove up to 4); `resolveWinnerIndex` handles legacy + new speaker strings
+- [x] **15-B** &mdash; `BranchTree.tsx` D3 horizontal tree (new page); `/tree/:experimentId` route + violet tint; "View Tree" button in Analytics; Theater Tree link button
+- [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
+- [x] **Python syntax** &mdash; `py_compile` on all 4 backend files: OK
+
 ### Next Up
-- [ ] **Commit Phase 14** &mdash; stage 9 changed/new files and commit
-- [ ] **RPG smoke test** &mdash; kill zombie Python processes in Task Manager, start server, test RPG + standard flow end-to-end
+- [ ] **Commit Phase 14 + 15** &mdash; large staged commit (or two separate)
+- [ ] **Runtime smoke test** &mdash; kill zombie Python, start server, test 3-way launch + Theater 3 columns + branch tree page
+- [ ] **2-way backward compat check** &mdash; old experiments still load in Theater (legacy speaker strings)
+- [ ] **RPG smoke test** &mdash; kill zombie Python processes in Task Manager first, then start server, test RPG + standard flow end-to-end
 - [ ] **RPG SAO metadata** &mdash; populate `metadata` column with structured Subject-Action-Object events from DM (DF SIM Finding #6; column already exists)
 - [ ] **RPG campaign recap** &mdash; parse metadata into narrative summary page after session ends
 - [ ] **RPG campaign persistence** &mdash; DM remembers past sessions via model_memory (DF SIM Finding #4 LOD tiers)
-- [ ] **15-A** &mdash; N-way conversations: N-agent relay loop, N columns in Theater, N-model selector in Configure
-- [ ] **15-B** &mdash; Branch tree: /tree/:id page, D3 BranchTree component, lineage endpoint
 
 ### Roadmap &mdash; Phases 15&ndash;16
 
@@ -215,7 +222,7 @@ A standalone shareable web app where AI models talk to each other in real-time &
 | **~~13~~** | ~~Interactive Experiments~~ | ~~done~~ | ~~Pause/resume, inject human turn, observer/narrator model~~ |
 | **~~13b~~** | ~~Virtual Tabletop RPG~~ | ~~done~~ | ~~RPG engine, human-in-the-loop, party builder, RPGTheater~~ |
 | **~~14~~** | ~~Cross-Experiment Intelligence~~ | ~~done~~ | ~~Vocab burst chart, experiment forking, cross-run vocabulary provenance~~ |
-| **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
+| **~~15~~** | ~~New Conversation Structures~~ | ~~done~~ | ~~N-way conversations (3&ndash;4 models), conversation branch tree (D3)~~ |
 | **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
 
 **Recommended next:** Commit Phase 14 &rarr; RPG smoke test (deferred since session 9) &rarr; Phase 15
@@ -264,25 +271,26 @@ Babel/
     src/
       pages/
         SeedLab.tsx            Landing page &mdash; preset card grid + tag filter + custom card
-        Configure.tsx          Experiment config &mdash; per-model temp sliders, estimate bar, memory toggle, observer settings, launch
-        Theater.tsx            Live-view + DB fallback &mdash; SSE stream, sprites, verdict, pause/resume/inject controls, observer inline cards
+        Configure.tsx          Experiment config &mdash; agents array (2-4), per-agent temp, estimate bar, memory toggle, observer settings, launch
+        Theater.tsx            Live-view + DB fallback &mdash; N-column layout, N-way sprites, verdict, pause/resume/inject, observer, Tree link
+        BranchTree.tsx         D3 horizontal tree &mdash; experiment lineage, fork buttons, status colors, preset glow (NEW)
         Dictionary.tsx         WordCard grid + D3 constellation, stats bar, search/filter/sort, swimlane timeline
         Gallery.tsx            Past experiments log rows; mini sprites + preset stripe
-        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export; sprites in header
+        Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export; View Tree button
         Arena.tsx              Tournament setup &mdash; model multi-select, launcher
         Tournament.tsx         Live match grid, leaderboard, radar chart
         Tournaments.tsx        Tournament history list at /tournaments
         Settings.tsx           API key status + model registry + in-app key config
       components/
-        theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas, RPGTheater, HumanInput
+        theater/               SpriteAvatar (accentColor+instanceId), TypewriterText, ArenaStage (N-agent), TurnBubble, ConversationColumn (agentIndex+AGENT_COLORS), ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas, RPGTheater, HumanInput
         dictionary/            WordCard, ConstellationGraph (incremental D3), VocabBurstChart (per-round coinage bars + burst detection)
         analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
         common/                Layout (nav+transitions+glitch+babel-glitch listener), StarField (canvas neural net),
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
         ui/                    9 Shadcn primitives
       api/
-        types.ts               All REST + SSE types including tournament + radar + pause/resume/inject/observer/RPG types
-        client.ts              fetchJson + api object (18+ endpoints including pause/resume/inject)
+        types.ts               All REST + SSE types; AgentConfig, TreeNode added; VerdictEvent.winner widened to string
+        client.ts              fetchJson + api object (19+ endpoints including getExperimentTree)
         sse.ts                 useSSE hook (EventSource, typed events)
         hooks.ts               useExperimentState (event sourcing, pause/resume/observer state)
       lib/
@@ -337,3 +345,8 @@ Set-Location ui && .\run_npm.cmd dev
 - **Experiment forking:** `parent_experiment_id` + `fork_at_round` stored in experiments table. Fork flow: Theater Fork button &rarr; `/configure/:presetId?fork=<id>` &rarr; Configure pre-fills models/temps/seed + shows banner + sends `initial_history` + `parent_experiment_id` in POST body. `initial_history` pre-populates `turns[]` before relay loop.
 - **VocabBurstChart:** Client-side burst detection &mdash; mean + 1.5&sigma; of per-round word counts. Burst bars = amber, normal = cyan. Lives in `ui/src/components/dictionary/VocabBurstChart.tsx`. Pure SVG + ResizeObserver (no D3 enter/update/exit needed). Dictionary.tsx ViewMode = `'cards' | 'constellation' | 'timeline' | 'burst'`.
 - **Cross-run provenance:** `origin_experiment_id` column on vocabulary table. `tag_word_origins(experiment_id, parent_experiment_id)` bulk-UPDATE sets it for words in child that also exist in parent (case-insensitive LOWER() match). Fired via `asyncio.create_task()` at end of `run_relay()` only when `parent_experiment_id` is set. WordCard.tsx shows `[INHERITED]` badge linking to `/analytics/:origin_experiment_id`.
+- **N-way agents:** `agents_config_json` TEXT column stores JSON array of `{model, temperature, name}`. `get_agents_for_experiment(row)` parses it; falls back to model_a/model_b for old experiments. Relay engine iterates agents in order each round. Non-self turns prefixed `[AgentName]: ` as "user" role. Speaker field in SSE events: `agent_0`, `agent_1`, etc. Old DB records still have `model_a`/`model_b` as speaker &mdash; `resolveWinnerIndex()` handles both. Tournament mode still uses 2-agent path.
+- **AGENT_COLORS palette:** `['#F59E0B', '#06B6D4', '#10B981', '#8B5CF6']` (amber/cyan/emerald/violet). Exported from `ConversationColumn.tsx`. Used by ArenaStage, Theater, Configure. Index 0=A, 1=B, 2=C, 3=D.
+- **Dynamic grid (N columns):** Never use `grid-cols-${n}` &mdash; Tailwind purges dynamic class names. Use `style={{ gridTemplateColumns: 'repeat(N, 1fr)' }}` inline style instead.
+- **SpriteAvatar instanceId:** With N sprites on the same page, SVG clipPath IDs must be unique globally. Pass `instanceId={String(idx)}` to prevent `face-clip-model-a` collision across multiple SVGs.
+- **BranchTree D3 layout:** `d3.tree<TreeNode>().nodeSize([V_GAP, H_GAP])(root)` returns `HierarchyPointNode`. Horizontal orientation: svg_x = `d.y + offsetX`, svg_y = `d.x + offsetY`. Bezier edge: source right edge `(d.y + ox + NODE_W, d.x + oy)` &rarr; target left edge `(d.y + ox, d.x + oy)` with midpoint control. Rendered in `useEffect([treeData, navigate])`; SVG ref becomes available after loading state clears.

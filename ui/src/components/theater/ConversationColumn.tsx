@@ -6,13 +6,19 @@ import { ThinkingIndicator } from './ThinkingIndicator'
 import { RoundDivider } from './RoundDivider'
 import { cn } from '@/lib/utils'
 
+/** Phase 15-A: palette for up to 4 agents (amber / cyan / emerald / violet) */
+export const AGENT_COLORS = ['#F59E0B', '#06B6D4', '#10B981', '#8B5CF6']
+
 interface ConversationColumnProps {
   speakerName: string
   turns: TurnEvent[]
   thinkingSpeaker: string | null
-  color: 'model-a' | 'model-b'
-  scores?: Record<number, ScoreEvent>
-  /** turn_id of the most recent turn — enables typewriter effect on that bubble */
+  /** Which agent slot this column represents (0-3). Drives dynamic color. */
+  agentIndex: number
+  /** @deprecated pass agentIndex instead; kept for backward compat with TurnBubble */
+  color?: 'model-a' | 'model-b'
+  scores?: Record<string | number, ScoreEvent>
+  /** turn_id of the most recent turn -- enables typewriter effect on that bubble */
   latestTurnId?: string | null
   /** Vocab events for inline word linking */
   vocab?: VocabEvent[]
@@ -21,15 +27,16 @@ interface ConversationColumnProps {
 }
 
 /**
- * One side of the split conversation view.
+ * One column of the split/multi-agent conversation view.
  * Filters turns to show only this speaker's messages,
  * with round dividers and auto-scroll.
- * When thinking: border and header glow in model color.
+ * When thinking: border and header glow in agent color.
  */
 export function ConversationColumn({
   speakerName,
   turns,
   thinkingSpeaker,
+  agentIndex,
   color,
   scores,
   latestTurnId,
@@ -61,34 +68,36 @@ export function ConversationColumn({
     }
   }, [myTurns.length, isThinking])
 
-  const isA = color === 'model-a'
+  // Dynamic color from agentIndex; fall back to legacy color prop derivation
+  const agentColor = AGENT_COLORS[agentIndex] ?? (color === 'model-b' ? '#06B6D4' : '#F59E0B')
+  // TurnBubble still needs the 2-value union; map index 1 to model-b, everything else to model-a
+  const bubbleColor: 'model-a' | 'model-b' = agentIndex === 1 ? 'model-b' : 'model-a'
 
-  const borderColor = isA
-    ? isThinking ? 'border-model-a/60' : 'border-model-a/15'
-    : isThinking ? 'border-model-b/60' : 'border-model-b/15'
+  const borderStyle = isThinking
+    ? { borderColor: agentColor + 'aa' }
+    : { borderColor: agentColor + '26' }
 
   const glowShadow = isThinking
-    ? isA
-      ? '0 0 18px rgba(245,158,11,0.3), inset 0 0 24px rgba(245,158,11,0.04)'
-      : '0 0 18px rgba(6,182,212,0.3), inset 0 0 24px rgba(6,182,212,0.04)'
+    ? `0 0 18px ${agentColor}4d, inset 0 0 24px ${agentColor}0a`
     : undefined
+
+  const topBarGradient = isThinking
+    ? `linear-gradient(90deg, ${agentColor}, transparent)`
+    : `linear-gradient(90deg, ${agentColor}4d, transparent)`
 
   return (
     <div
       className={cn(
         'flex flex-col h-full border rounded-sm bg-bg-card/35 backdrop-blur-sm transition-all duration-700',
-        borderColor,
+        agentIndex === 0 ? 'model-a' : agentIndex === 1 ? 'model-b' : '',
       )}
-      style={{ boxShadow: glowShadow }}
+      style={{ boxShadow: glowShadow, ...borderStyle }}
+      data-agent-index={agentIndex}
     >
-      {/* Minimal colored top bar replaces full header — ArenaStage shows names */}
+      {/* Colored top bar — glow matches agent color */}
       <div
         className="h-0.5 rounded-t-sm transition-all duration-500"
-        style={{
-          background: isThinking
-            ? `linear-gradient(90deg, ${isA ? '#F59E0B' : '#06B6D4'}, transparent)`
-            : `linear-gradient(90deg, ${isA ? 'rgba(245,158,11,0.3)' : 'rgba(6,182,212,0.3)'}, transparent)`,
-        }}
+        style={{ background: topBarGradient }}
       />
 
       <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden" aria-live="polite" aria-atomic="false">
@@ -101,7 +110,7 @@ export function ConversationColumn({
                 {showDivider && <RoundDivider round={turn.round} />}
                 <TurnBubble
                   turn={turn}
-                  color={color}
+                  color={bubbleColor}
                   score={scores?.[turn.turn_id]}
                   isLatest={turn.turn_id === latestTurnId}
                   vocab={vocab}
@@ -110,7 +119,7 @@ export function ConversationColumn({
               </div>
             )
           })}
-          {isThinking && <ThinkingIndicator speaker={speakerName} color={color} />}
+          {isThinking && <ThinkingIndicator speaker={speakerName} color={bubbleColor} />}
           <div ref={bottomRef} />
         </div>
       </ScrollArea>

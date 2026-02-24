@@ -76,16 +76,20 @@ def _parse_score_json(raw: str) -> dict:
         return defaults
 
 
-def _parse_verdict_json(raw: str) -> dict:
-    """Extract verdict JSON from LLM response. Returns tie on any failure."""
+def _parse_verdict_json(raw: str, n_agents: int = 2) -> dict:
+    """Extract verdict JSON from LLM response. Returns tie on any failure.
+
+    Valid winners: "agent_0", "agent_1", ..., "agent_{n-1}", "tie".
+    """
     defaults = {"winner": "tie", "reasoning": "Unable to determine winner."}
+    valid_winners = {f"agent_{i}" for i in range(n_agents)} | {"tie"}
     try:
         m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
         if not m:
             return defaults
         data = json.loads(m.group())
         winner = data.get("winner", "tie")
-        if winner not in ("model_a", "model_b", "tie"):
+        if winner not in valid_winners:
             winner = "tie"
         reasoning = str(data.get("reasoning", ""))[:500]
         return {"winner": winner, "reasoning": reasoning}
@@ -149,8 +153,7 @@ async def score_turn(
 async def final_verdict(
     match_id: str,
     turns: list[dict],
-    agent_a: "RelayAgent",
-    agent_b: "RelayAgent",
+    agents: "list[RelayAgent]",
     judge_model: str,
     hub: "EventHub",
     db: "Database",
@@ -158,22 +161,24 @@ async def final_verdict(
     """Ask the judge model to declare a winner and publish relay.verdict event.
 
     Fire-and-forget — called after MATCH_COMPLETE.
-    Logs a warning on failure; never raises.
+    Accepts a list of agents (2-4). Logs a warning on failure; never raises.
     """
     lines = []
-    for i, t in enumerate(turns):
-        speaker_label = agent_a.name if t["speaker"] == "a" else agent_b.name
-        lines.append(f"[{speaker_label}]: {t['content'][:500]}")
+    for t in turns:
+        lines.append(f"[{t['speaker']}]: {t['content'][:500]}")
     transcript = "\n\n".join(lines)
 
+    agent_descriptions = "; ".join(
+        f"agent_{i} = '{a.name}' ({a.model})" for i, a in enumerate(agents)
+    )
+    valid_winners = " or ".join(f'"agent_{i}"' for i in range(len(agents))) + ' or "tie"'
     prompt = (
-        f"Read this AI-to-AI conversation. Model A is '{agent_a.name}' ({agent_a.model}), "
-        f"model B is '{agent_b.name}' ({agent_b.model}). "
-        'Declare a winner and explain why in 1-2 sentences. Return JSON only:\n'
-        '{"winner": "model_a" or "model_b" or "tie", "reasoning": "..."}\n\n'
+        f"Read this AI-to-AI conversation. Agents: {agent_descriptions}. "
+        f"Declare a winner and explain why in 1-2 sentences. Return JSON only:\n"
+        f'{{"winner": {valid_winners}, "reasoning": "..."}}\n\n'
         f"Transcript:\n{transcript[:6000]}"
     )
-    agent = RelayAgent(
+    judge_agent = RelayAgent(
         name="judge",
         model=judge_model,
         temperature=0.3,
@@ -181,13 +186,16 @@ async def final_verdict(
         request_timeout=30,
     )
     try:
-        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
-        result = _parse_verdict_json(raw)
+        raw, _, _ = await call_model(judge_agent, [{"role": "user", "content": prompt}], max_retries=1)
+        result = _parse_verdict_json(raw, n_agents=len(agents))
+        # Resolve winner agent model string for the event
+        winner_model = "tie"
+        if result["winner"] != "tie":
+            idx = int(result["winner"].split("_")[1])
+            winner_model = agents[idx].model if idx < len(agents) else "tie"
         hub.publish(RelayEvent.VERDICT, {
             "match_id": match_id,
-            "winner_model": agent_a.model if result["winner"] == "model_a" else (
-                agent_b.model if result["winner"] == "model_b" else "tie"
-            ),
+            "winner_model": winner_model,
             **result,
         })
         await db.save_verdict(match_id, result["winner"], result["reasoning"])
@@ -248,20 +256,31 @@ async def call_model(
 def build_messages(
     system_prompt: str,
     turns: list[dict],
-    perspective: str,
+    perspective_idx: int,
+    agents: "list[RelayAgent]",
 ) -> list[dict]:
-    """Build OpenAI-format messages from conversation turns.
+    """Build OpenAI-format messages from conversation turns for N-way conversations.
 
-    Each turn has {"speaker": "a"|"b", "content": str}.
-    The perspective agent's turns become "assistant" role,
-    the other agent's become "user" role.
+    Each turn has {"speaker": str, "content": str} where speaker is the agent's
+    display name (or "" for the neutral seed turn).
+
+    - Self-turns (speaker == agents[perspective_idx].name): "assistant" role, no prefix.
+    - Seed/neutral turns (speaker == "" or None): "user" role, no prefix.
+    - Other-agent or human turns: "user" role, prefixed "[SpeakerName]: ".
     """
     messages = [{"role": "system", "content": system_prompt}]
+    self_name = agents[perspective_idx].name
     for turn in turns:
-        if turn["speaker"] == perspective:
-            messages.append({"role": "assistant", "content": turn["content"]})
+        speaker = turn.get("speaker") or ""
+        content = turn["content"]
+        if speaker == self_name:
+            messages.append({"role": "assistant", "content": content})
+        elif not speaker:
+            # Neutral seed turn — no attribution prefix
+            messages.append({"role": "user", "content": content})
         else:
-            messages.append({"role": "user", "content": turn["content"]})
+            # Another agent or human turn — tag so the model knows who spoke
+            messages.append({"role": "user", "content": f"[{speaker}]: {content}"})
     return messages
 
 
@@ -321,7 +340,7 @@ async def _observe(
 ) -> None:
     """Call the observer model with the current transcript and publish commentary."""
     transcript = "\n\n".join(
-        f"[{'A' if t['speaker'] == 'a' else 'B' if t['speaker'] == 'b' else 'Human'}]: {t['content'][:300]}"
+        f"[{t.get('speaker') or 'System'}]: {t['content'][:300]}"
         for t in turns[-20:]
     )
     prompt = (
@@ -354,13 +373,12 @@ async def _observe(
 
 async def run_relay(
     match_id: str,
-    agent_a: RelayAgent,
-    agent_b: RelayAgent,
-    seed: str,
-    system_prompt: str,
-    rounds: int,
-    hub: EventHub,
-    db: Database,
+    agents: list[RelayAgent] | None = None,
+    seed: str = "",
+    system_prompt: str = "",
+    rounds: int = 5,
+    hub: EventHub | None = None,
+    db: Database | None = None,
     turn_delay_seconds: float = 2.0,
     cancel_event: asyncio.Event | None = None,
     resume_event: asyncio.Event | None = None,
@@ -373,25 +391,46 @@ async def run_relay(
     enable_memory: bool = False,
     initial_history: list[dict] | None = None,
     parent_experiment_id: str | None = None,
+    # Backward-compat shim for callers that pass agent_a/agent_b explicitly
+    agent_a: RelayAgent | None = None,
+    agent_b: RelayAgent | None = None,
 ) -> None:
-    """Run an AI-to-AI relay conversation.
+    """Run an N-way AI relay conversation (2-4 agents in round-robin order).
 
-    Publishes events to the EventHub for SSE streaming and persists
-    turns to the database. Runs as a background task — doesn't block
-    the API endpoint.
+    Publishes SSE events to the EventHub and persists turns to the database.
+    Runs as a background task — never blocks the API response.
 
-    If initial_history is provided (fork flow), those turns pre-populate
-    the conversation context so models continue from a prior experiment.
+    Speaker in DB/SSE events is the agent's display name for readability.
+    In-memory turns use the same format: {"speaker": name, "content": str}.
+    The seed turn uses speaker="" (neutral) so all agents see it as "user" role.
+
+    If initial_history is provided (fork flow), those turns pre-populate the
+    conversation context so models continue from a prior experiment.
     """
+    # Backward-compat: accept old (agent_a, agent_b) call signature
+    if agents is None:
+        if agent_a is not None and agent_b is not None:
+            agents = [agent_a, agent_b]
+        else:
+            raise ValueError("run_relay requires either 'agents' list or 'agent_a'+'agent_b'")
+
+    assert hub is not None, "hub is required"
+    assert db is not None, "db is required"
+
+    # Pre-build speaker-name → agent index map for pause-refresh
+    name_to_idx: dict[str, int] = {a.name: i for i, a in enumerate(agents)}
+
+    # In-memory turns: {"speaker": display_name_or_empty, "content": str}
     turns: list[dict] = list(initial_history) if initial_history else []
-    seed_turn = {"speaker": "b", "content": seed}
-    known_words: set[str] = set()  # tracks invented words across rounds
+    # Neutral seed — shown to all agents as plain "user" message (no [Name]: prefix)
+    seed_turn = {"speaker": "", "content": seed}
+    known_words: set[str] = set()
     start_time = time.time()
 
     try:
-        # ── Memory injection ─────────────────────────────────────────────
-        if enable_memory:
-            memories = await db.get_memories_for_pair(agent_a.model, agent_b.model, limit=5)
+        # ── Memory injection (2-agent only for now) ──────────────────────
+        if enable_memory and len(agents) == 2:
+            memories = await db.get_memories_for_pair(agents[0].model, agents[1].model, limit=5)
             if memories:
                 oldest_first = list(reversed(memories))
                 lines = [f"Session {i}: {m['summary']}" for i, m in enumerate(oldest_first, 1)]
@@ -403,7 +442,7 @@ async def run_relay(
                 system_prompt = memory_block + system_prompt
                 logger.info(
                     "Injecting %d memories for (%s, %s)",
-                    len(memories), agent_a.model, agent_b.model,
+                    len(memories), agents[0].model, agents[1].model,
                 )
 
         for round_num in range(1, rounds + 1):
@@ -424,136 +463,74 @@ async def run_relay(
                 logger.info("Relay %s stopped by user after %d rounds", match_id, round_num - 1)
                 return
 
-            # ── Pause checkpoint (before Agent A) ──
-            if resume_event and not resume_event.is_set():
-                hub.publish(RelayEvent.PAUSED, {"match_id": match_id, "round": round_num})
-                await resume_event.wait()
-                # Refresh history from DB to pick up any injected human turns
-                fresh = await db.get_turns(match_id)
-                turns[:] = [
-                    {
-                        "speaker": "a" if t["speaker"] == agent_a.name
-                                   else ("b" if t["speaker"] == agent_b.name else "human"),
-                        "content": t["content"],
-                    }
-                    for t in fresh
-                ]
-                hub.publish(RelayEvent.RESUMED, {"match_id": match_id, "round": round_num})
+            # ── N-way round-robin: each agent speaks once per round ──
+            for agent_idx, agent in enumerate(agents):
 
-            # ── Agent A's turn ──
-            hub.publish(RelayEvent.THINKING, {
-                "match_id": match_id,
-                "speaker": agent_a.name,
-                "model": agent_a.model,
-                "round": round_num,
-            })
+                # ── Pause checkpoint (before each agent's turn) ──
+                if resume_event and not resume_event.is_set():
+                    hub.publish(RelayEvent.PAUSED, {"match_id": match_id, "round": round_num})
+                    await resume_event.wait()
+                    # Refresh history from DB to pick up any injected human turns
+                    fresh = await db.get_turns(match_id)
+                    turns[:] = [
+                        {"speaker": t["speaker"], "content": t["content"]}
+                        for t in fresh
+                    ]
+                    hub.publish(RelayEvent.RESUMED, {"match_id": match_id, "round": round_num})
 
-            messages_a = build_messages(system_prompt, [seed_turn] + turns, "a")
-            content_a, latency_a, tokens_a = await call_model(agent_a, messages_a)
+                # ── Build message history from this agent's perspective ──
+                hub.publish(RelayEvent.THINKING, {
+                    "match_id": match_id,
+                    "speaker": agent.name,
+                    "model": agent.model,
+                    "round": round_num,
+                })
 
-            turns.append({"speaker": "a", "content": content_a})
-            turn_id_a = await db.add_turn(
-                experiment_id=match_id,
-                round_num=round_num,
-                speaker=agent_a.name,
-                model=agent_a.model,
-                content=content_a,
-                latency_seconds=latency_a,
-                token_count=tokens_a,
-            )
-
-            hub.publish(RelayEvent.TURN, {
-                "match_id": match_id,
-                "round": round_num,
-                "speaker": agent_a.name,
-                "model": agent_a.model,
-                "content": content_a,
-                "latency_s": round(latency_a, 1),
-                "turn_id": turn_id_a,
-            })
-
-            if enable_scoring and judge_model and turn_id_a:
-                _score_a = asyncio.create_task(
-                    score_turn(turn_id_a, content_a, judge_model, match_id, hub, db)
+                messages = build_messages(
+                    system_prompt, [seed_turn] + turns, agent_idx, agents
                 )
-                _score_a.add_done_callback(_log_task_exception)
+                content, latency, tokens = await call_model(agent, messages)
 
-            _task_a = asyncio.create_task(_extract_and_publish_vocab(
-                content_a, agent_a.name, round_num, match_id, hub, db, known_words,
-                preset=preset,
-            ))
-            _task_a.add_done_callback(_log_task_exception)
-            await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
-
-            # ── Observer after Agent A ──
-            if observer_model and len(turns) % observer_interval == 0:
-                _obs = asyncio.create_task(_observe(turns.copy(), observer_model, match_id, hub))
-                _obs.add_done_callback(_log_task_exception)
-
-            # ── Pause checkpoint (before Agent B) ──
-            if resume_event and not resume_event.is_set():
-                hub.publish(RelayEvent.PAUSED, {"match_id": match_id, "round": round_num})
-                await resume_event.wait()
-                fresh = await db.get_turns(match_id)
-                turns[:] = [
-                    {
-                        "speaker": "a" if t["speaker"] == agent_a.name
-                                   else ("b" if t["speaker"] == agent_b.name else "human"),
-                        "content": t["content"],
-                    }
-                    for t in fresh
-                ]
-                hub.publish(RelayEvent.RESUMED, {"match_id": match_id, "round": round_num})
-
-            # ── Agent B's turn ──
-            hub.publish(RelayEvent.THINKING, {
-                "match_id": match_id,
-                "speaker": agent_b.name,
-                "model": agent_b.model,
-                "round": round_num,
-            })
-
-            messages_b = build_messages(system_prompt, [seed_turn] + turns, "b")
-            content_b, latency_b, tokens_b = await call_model(agent_b, messages_b)
-
-            turns.append({"speaker": "b", "content": content_b})
-            turn_id_b = await db.add_turn(
-                experiment_id=match_id,
-                round_num=round_num,
-                speaker=agent_b.name,
-                model=agent_b.model,
-                content=content_b,
-                latency_seconds=latency_b,
-                token_count=tokens_b,
-            )
-
-            hub.publish(RelayEvent.TURN, {
-                "match_id": match_id,
-                "round": round_num,
-                "speaker": agent_b.name,
-                "model": agent_b.model,
-                "content": content_b,
-                "latency_s": round(latency_b, 1),
-                "turn_id": turn_id_b,
-            })
-
-            if enable_scoring and judge_model and turn_id_b:
-                _score_b = asyncio.create_task(
-                    score_turn(turn_id_b, content_b, judge_model, match_id, hub, db)
+                turns.append({"speaker": agent.name, "content": content})
+                turn_id = await db.add_turn(
+                    experiment_id=match_id,
+                    round_num=round_num,
+                    speaker=agent.name,
+                    model=agent.model,
+                    content=content,
+                    latency_seconds=latency,
+                    token_count=tokens,
                 )
-                _score_b.add_done_callback(_log_task_exception)
 
-            _task_b = asyncio.create_task(_extract_and_publish_vocab(
-                content_b, agent_b.name, round_num, match_id, hub, db, known_words,
-                preset=preset,
-            ))
-            _task_b.add_done_callback(_log_task_exception)
-            await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
+                hub.publish(RelayEvent.TURN, {
+                    "match_id": match_id,
+                    "round": round_num,
+                    "speaker": agent.name,
+                    "model": agent.model,
+                    "content": content,
+                    "latency_s": round(latency, 1),
+                    "turn_id": turn_id,
+                })
 
-            # ── Observer after Agent B ──
-            if observer_model and len(turns) % observer_interval == 0:
-                _obs = asyncio.create_task(_observe(turns.copy(), observer_model, match_id, hub))
-                _obs.add_done_callback(_log_task_exception)
+                if enable_scoring and judge_model and turn_id:
+                    _score_task = asyncio.create_task(
+                        score_turn(turn_id, content, judge_model, match_id, hub, db)
+                    )
+                    _score_task.add_done_callback(_log_task_exception)
+
+                _vocab_task = asyncio.create_task(_extract_and_publish_vocab(
+                    content, agent.name, round_num, match_id, hub, db, known_words,
+                    preset=preset,
+                ))
+                _vocab_task.add_done_callback(_log_task_exception)
+                await asyncio.sleep(max(0.0, turn_delay_seconds))
+
+                # ── Observer after each turn ──
+                if observer_model and len(turns) % observer_interval == 0:
+                    _obs = asyncio.create_task(
+                        _observe(turns.copy(), observer_model, match_id, hub)
+                    )
+                    _obs.add_done_callback(_log_task_exception)
 
             # ── Round complete ──
             hub.publish(RelayEvent.ROUND_COMPLETE, {
@@ -561,7 +538,6 @@ async def run_relay(
                 "round": round_num,
                 "rounds_total": rounds,
             })
-
             await db.update_experiment_status(
                 match_id, "running", rounds_completed=round_num,
             )
@@ -582,15 +558,15 @@ async def run_relay(
 
         if enable_verdict and judge_model:
             _verdict_task = asyncio.create_task(
-                final_verdict(match_id, turns, agent_a, agent_b, judge_model, hub, db)
+                final_verdict(match_id, turns, agents, judge_model, hub, db)
             )
             _verdict_task.add_done_callback(_log_task_exception)
 
-        if enable_memory:
+        if enable_memory and len(agents) == 2:
             async def _save_memory() -> None:
                 summary = await db.generate_memory_summary(match_id)
                 if summary:
-                    await db.create_memory(agent_a.model, agent_b.model, match_id, summary)
+                    await db.create_memory(agents[0].model, agents[1].model, match_id, summary)
                     logger.info("Memory saved for %s: %.80s", match_id, summary)
             _mem_task = asyncio.create_task(_save_memory())
             _mem_task.add_done_callback(_log_task_exception)

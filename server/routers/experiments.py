@@ -116,6 +116,35 @@ async def set_experiment_label(experiment_id: str, body: _LabelBody, request: Re
     return {"id": experiment_id, "label": body.label}
 
 
+@router.get("/{experiment_id}/tree")
+async def get_experiment_tree(experiment_id: str, request: Request):
+    """Fetch the full fork lineage tree rooted at the given experiment.
+
+    Returns a nested JSON structure where each node has a 'children' list.
+    The root is the experiment with the given ID (which must have no parent,
+    or be the deepest ancestor reachable from it).
+    """
+    db = _get_db(request)
+    # Walk up to find the true root of this lineage
+    row = await db.get_experiment(experiment_id)
+    if row is None:
+        raise HTTPException(404, "Experiment not found")
+    # Traverse to root
+    root_id = experiment_id
+    visited: set[str] = set()
+    while row and row.get("parent_experiment_id"):
+        parent_id = row["parent_experiment_id"]
+        if parent_id in visited:
+            break  # cycle guard
+        visited.add(root_id)
+        root_id = parent_id
+        row = await db.get_experiment(root_id)
+    tree = await db.get_experiment_tree(root_id)
+    if tree is None:
+        raise HTTPException(404, "Experiment tree not found")
+    return tree
+
+
 @router.delete("/{experiment_id}")
 async def delete_experiment(experiment_id: str, request: Request):
     """Delete an experiment and all associated turns/vocabulary. Only non-running experiments."""

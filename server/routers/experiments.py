@@ -41,6 +41,21 @@ async def list_experiments(
     return {"experiments": await db.list_experiments(limit=limit, offset=offset, status=status)}
 
 
+@router.get("/memories")
+async def list_memories(request: Request):
+    """List all stored model-pair memories, newest first."""
+    db = _get_db(request)
+    return {"memories": await db.list_all_memories()}
+
+
+@router.delete("/memories")
+async def delete_memories(model_a: str, model_b: str, request: Request):
+    """Delete all memory rows for a model pair."""
+    db = _get_db(request)
+    deleted = await db.delete_memories_for_pair(model_a, model_b)
+    return {"deleted": deleted}
+
+
 @router.get("/{experiment_id}")
 async def get_experiment(experiment_id: str, request: Request):
     """Fetch experiment metadata."""
@@ -143,6 +158,101 @@ async def get_experiment_tree(experiment_id: str, request: Request):
     if tree is None:
         raise HTTPException(404, "Experiment tree not found")
     return tree
+
+
+@router.post("/{experiment_id}/documentary")
+async def generate_documentary(experiment_id: str, request: Request):
+    """Generate (or return cached) an AI documentary narrative for an experiment."""
+    import asyncio
+    import litellm
+    from server.config import JUDGE_MODEL
+
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+
+    # Return cached version immediately
+    cached = await db.get_documentary(experiment_id)
+    if cached:
+        return {"documentary": cached}
+
+    # Gather data
+    turns = await db.get_turns(experiment_id)
+    vocab = await db.get_vocabulary(experiment_id)
+    mode = experiment.get("mode", "standard")
+    preset = experiment.get("preset") or "custom"
+    rounds_done = experiment.get("rounds_completed") or 0
+    winner = experiment.get("winner")
+    verdict = experiment.get("verdict_reasoning") or ""
+
+    # Determine participants display
+    import json
+    participants_raw = experiment.get("participants_json")
+    if participants_raw:
+        try:
+            pts = json.loads(participants_raw)
+            participants_str = ", ".join(
+                f"{p.get('name', p.get('model', 'agent'))} ({p.get('role', 'agent')})"
+                for p in pts
+            )
+        except Exception:
+            participants_str = f"{experiment.get('model_a')} vs {experiment.get('model_b')}"
+    else:
+        participants_str = f"{experiment.get('model_a')} vs {experiment.get('model_b')}"
+
+    # Build turn excerpt (cap at ~4000 chars)
+    turn_lines: list[str] = []
+    char_budget = 4000
+    for t in turns:
+        line = f"[Round {t['round']}] {t['speaker']}: {t['content'][:300]}"
+        if sum(len(l) for l in turn_lines) + len(line) > char_budget:
+            turn_lines.append("... (truncated)")
+            break
+        turn_lines.append(line)
+    turns_text = "\n".join(turn_lines)
+
+    vocab_text = ", ".join(
+        f"{w['word']} ({w.get('meaning', '')})" if w.get("meaning") else w["word"]
+        for w in vocab[:12]
+    ) or "none"
+
+    if mode == "rpg":
+        prompt = (
+            f"You are a fantasy chronicler writing an epic campaign recap for a tabletop RPG session "
+            f"conducted by AI agents.\n\n"
+            f"CAMPAIGN: {preset} | ROUNDS: {rounds_done} | PARTY: {participants_str}\n\n"
+            f"SESSION TRANSCRIPT (excerpted):\n{turns_text}\n\n"
+            f"INVENTED VOCABULARY: {vocab_text}\n\n"
+            f"Write a vivid campaign recap in 4 sections:\n"
+            f"// THE SETTING\n// KEY MOMENTS\n// INVENTED LORE\n// THE VERDICT\n\n"
+            f"Keep it under 600 words. Make it feel like a real campaign chronicle."
+        )
+    else:
+        prompt = (
+            f"You are a science journalist writing a short documentary article about a fascinating "
+            f"AI linguistics experiment.\n\n"
+            f"EXPERIMENT: {experiment_id} | PRESET: {preset} | ROUNDS: {rounds_done} | "
+            f"PARTICIPANTS: {participants_str}\n\n"
+            f"CONVERSATION TRANSCRIPT (excerpted):\n{turns_text}\n\n"
+            f"VOCABULARY COINED: {vocab_text}\n\n"
+            f"FINAL VERDICT: {winner or 'undecided'} — {verdict}\n\n"
+            f"Write a compelling documentary narrative in 4 sections:\n"
+            f"// THE EXPERIMENT\n// KEY MOMENTS\n// INVENTED VOCABULARY\n// THE VERDICT\n\n"
+            f"Keep it under 600 words. Make it engaging and scientifically grounded."
+        )
+
+    response = await asyncio.to_thread(
+        litellm.completion,
+        model=JUDGE_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1500,
+        temperature=0.7,
+    )
+    text = response.choices[0].message.content or ""
+
+    await db.save_documentary(experiment_id, text)
+    return {"documentary": text}
 
 
 @router.delete("/{experiment_id}")

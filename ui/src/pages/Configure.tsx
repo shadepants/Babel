@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { Preset, ModelInfo, ModelStatusInfo } from '@/api/types'
+import type { Preset, ModelInfo, ModelStatusInfo, PersonaRecord, CampaignPreset } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,6 +29,7 @@ export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const isCustom = presetId === 'custom'
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
   const forkId = searchParams.get('fork')
@@ -72,11 +73,15 @@ export default function Configure() {
   // -- Fork state --
   const [forkHistory, setForkHistory] = useState<Array<{ speaker: string; content: string }> | null>(null)
 
+  // -- Personas --
+  const [personas, setPersonas] = useState<PersonaRecord[]>([])
+  const [agentPersonaIds, setAgentPersonaIds] = useState<(string | null)[]>([null, null, null, null])
+
   // -- RPG Mode --
-  const [rpgMode, setRpgMode] = useState(false)
-  const [rpgParticipants, setRpgParticipants] = useState<Array<{ name: string; model: string; role: string }>>([
-    { name: 'Player', model: 'human', role: 'player' },
-  ])
+  const [rpgMode, setRpgMode] = useState<boolean>(() => !!(location.state as { autoRpg?: boolean } | null)?.autoRpg)
+  
+  // Extract campaign preset from location.state (passed from SeedLab or Campaign page)
+  const campaignPreset = (location.state as { preset?: CampaignPreset } | null)?.preset
 
   // Preset defaults -- for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperature: number; maxTokens: number } | null>(null)
@@ -182,6 +187,22 @@ export default function Configure() {
     loadData()
   }, [presetId, isCustom, remixId, forkId])
 
+  // Load personas for dropdowns
+  useEffect(() => {
+    api.getPersonas().then(setPersonas).catch(() => {})
+  }, [])
+
+  // Auto-populate system settings from campaign preset (passed from SeedLab or Campaign page)
+  useEffect(() => {
+    if (campaignPreset) {
+      setRounds(campaignPreset.rounds)
+      setMaxTokens(campaignPreset.maxTokens)
+      setTurnDelay(campaignPreset.turnDelay)
+      // Update all agent temperatures to match preset temperature
+      setAgents(prev => prev.map(a => ({ ...a, temperature: campaignPreset.temperature })))
+    }
+  }, [campaignPreset])
+
   // Whether any parameter has been moved from the preset default
   const hasParamChanges = presetDefaults !== null && (
     rounds !== presetDefaults.rounds ||
@@ -233,10 +254,6 @@ export default function Configure() {
     setFormError(null)
 
     try {
-      const allParticipants = rpgMode
-        ? [{ name: 'DM', model: activeModel, role: 'dm' }, ...rpgParticipants]
-        : undefined
-
       // Build the agents array with display names for speaker identification
       const agentsPayload = rpgMode ? undefined : agents.map((a) => ({
         model: a.model,
@@ -259,7 +276,6 @@ export default function Configure() {
         enable_scoring: enableScoring,
         enable_verdict: enableVerdict,
         enable_memory: enableMemory,
-        ...(rpgMode ? { mode: 'rpg' as const, participants: allParticipants } : {}),
         ...(judgeModel && judgeModel !== 'auto' ? { judge_model: judgeModel } : {}),
         ...(observerModel && observerModel !== 'none' ? { observer_model: observerModel, observer_interval: observerInterval } : {}),
       }
@@ -273,6 +289,11 @@ export default function Configure() {
       }
       if (systemPrompt.trim()) {
         request.system_prompt = systemPrompt.trim()
+      }
+      // Phase 16: persona IDs
+      const activePersonaIds = agentPersonaIds.slice(0, agents.length)
+      if (activePersonaIds.some(Boolean)) {
+        request.persona_ids = activePersonaIds
       }
 
       const res = await api.startRelay(request)
@@ -292,6 +313,30 @@ export default function Configure() {
     } finally {
       setStarting(false)
     }
+  }
+
+  function handleConfigureCampaign() {
+    if (!agents[0]?.model) {
+      setFormError('Please select a DM model.')
+      return
+    }
+    navigate(`/campaign/${presetId ?? 'custom'}`, {
+      state: {
+        agents,
+        rounds,
+        maxTokens,
+        turnDelay,
+        enableScoring,
+        judgeModel,
+        enableVerdict,
+        enableMemory,
+        observerModel,
+        observerInterval,
+        preset: presetId,
+        seed,
+        systemPrompt,
+      },
+    })
   }
 
   if (loading) {
@@ -389,9 +434,7 @@ export default function Configure() {
               </span>
             </button>
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-              {rpgMode
-                ? '// AI dungeon master + human player. Model A becomes the DM.'
-                : '// Standard N-way relay conversation (2-4 models)'}
+              // enables campaign-style play: DM model, party members, human-in-the-loop input
             </p>
           </div>
 
@@ -487,7 +530,30 @@ export default function Configure() {
                       <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                         <span>0 precise</span><span>2 creative</span>
                       </div>
+                      <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">// controls randomness -- higher values produce more surprising responses</p>
                     </div>
+                    {/* Per-agent persona (Phase 16) */}
+                    {personas.length > 0 && (
+                      <div className="pt-1">
+                        <label className="font-mono text-[9px] tracking-wider uppercase block mb-1" style={{ color: agentColor + 'aa' }}>
+                          Persona
+                        </label>
+                        <select
+                          value={agentPersonaIds[idx] ?? ''}
+                          onChange={(e) => setAgentPersonaIds(prev => {
+                            const next = [...prev]
+                            next[idx] = e.target.value || null
+                            return next
+                          })}
+                          className="w-full bg-surface-1 border border-white/10 focus:border-accent/40 rounded px-2 py-1 font-mono text-[10px] text-text-primary outline-none transition-colors"
+                        >
+                          <option value="">(none)</option>
+                          {personas.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -495,99 +561,6 @@ export default function Configure() {
           </div>
 
           {/* RPG Participants */}
-          {rpgMode && (
-            <div className="space-y-3">
-              <div className="neural-section-label flex items-center justify-between">
-                <span>// party_members</span>
-                <button
-                  type="button"
-                  onClick={() => setRpgParticipants([...rpgParticipants, { name: '', model: 'human', role: 'player' }])}
-                  className="font-mono text-[9px] text-emerald-400/60 hover:text-emerald-400 tracking-wider uppercase transition-colors"
-                >
-                  + add member
-                </button>
-              </div>
-              {rpgParticipants.map((p, i) => (
-                <div key={i} className="flex gap-2 items-end">
-                  <div className="flex-1 space-y-1">
-                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Name</label>
-                    <input
-                      type="text"
-                      value={p.name}
-                      onChange={(e) => {
-                        const next = [...rpgParticipants]
-                        next[i] = { ...next[i], name: e.target.value }
-                        setRpgParticipants(next)
-                      }}
-                      className="w-full bg-bg-deep/80 border border-border-custom/50 rounded-sm px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-emerald-500/50"
-                      placeholder="Character name"
-                    />
-                  </div>
-                  <div className="w-28 space-y-1">
-                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Role</label>
-                    <Select
-                      value={p.role}
-                      onValueChange={(v) => {
-                        const next = [...rpgParticipants]
-                        next[i] = { ...next[i], role: v }
-                        setRpgParticipants(next)
-                      }}
-                    >
-                      <SelectTrigger className="font-mono text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="player" className="font-mono text-xs">Player</SelectItem>
-                        <SelectItem value="npc" className="font-mono text-xs">NPC (AI)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="w-40 space-y-1">
-                    <label className="font-mono text-[9px] text-text-dim/60 tracking-wider uppercase block">Model</label>
-                    {p.role === 'player' ? (
-                      <div className="bg-bg-deep/80 border border-emerald-500/20 rounded-sm px-2 py-1.5 font-mono text-xs text-emerald-400/70">
-                        Human
-                      </div>
-                    ) : (
-                      <Select
-                        value={p.model === 'human' ? (models[0]?.model ?? '') : p.model}
-                        onValueChange={(v) => {
-                          const next = [...rpgParticipants]
-                          next[i] = { ...next[i], model: v }
-                          setRpgParticipants(next)
-                        }}
-                      >
-                        <SelectTrigger className="font-mono text-xs">
-                          <SelectValue placeholder="Select model..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {models.map((m) => (
-                            <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  {rpgParticipants.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setRpgParticipants(rpgParticipants.filter((_, j) => j !== i))}
-                      className="text-danger/50 hover:text-danger font-mono text-xs pb-1.5 transition-colors"
-                      title="Remove"
-                    >
-                      &#10005;
-                    </button>
-                  )}
-                </div>
-              ))}
-              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-                // DM is auto-added from the model above. Players use human input; NPCs use AI.
-              </p>
-            </div>
-          )}
-
           {/* Parameters */}
           <div className="space-y-4">
             <div className="neural-section-label flex items-center justify-between">
@@ -614,6 +587,7 @@ export default function Configure() {
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                 <span>1</span><span>15</span>
               </div>
+              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">// total back-and-forth exchanges before the session ends</p>
             </div>
 
             <div className="space-y-1.5">
@@ -627,6 +601,7 @@ export default function Configure() {
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                 <span>100</span><span>4096</span>
               </div>
+              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">// response length ceiling per turn</p>
             </div>
 
             <div className="space-y-1.5">
@@ -637,6 +612,7 @@ export default function Configure() {
               <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
                 <span>0s instant</span><span>10s slow</span>
               </div>
+              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">// pause between turns -- useful for reading along in real time</p>
             </div>
           </div>
 
@@ -750,7 +726,7 @@ export default function Configure() {
             )}
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-              // scoring fires async &mdash; relay loop never pauses
+              // an AI judge scores each turn on creativity, coherence, and novelty -- never interrupts the flow
             </p>
           </div>
 
@@ -772,7 +748,7 @@ export default function Configure() {
             </button>
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-              // inject vocab from past sessions with this model pair
+              // injects vocabulary patterns from past sessions with this model pair into the system prompt
             </p>
           </div>
 
@@ -812,7 +788,7 @@ export default function Configure() {
             )}
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-              // neutral model observes and comments every N turns
+              // a silent third model injects commentary every N turns without participating
             </p>
           </div>
 
@@ -844,11 +820,11 @@ export default function Configure() {
 
           {/* Launch */}
           <Button
-            onClick={handleLaunch}
-            disabled={starting || !agents[0]?.model || (!rpgMode && agents.some(a => !a.model))}
+            onClick={rpgMode ? handleConfigureCampaign : handleLaunch}
+            disabled={rpgMode ? !agents[0]?.model : (starting || agents.some(a => !a.model))}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
-            {starting ? '// Launching...' : rpgMode ? 'Begin Campaign' : 'Launch Experiment'}
+            {rpgMode ? 'Configure Campaign →' : (starting ? '// Launching...' : 'Launch Experiment')}
           </Button>
         </div>
       </div>

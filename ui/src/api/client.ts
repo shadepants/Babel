@@ -2,6 +2,7 @@ import type {
   RelayStartRequest,
   RelayStartResponse,
   ModelsResponse,
+  PersonaRecord,
   PresetsResponse,
   VocabResponse,
   ExperimentRecord,
@@ -194,6 +195,51 @@ export const api = {
   /** Get forking lineage tree rooted at the ancestor of the given experiment */
   getExperimentTree: (experimentId: string) =>
     fetchJson<TreeNode>(`/api/experiments/${experimentId}/tree`),
+
+  // ── Phase 16: Personas ───────────────────────────────────────
+
+  /** List all personas */
+  getPersonas: () => fetchJson<PersonaRecord[]>('/api/personas'),
+
+  /** Create a new persona */
+  createPersona: (body: Omit<PersonaRecord, 'id' | 'created_at'>) =>
+    fetchJson<PersonaRecord>('/api/personas', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Update a persona */
+  updatePersona: (id: string, body: Partial<Omit<PersonaRecord, 'id' | 'created_at'>>) =>
+    fetchJson<PersonaRecord>(`/api/personas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  /** Delete a persona */
+  deletePersona: (id: string) =>
+    fetchJson<void>(`/api/personas/${id}`, { method: 'DELETE' }),
+
+  // ── Phase 16: Documentary ────────────────────────────────────
+
+  /** Generate (or return cached) documentary for an experiment */
+  generateDocumentary: (experimentId: string) =>
+    fetchJson<{ documentary: string }>(`/api/experiments/${experimentId}/documentary`, {
+      method: 'POST',
+    }),
+
+  // ── Memory Bank ─────────────────────────────────────────────
+
+  /** List all stored model-pair memories */
+  getMemories: () =>
+    fetchJson<{ memories: Array<{ model_a: string; model_b: string; summary: string; created_at: string }> }>(
+      '/api/experiments/memories'
+    ),
+
+  /** Delete all memories for a model pair */
+  deleteMemories: (modelA: string, modelB: string) => {
+    const params = new URLSearchParams({ model_a: modelA, model_b: modelB });
+    return fetchJson<{ deleted: number }>(`/api/experiments/memories?${params.toString()}`, { method: 'DELETE' });
+  },
 };
 
 export { ApiError };

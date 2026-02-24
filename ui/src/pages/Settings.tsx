@@ -1,10 +1,14 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { ScrambleText } from '@/components/common/ScrambleText'
+import { Slider } from '@/components/ui/slider'
 import { api } from '@/api/client'
-import type { ModelStatusInfo } from '@/api/types'
+import type { ModelStatusInfo, PersonaRecord } from '@/api/types'
+import { getPrefs, savePrefs, resetPrefs, FACTORY_DEFAULTS, type BabelPrefs } from '@/lib/prefs'
 
 type KeySaveState = 'idle' | 'saving' | 'ok' | 'fail'
+
+const PERSONA_COLORS = ['#F59E0B', '#10B981', '#6366F1', '#EC4899']
 
 /** Rough cost tier label per model id */
 const COST_TIER: Record<string, string> = {
@@ -48,6 +52,38 @@ export default function Settings() {
   const [keyErrors,     setKeyErrors]     = useState<Record<string, string>>({})
   const [showKeyInput,  setShowKeyInput]  = useState<Record<string, boolean>>({})
 
+  // ── App Defaults state (localStorage) ──
+  const [prefs, setPrefsState] = useState<BabelPrefs>(getPrefs())
+
+  function updatePref<K extends keyof BabelPrefs>(key: K, value: BabelPrefs[K]) {
+    savePrefs({ [key]: value })
+    setPrefsState(getPrefs())
+  }
+
+  // ── Memory Bank state ──
+  type MemoryRow = { model_a: string; model_b: string; summary: string; created_at: string }
+  const [memories, setMemories] = useState<MemoryRow[]>([])
+  const [memoriesLoaded, setMemoriesLoaded] = useState(false)
+
+  const fetchMemories = useCallback(() => {
+    api.getMemories().then((r) => { setMemories(r.memories); setMemoriesLoaded(true) }).catch(() => setMemoriesLoaded(true))
+  }, [])
+  useEffect(() => { fetchMemories() }, [fetchMemories])
+
+  const handleClearMemory = async (modelA: string, modelB: string) => {
+    await api.deleteMemories(modelA, modelB)
+    setMemories((m) => m.filter((row) => !(row.model_a === modelA && row.model_b === modelB)))
+  }
+
+  // ── Personas state ──
+  const [personas,       setPersonas]       = useState<PersonaRecord[]>([])
+  const [showNewPersona, setShowNewPersona] = useState(false)
+  const [editingId,      setEditingId]      = useState<string | null>(null)
+  const [personaForm,    setPersonaForm]    = useState({
+    name: '', personality: '', backstory: '', avatar_color: '#F59E0B',
+  })
+  const [personaSaving,  setPersonaSaving]  = useState(false)
+
   const fetchModels = useCallback(() => {
     setLoading(true)
     api.getModelStatus()
@@ -57,6 +93,39 @@ export default function Settings() {
   }, [])
 
   useEffect(() => { fetchModels() }, [fetchModels])
+
+  const fetchPersonas = useCallback(() => {
+    api.getPersonas().then(setPersonas).catch(() => {})
+  }, [])
+  useEffect(() => { fetchPersonas() }, [fetchPersonas])
+
+  const handlePersonaSave = async () => {
+    if (!personaForm.name.trim()) return
+    setPersonaSaving(true)
+    try {
+      if (editingId) {
+        await api.updatePersona(editingId, personaForm)
+      } else {
+        await api.createPersona(personaForm)
+      }
+      setPersonaForm({ name: '', personality: '', backstory: '', avatar_color: '#F59E0B' })
+      setShowNewPersona(false)
+      setEditingId(null)
+      fetchPersonas()
+    } catch { /* ignore */ }
+    finally { setPersonaSaving(false) }
+  }
+
+  const handlePersonaEdit = (p: PersonaRecord) => {
+    setPersonaForm({ name: p.name, personality: p.personality, backstory: p.backstory, avatar_color: p.avatar_color })
+    setEditingId(p.id)
+    setShowNewPersona(true)
+  }
+
+  const handlePersonaDelete = async (id: string) => {
+    await api.deletePersona(id)
+    fetchPersonas()
+  }
 
   // Group by provider
   const providers = models.reduce<Record<string, ModelStatusInfo[]>>((acc, m) => {
@@ -231,6 +300,243 @@ export default function Settings() {
       <p className="font-mono text-[10px] text-text-dim/50 tracking-wider">
         // keys saved to <code className="text-accent/60">.env</code> &mdash; active immediately, no restart required
       </p>
+
+      {/* App Defaults Panel */}
+      <div className="neural-provider neural-provider--ok">
+        <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.04]">
+          <div className="flex items-center gap-3">
+            <span className="font-display text-xs font-bold tracking-widest uppercase text-text-primary">
+              <ScrambleText>App Defaults</ScrambleText>
+            </span>
+            <span className="font-mono text-[10px] text-text-dim/60 tracking-wider">applied to new custom experiments</span>
+          </div>
+          <button
+            onClick={() => { resetPrefs(); setPrefsState(getPrefs()) }}
+            className="font-mono text-[10px] tracking-widest uppercase text-text-dim hover:text-accent transition-colors border border-white/10 hover:border-accent/40 px-2 py-0.5 rounded"
+          >
+            reset
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="font-mono text-[9px] text-text-dim/50 tracking-wider">
+            // pre-fills sliders when you open a custom experiment
+          </p>
+          <div className="space-y-1.5">
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+              Default Temperature <span className="text-accent/60">[{prefs.defaultTemperature.toFixed(1)}]</span>
+              {prefs.defaultTemperature !== FACTORY_DEFAULTS.defaultTemperature && (
+                <span className="ml-1.5 text-accent/60" title="modified">&#9679;</span>
+              )}
+            </label>
+            <Slider
+              value={[prefs.defaultTemperature]}
+              onValueChange={(v) => updatePref('defaultTemperature', v[0])}
+              min={0} max={2} step={0.1}
+            />
+            <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+              <span>0 precise</span><span>2 creative</span>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+              Default Rounds <span className="text-accent/60">[{prefs.defaultRounds}]</span>
+              {prefs.defaultRounds !== FACTORY_DEFAULTS.defaultRounds && (
+                <span className="ml-1.5 text-accent/60" title="modified">&#9679;</span>
+              )}
+            </label>
+            <Slider
+              value={[prefs.defaultRounds]}
+              onValueChange={(v) => updatePref('defaultRounds', v[0])}
+              min={1} max={15} step={1}
+            />
+            <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+              <span>1</span><span>15</span>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+              Default Max Tokens <span className="text-accent/60">[{prefs.defaultMaxTokens}]</span>
+              {prefs.defaultMaxTokens !== FACTORY_DEFAULTS.defaultMaxTokens && (
+                <span className="ml-1.5 text-accent/60" title="modified">&#9679;</span>
+              )}
+            </label>
+            <Slider
+              value={[prefs.defaultMaxTokens]}
+              onValueChange={(v) => updatePref('defaultMaxTokens', v[0])}
+              min={100} max={4096} step={100}
+            />
+            <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+              <span>100</span><span>4096</span>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+              Default Turn Delay <span className="text-accent/60">[{prefs.defaultTurnDelay.toFixed(1)}s]</span>
+              {prefs.defaultTurnDelay !== FACTORY_DEFAULTS.defaultTurnDelay && (
+                <span className="ml-1.5 text-accent/60" title="modified">&#9679;</span>
+              )}
+            </label>
+            <Slider
+              value={[prefs.defaultTurnDelay]}
+              onValueChange={(v) => updatePref('defaultTurnDelay', v[0])}
+              min={0} max={10} step={0.5}
+            />
+            <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+              <span>0s instant</span><span>10s slow</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Memory Bank Panel */}
+      <div className="neural-provider neural-provider--ok">
+        <div className="px-5 py-3 border-b border-white/[0.04]">
+          <span className="font-display text-xs font-bold tracking-widest uppercase text-text-primary">
+            <ScrambleText>Memory Bank</ScrambleText>
+          </span>
+          <p className="font-mono text-[9px] text-text-dim/50 tracking-wider mt-1">
+            // vocabulary summaries saved from past sessions with memory enabled
+          </p>
+        </div>
+        <div className="px-5 py-3 space-y-2">
+          {!memoriesLoaded && (
+            <p className="font-mono text-[10px] text-text-dim/40 animate-pulse-slow tracking-wider">// loading...</p>
+          )}
+          {memoriesLoaded && memories.length === 0 && (
+            <p className="font-mono text-[10px] text-text-dim/40 tracking-wider">
+              // no memories yet &mdash; run a session with memory enabled
+            </p>
+          )}
+          {memories.map((row) => (
+            <div key={row.model_a + row.model_b} className="flex items-start gap-3 py-1 border-b border-white/[0.03] last:border-0">
+              <div className="flex-1 min-w-0 space-y-0.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-[10px] text-text-primary">{row.model_a.split('/').pop()}</span>
+                  <span className="font-mono text-[9px] text-text-dim/40">&harr;</span>
+                  <span className="font-mono text-[10px] text-text-primary">{row.model_b.split('/').pop()}</span>
+                  <span className="font-mono text-[9px] text-text-dim/40 ml-2">{row.created_at.slice(0, 10)}</span>
+                </div>
+                {row.summary && (
+                  <p className="font-mono text-[9px] text-text-dim/60 truncate">{row.summary.slice(0, 90)}{row.summary.length > 90 ? '...' : ''}</p>
+                )}
+              </div>
+              <button
+                onClick={() => handleClearMemory(row.model_a, row.model_b)}
+                className="font-mono text-[10px] text-text-dim hover:text-danger transition-colors flex-shrink-0"
+              >
+                clear
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Personas Panel */}
+      <div className="neural-provider neural-provider--ok">
+        <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.04]">
+          <div className="flex items-center gap-3">
+            <span className="font-display text-xs font-bold tracking-widest uppercase text-text-primary">
+              <ScrambleText>Personas</ScrambleText>
+            </span>
+            <span className="font-mono text-[10px] text-text-dim/60 tracking-wider">
+              {personas.length} defined
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setPersonaForm({ name: '', personality: '', backstory: '', avatar_color: '#F59E0B' })
+              setEditingId(null)
+              setShowNewPersona((v) => !v)
+            }}
+            className="font-mono text-[10px] tracking-widest uppercase text-text-dim hover:text-accent transition-colors border border-white/10 hover:border-accent/40 px-2 py-0.5 rounded"
+          >
+            {showNewPersona && !editingId ? 'cancel' : '+ new'}
+          </button>
+        </div>
+
+        {/* New / Edit form */}
+        {showNewPersona && (
+          <div className="px-5 py-4 border-b border-white/[0.04] space-y-3">
+            <p className="font-mono text-[10px] text-accent/60 tracking-widest uppercase">
+              {editingId ? '// edit persona' : '// new persona'}
+            </p>
+            <input
+              type="text"
+              placeholder="Name (e.g. Zephyr)"
+              value={personaForm.name}
+              onChange={(e) => setPersonaForm((f) => ({ ...f, name: e.target.value }))}
+              className="w-full bg-surface-1 border border-white/10 focus:border-accent/40 rounded px-3 py-1.5 font-mono text-xs text-text-primary placeholder:text-text-dim/40 outline-none transition-colors"
+            />
+            <textarea
+              rows={2}
+              placeholder="Personality (e.g. cryptic oracle who speaks in riddles)"
+              value={personaForm.personality}
+              onChange={(e) => setPersonaForm((f) => ({ ...f, personality: e.target.value }))}
+              className="w-full bg-surface-1 border border-white/10 focus:border-accent/40 rounded px-3 py-1.5 font-mono text-xs text-text-primary placeholder:text-text-dim/40 outline-none transition-colors resize-none"
+            />
+            <textarea
+              rows={3}
+              placeholder="Backstory / lore (optional)"
+              value={personaForm.backstory}
+              onChange={(e) => setPersonaForm((f) => ({ ...f, backstory: e.target.value }))}
+              className="w-full bg-surface-1 border border-white/10 focus:border-accent/40 rounded px-3 py-1.5 font-mono text-xs text-text-primary placeholder:text-text-dim/40 outline-none transition-colors resize-none"
+            />
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[10px] text-text-dim/60 tracking-wider">color:</span>
+              {PERSONA_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setPersonaForm((f) => ({ ...f, avatar_color: c }))}
+                  style={{ backgroundColor: c }}
+                  className={`w-5 h-5 rounded-full transition-transform ${personaForm.avatar_color === c ? 'scale-125 ring-2 ring-white/40' : 'opacity-60 hover:opacity-100'}`}
+                />
+              ))}
+              <button
+                onClick={handlePersonaSave}
+                disabled={personaSaving || !personaForm.name.trim()}
+                className="ml-auto font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 rounded border border-accent/40 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
+              >
+                {personaSaving ? '...' : editingId ? 'update' : 'create'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Personas list */}
+        <div className="px-5 py-3 space-y-2">
+          {personas.length === 0 && (
+            <p className="font-mono text-[10px] text-text-dim/40 tracking-wider">// no personas yet</p>
+          )}
+          {personas.map((p) => (
+            <div key={p.id} className="flex items-start gap-3 py-1">
+              <div
+                className="mt-0.5 w-3 h-3 rounded-full flex-shrink-0"
+                style={{ backgroundColor: p.avatar_color }}
+              />
+              <div className="flex-1 min-w-0">
+                <span className="font-mono text-xs text-text-primary">{p.name}</span>
+                {p.personality && (
+                  <p className="font-mono text-[10px] text-text-dim/60 truncate">{p.personality}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => handlePersonaEdit(p)}
+                  className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors"
+                >
+                  edit
+                </button>
+                <button
+                  onClick={() => handlePersonaDelete(p.id)}
+                  className="font-mono text-[10px] text-text-dim hover:text-danger transition-colors"
+                >
+                  del
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

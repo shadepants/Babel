@@ -350,6 +350,14 @@ export default function Analytics() {
             <Button
               variant="outline"
               size="sm"
+              className="border-border-custom text-violet-400 hover:text-violet-300"
+              onClick={() => navigate(`/documentary/${experimentId}`)}
+            >
+              View Documentary
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               className="border-border-custom text-text-dim"
               onClick={handleDownloadJson}
               disabled={exporting}

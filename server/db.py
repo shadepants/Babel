@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS model_memory (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_pair ON model_memory(model_a, model_b);
+
+CREATE TABLE IF NOT EXISTS personas (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    personality TEXT NOT NULL DEFAULT '',
+    backstory TEXT NOT NULL DEFAULT '',
+    avatar_color TEXT NOT NULL DEFAULT '#F59E0B',
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -242,6 +251,15 @@ class Database:
         try:
             await self._db.execute(
                 "ALTER TABLE experiments ADD COLUMN agents_config_json TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Phase 16: AI documentary cache
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN documentary TEXT"
             )
             await self._db.commit()
         except Exception:
@@ -999,6 +1017,26 @@ class Database:
         )
         return [dict(row) for row in await cursor.fetchall()]
 
+    async def list_all_memories(self) -> list[dict]:
+        """Return all memory rows, newest first."""
+        cursor = await self.db.execute(
+            "SELECT model_a, model_b, summary, created_at FROM model_memory ORDER BY created_at DESC"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def delete_memories_for_pair(self, model_a: str, model_b: str) -> int:
+        """Delete all memory rows for a model pair. Returns rows deleted."""
+        pair = sorted([model_a, model_b])
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                "DELETE FROM model_memory WHERE model_a = ? AND model_b = ?",
+                (pair[0], pair[1]),
+            )
+            await self.db.commit()
+        cursor = await self.db.execute("SELECT changes()")
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
     async def generate_memory_summary(self, experiment_id: str) -> str:
         """Build a concise memory string from an experiment's vocab + preset.
 
@@ -1119,7 +1157,7 @@ class Database:
             max_val = max(values) if values else 1
             min_val = min(values) if values else 0
             if max_val == min_val:
-                # Both models identical on this axis — assign uniform score
+                # Both models identical on this axis -- assign uniform score
                 for e in entries:
                     e[axis] = 1.0
                     del e[raw_key]
@@ -1128,5 +1166,139 @@ class Database:
                 for e in entries:
                     e[axis] = round((e[raw_key] - min_val) / span, 3)
                     del e[raw_key]
+
+    # ── Personas ─────────────────────────────────────────────────────────
+
+    async def create_persona(
+        self,
+        name: str,
+        personality: str = "",
+        backstory: str = "",
+        avatar_color: str = "#F59E0B",
+    ) -> str:
+        """Create a new persona and return its ID."""
+        persona_id = uuid.uuid4().hex[:12]
+        now = datetime.now(timezone.utc).isoformat()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO personas (id, name, personality, backstory, avatar_color, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (persona_id, name, personality, backstory, avatar_color, now),
+            )
+            await self.db.commit()
+        return persona_id
+
+    async def get_all_personas(self) -> list[dict]:
+        """Return all personas ordered by creation date."""
+        cursor = await self.db.execute(
+            "SELECT * FROM personas ORDER BY created_at ASC"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_persona(self, persona_id: str) -> dict | None:
+        """Return a single persona by ID, or None if not found."""
+        cursor = await self.db.execute(
+            "SELECT * FROM personas WHERE id = ?", (persona_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_persona(self, persona_id: str, **kwargs: Any) -> None:
+        """Update persona fields. Only known columns are allowed."""
+        allowed = {"name", "personality", "backstory", "avatar_color"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [persona_id]
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                f"UPDATE personas SET {set_clause} WHERE id = ?", values
+            )
+            await self.db.commit()
+
+    async def delete_persona(self, persona_id: str) -> None:
+        """Delete a persona by ID."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute("DELETE FROM personas WHERE id = ?", (persona_id,))
+            await self.db.commit()
+
+    # ── Documentary ──────────────────────────────────────────────────────
+
+    async def save_documentary(self, experiment_id: str, text: str) -> None:
+        """Cache the generated documentary text on the experiment row."""
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                "UPDATE experiments SET documentary = ? WHERE id = ?",
+                (text, experiment_id),
+            )
+            await self.db.commit()
+
+    async def get_documentary(self, experiment_id: str) -> str | None:
+        """Return the cached documentary text, or None if not yet generated."""
+        cursor = await self.db.execute(
+            "SELECT documentary FROM experiments WHERE id = ?", (experiment_id,)
+        )
+        row = await cursor.fetchone()
+        return row["documentary"] if row else None
+
+    # ── RPG Memory ───────────────────────────────────────────────────────
+
+    async def generate_rpg_memory_summary(self, experiment_id: str) -> str:
+        """Build a compact RPG campaign memory string (no LLM call).
+
+        Format: "Campaign 'preset', N rounds. Party: [roles].
+        Key events: DM turn snippets. Coined: word1, word2..."
+        Returns empty string if experiment missing.
+        """
+        exp = await self.get_experiment(experiment_id)
+        if not exp:
+            return ""
+
+        preset = exp.get("preset") or "custom"
+        rounds_done = exp.get("rounds_completed") or 0
+
+        # Party members from participants_json
+        party_parts: list[str] = []
+        participants_raw = exp.get("participants_json")
+        if participants_raw:
+            try:
+                participants = json.loads(participants_raw)
+                for p in participants:
+                    role = p.get("role", "agent")
+                    name = p.get("name") or p.get("model", "unknown")
+                    party_parts.append(f"{name}({role})")
+            except Exception:
+                pass
+
+        # Key events: first 60 chars of each DM/narrator turn
+        cursor = await self.db.execute(
+            """SELECT speaker, content FROM turns
+               WHERE experiment_id = ? ORDER BY round, id""",
+            (experiment_id,),
+        )
+        turn_rows = await cursor.fetchall()
+        events: list[str] = []
+        for row in turn_rows:
+            if row["speaker"].lower() in ("dm", "narrator", "gm"):
+                snippet = row["content"][:60].replace("\n", " ")
+                events.append(snippet)
+            if len(events) >= 4:
+                break
+
+        # Vocabulary
+        vocab = await self.get_vocabulary(experiment_id)
+        coined = [w["word"] for w in vocab[:6]]
+
+        parts = [f"Campaign '{preset}', {rounds_done} rounds."]
+        if party_parts:
+            parts.append(f"Party: {', '.join(party_parts)}.")
+        if events:
+            parts.append(f"Key events: {'; '.join(events)}.")
+        if coined:
+            parts.append(f"Coined: {', '.join(coined)}.")
+
+        summary = " ".join(parts)
+        return summary[:500]
 
         return entries

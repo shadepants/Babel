@@ -100,6 +100,15 @@ def _parse_verdict_json(raw: str, n_agents: int = 2) -> dict:
 # ── Agent Config ────────────────────────────────────────────────────────
 
 @dataclass
+class PersonaRecord:
+    """Personality profile injected into an agent's system prompt."""
+    id: str
+    name: str
+    personality: str
+    backstory: str
+
+
+@dataclass
 class RelayAgent:
     """Minimal config for one side of the relay. No Factory dependencies."""
     name: str
@@ -107,6 +116,7 @@ class RelayAgent:
     temperature: float = 0.7
     max_tokens: int = 1500
     request_timeout: int = 60
+    persona: PersonaRecord | None = None
 
 
 # ── Scoring / Verdict Functions ────────────────────────────────────────
@@ -486,8 +496,17 @@ async def run_relay(
                     "round": round_num,
                 })
 
+                if agent.persona:
+                    agent_system = (
+                        f"You are {agent.persona.name}. {agent.persona.personality}"
+                    )
+                    if agent.persona.backstory:
+                        agent_system += f"\n\nBackground: {agent.persona.backstory}"
+                    agent_system += f"\n\n{system_prompt}"
+                else:
+                    agent_system = system_prompt
                 messages = build_messages(
-                    system_prompt, [seed_turn] + turns, agent_idx, agents
+                    agent_system, [seed_turn] + turns, agent_idx, agents
                 )
                 content, latency, tokens = await call_model(agent, messages)
 

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
 import { api } from '@/api/client'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HumanInput } from './HumanInput'
 import { ThinkingIndicator } from './ThinkingIndicator'
+import { SpriteAvatar } from './SpriteAvatar'
+import { TheaterCanvas } from './TheaterCanvas'
 import type { TurnEvent } from '@/api/types'
 
 /** Speaker role colors (CSS rgb values) */
@@ -56,9 +58,11 @@ function RPGTurnEntry({
  *
  * Layout: left sidebar (party roster) + center (scrolling chat log + HumanInput).
  * All turns shown chronologically, colored by speaker role.
+ * Background canvas renders expanding pulse rings and vocab burst animations.
  */
 export default function RPGTheater() {
   const { matchId } = useParams<{ matchId: string }>()
+  const navigate = useNavigate()
   const { events } = useSSE(matchId)
   const state = useExperimentState(events)
 
@@ -103,7 +107,11 @@ export default function RPGTheater() {
   if (!matchId) return null
 
   const playerName = participants?.find((p) => p.role.toLowerCase() === 'player')?.name ?? 'Player'
+  const dmName = participants?.find((p) => p.role.toLowerCase() === 'dm')?.name ?? 'DM'
   const isDone = state.status === 'completed' || state.status === 'error'
+
+  // Extract last turn for canvas animation trigger
+  const lastTurn = state.turns.length > 0 ? state.turns[state.turns.length - 1] : null
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary">
@@ -117,16 +125,29 @@ export default function RPGTheater() {
           Party
         </h2>
         {participants ? (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {participants.map((p) => {
               const color = speakerColor(p.name, participants)
               const isHuman = p.model === 'human'
+              
+              // Determine avatar state
+              let avatarStatus: 'idle' | 'thinking' | 'talking' | 'error' | 'winner' | 'loser' = 'idle'
+              if (state.thinkingSpeaker?.toLowerCase() === p.name.toLowerCase()) {
+                avatarStatus = 'thinking'
+              } else if (state.turns.length > 0 && state.turns[state.turns.length - 1].speaker.toLowerCase() === p.name.toLowerCase()) {
+                avatarStatus = 'talking'
+              }
+              
               return (
-                <li key={p.name} className="flex items-center gap-2">
-                  <div
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
+                <li key={p.name} className="flex items-center gap-3">
+                  <div className="flex-shrink-0">
+                    <SpriteAvatar
+                      status={avatarStatus}
+                      accentColor={color}
+                      instanceId={p.name}
+                      size={48}
+                    />
+                  </div>
                   <div className="min-w-0">
                     <div className="text-sm font-mono truncate" style={{ color }}>
                       {p.name}
@@ -144,7 +165,7 @@ export default function RPGTheater() {
         )}
 
         {/* Status */}
-        <div className="mt-auto space-y-1">
+        <div className="mt-auto space-y-2">
           <div className="text-[10px] font-mono text-slate-500">
             Round {state.currentRound} {state.totalRounds > 0 ? `/ ${state.totalRounds}` : ''}
           </div>
@@ -160,13 +181,28 @@ export default function RPGTheater() {
               : state.thinkingSpeaker ? `${state.thinkingSpeaker} is thinking...`
               : 'In progress...'}
           </div>
+          {isDone && state.status === 'completed' && matchId && (
+            <button
+              onClick={() => navigate(`/documentary/${matchId}`)}
+              className="w-full text-[10px] font-mono tracking-widest uppercase px-2 py-1.5 rounded border border-violet-500/40 text-violet-400 hover:bg-violet-500/10 transition-colors"
+            >
+              Generate Recap
+            </button>
+          )}
         </div>
       </aside>
 
       {/* ── Main Content: Chat Log + Input ── */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 relative">
+        {/* Background canvas — expanding rings and vocab bursts */}
+        <TheaterCanvas
+          lastTurn={lastTurn}
+          lastVocab={null}
+          modelAName={dmName}
+        />
+
         {/* Header bar */}
-        <header className="h-12 border-b border-slate-800/50 flex items-center px-4 gap-3 bg-slate-950/30">
+        <header className="h-12 border-b border-slate-800/50 flex items-center px-4 gap-3 bg-slate-950/30 relative z-10">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="font-mono text-sm text-slate-300">
             RPG Session
@@ -177,7 +213,7 @@ export default function RPGTheater() {
         </header>
 
         {/* Scrolling chat log */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden relative z-10">
           <div className="p-4 space-y-1 max-w-3xl mx-auto">
             {state.turns.map((turn) => (
               <RPGTurnEntry
@@ -203,7 +239,7 @@ export default function RPGTheater() {
         )}
 
         {isDone && (
-          <div className="border-t border-slate-800/50 px-4 py-3 text-center">
+          <div className="border-t border-slate-800/50 px-4 py-3 text-center relative z-10">
             <span className="font-mono text-sm text-slate-400">
               Campaign ended.{' '}
               <Link to="/" className="text-emerald-400 hover:text-emerald-300 underline">

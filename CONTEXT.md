@@ -1,6 +1,6 @@
 ﻿&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 11 &mdash; Phase 15 N-way conversations + branch tree implemented)
+**Last Updated:** 2026-02-24 (session 13 &mdash; Phase 16 shipped)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -204,14 +204,30 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 - [x] **Python syntax** &mdash; `py_compile` on all 4 backend files: OK
 
+### Phase 16: Depth &amp; Legacy (DONE)
+- [x] **`server/db.py`** &mdash; `personas` table; `documentary TEXT` column migration; persona CRUD (create/get/update/delete/list); `save_documentary()` + `get_documentary()`; `generate_rpg_memory_summary()` deterministic summary
+- [x] **`server/routers/personas.py`** (NEW) &mdash; full CRUD router: GET/POST /api/personas, GET/PUT/DELETE /api/personas/{id}
+- [x] **`server/app.py`** &mdash; mounted personas router at /api/personas
+- [x] **`server/relay_engine.py`** &mdash; `PersonaRecord` dataclass; `persona` field on `RelayAgent`; persona system-prompt injection in agent loop
+- [x] **`server/rpg_engine.py`** &mdash; campaign memory load at start (injects past sessions into DM system prompt); per-actor persona injection; `_save_rpg_memory()` background task at session end
+- [x] **`server/routers/relay.py`** &mdash; `persona_ids` in `RelayStartRequest`; persona lookup + attachment for standard relay; preset/persona_ids forwarded to RPG path
+- [x] **`server/routers/experiments.py`** &mdash; `POST /{id}/documentary` endpoint (cache-first, mode-aware prompt, litellm via asyncio.to_thread, saves result)
+- [x] **`ui/src/api/types.ts`** &mdash; `PersonaRecord` interface; `documentary?` on `ExperimentRecord`; `persona_ids?` on `RelayStartRequest`
+- [x] **`ui/src/api/client.ts`** &mdash; personas CRUD methods; `generateDocumentary()`
+- [x] **`ui/src/pages/Settings.tsx`** &mdash; personas management panel (list, create/edit form, color picker, delete)
+- [x] **`ui/src/pages/Configure.tsx`** &mdash; per-agent persona dropdown (populated from API, optional, sent as persona_ids)
+- [x] **`ui/src/pages/Documentary.tsx`** (NEW) &mdash; narrative page; cache-first load; ScrambleText section headers; vocab word links
+- [x] **`ui/src/App.tsx`** &mdash; `/documentary/:experimentId` route with violet tint
+- [x] **`ui/src/pages/Analytics.tsx`** &mdash; "View Documentary" button (violet) in header actions
+- [x] **`ui/src/components/theater/RPGTheater.tsx`** &mdash; "Generate Recap" button when session complete
+
 ### Next Up
-- [ ] **Commit Phase 14 + 15** &mdash; large staged commit (or two separate)
-- [ ] **Runtime smoke test** &mdash; kill zombie Python, start server, test 3-way launch + Theater 3 columns + branch tree page
-- [ ] **2-way backward compat check** &mdash; old experiments still load in Theater (legacy speaker strings)
-- [ ] **RPG smoke test** &mdash; kill zombie Python processes in Task Manager first, then start server, test RPG + standard flow end-to-end
-- [ ] **RPG SAO metadata** &mdash; populate `metadata` column with structured Subject-Action-Object events from DM (DF SIM Finding #6; column already exists)
-- [ ] **RPG campaign recap** &mdash; parse metadata into narrative summary page after session ends
-- [ ] **RPG campaign persistence** &mdash; DM remembers past sessions via model_memory (DF SIM Finding #4 LOD tiers)
+- [ ] **Commit Phase 16** &mdash; stage all 15 modified/new files and commit
+- [ ] **Runtime smoke test** &mdash; 3-way relay test (Configure 3-agent &rarr; Theater 3-column render &rarr; round-robin order check)
+- [ ] **Persona end-to-end test** &mdash; create persona in Settings &rarr; assign in Configure &rarr; verify system prompt injection affects output style
+- [ ] **Documentary test (standard)** &mdash; open completed experiment in Analytics &rarr; "View Documentary" &rarr; verify generation + caching
+- [ ] **Documentary test (RPG)** &mdash; complete RPG session &rarr; "Generate Recap" button &rarr; fantasy-chronicler narrative
+- [ ] **Campaign persistence test** &mdash; run RPG session #1 &rarr; run #2 with same preset+DM model &rarr; verify "CAMPAIGN HISTORY:" in DM prompt (server logs)
 
 ### Roadmap &mdash; Phases 15&ndash;16
 
@@ -223,11 +239,9 @@ A standalone shareable web app where AI models talk to each other in real-time &
 | **~~13b~~** | ~~Virtual Tabletop RPG~~ | ~~done~~ | ~~RPG engine, human-in-the-loop, party builder, RPGTheater~~ |
 | **~~14~~** | ~~Cross-Experiment Intelligence~~ | ~~done~~ | ~~Vocab burst chart, experiment forking, cross-run vocabulary provenance~~ |
 | **~~15~~** | ~~New Conversation Structures~~ | ~~done~~ | ~~N-way conversations (3&ndash;4 models), conversation branch tree (D3)~~ |
-| **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
+| **~~16~~** | ~~Depth &amp; Legacy~~ | ~~done~~ | ~~Persistent personas, AI documentary, RPG campaign persistence~~ |
 
-**Recommended next:** Commit Phase 14 &rarr; RPG smoke test (deferred since session 9) &rarr; Phase 15
-
-**RPG follow-ups (still deferred):** runtime smoke test, SAO metadata, campaign recap, campaign persistence
+**Recommended next:** Commit Phase 16 &rarr; end-to-end smoke tests (personas, documentary, campaign persistence) &rarr; Phase 17 planning
 
 ### Tracked Tasks
  (tasks/ directory)
@@ -248,7 +262,7 @@ Babel/
     rpg_engine.py              RPG mode &mdash; human-yielding loop, DM+player+AI party
     tournament_engine.py       Round-robin tournament runner &mdash; sequential matches, SSE events
     vocab_extractor.py         Regex-based invented word detection
-    db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments, model_memory)
+    db.py                      SQLite schema + queries (experiments, turns, vocabulary, tournaments, model_memory, personas)
     event_hub.py               SSE pub/sub (standalone, match_id filtering)
     presets/
       conlang.yaml             Build a symbolic language (default)
@@ -264,9 +278,10 @@ Babel/
       taboo-artifact.yaml      Describe a common object without obvious words (The Artifact)
     routers/
       relay.py                 POST /start (+ preset resolution + model validation), GET /stream (SSE), GET /models/status, POST /pause, POST /resume, POST /inject
-      experiments.py           GET list/detail/vocabulary/stats/turns/radar
+      experiments.py           GET list/detail/vocabulary/stats/turns/radar; POST /{id}/documentary
       presets.py               GET list/detail
       tournaments.py           POST /start, GET list/detail/leaderboard/stream
+      personas.py              GET/POST /api/personas; GET/PUT/DELETE /api/personas/{id} (NEW Phase 16)
   ui/
     src/
       pages/
@@ -280,7 +295,8 @@ Babel/
         Arena.tsx              Tournament setup &mdash; model multi-select, launcher
         Tournament.tsx         Live match grid, leaderboard, radar chart
         Tournaments.tsx        Tournament history list at /tournaments
-        Settings.tsx           API key status + model registry + in-app key config
+        Settings.tsx           API key status + model registry + in-app key config + personas management panel
+        Documentary.tsx        AI-generated narrative recap for any experiment; cached in DB (NEW Phase 16)
       components/
         theater/               SpriteAvatar (accentColor+instanceId), TypewriterText, ArenaStage (N-agent), TurnBubble, ConversationColumn (agentIndex+AGENT_COLORS), ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas, RPGTheater, HumanInput
         dictionary/            WordCard, ConstellationGraph (incremental D3), VocabBurstChart (per-round coinage bars + burst detection)
@@ -350,3 +366,7 @@ Set-Location ui && .\run_npm.cmd dev
 - **Dynamic grid (N columns):** Never use `grid-cols-${n}` &mdash; Tailwind purges dynamic class names. Use `style={{ gridTemplateColumns: 'repeat(N, 1fr)' }}` inline style instead.
 - **SpriteAvatar instanceId:** With N sprites on the same page, SVG clipPath IDs must be unique globally. Pass `instanceId={String(idx)}` to prevent `face-clip-model-a` collision across multiple SVGs.
 - **BranchTree D3 layout:** `d3.tree<TreeNode>().nodeSize([V_GAP, H_GAP])(root)` returns `HierarchyPointNode`. Horizontal orientation: svg_x = `d.y + offsetX`, svg_y = `d.x + offsetY`. Bezier edge: source right edge `(d.y + ox + NODE_W, d.x + oy)` &rarr; target left edge `(d.y + ox, d.x + oy)` with midpoint control. Rendered in `useEffect([treeData, navigate])`; SVG ref becomes available after loading state clears.
+- **Personas table:** `id TEXT PRIMARY KEY, name, personality, backstory, avatar_color (#F59E0B default), created_at`. CRUD via `/api/personas` router. Mounted in app.py. Persona assigned per-agent at relay start by looking up id &rarr; attaching `PersonaRecord` to `RelayAgent`. Injection is at the call site in the agent loop, not inside `build_messages()`.
+- **Documentary endpoint:** `POST /api/experiments/{id}/documentary` is cache-first (returns cached text if `documentary` column non-null). Mode-aware prompt: standard = science journalist, RPG = fantasy chronicler. Uses `asyncio.to_thread(litellm.completion, ...)` to avoid blocking async loop. Max 1500 tokens, temp 0.7, `config.JUDGE_MODEL`. Frontend: `Documentary.tsx` at `/documentary/:id` (violet tint); "View Documentary" button in Analytics; "Generate Recap" button in RPGTheater.
+- **RPG campaign persistence:** Reuses existing `model_memory` table. Key overloading: `model_b = "rpg:{preset}"` (no schema change). At RPG start: `get_memories_for_pair(dm_model, "rpg:{preset}")` fetches past summaries &rarr; prepended as "CAMPAIGN HISTORY:" block in DM system prompt. At RPG end: `_save_rpg_memory()` background task calls `generate_rpg_memory_summary()` (deterministic, &le;500 chars) + `create_memory()`.
+- **Documentary violet tint:** Route `/documentary` added to violet tint condition in `App.tsx` AppInner `routeTint` block alongside `/tree`.

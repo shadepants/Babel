@@ -32,7 +32,7 @@ from server.config import (
 
 # Allowed model strings — validated at request time
 _ALLOWED_MODELS: frozenset[str] = frozenset(MODEL_REGISTRY.values())
-from server.relay_engine import RelayAgent, run_relay
+from server.relay_engine import PersonaRecord, RelayAgent, run_relay
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,10 @@ class RelayStartRequest(BaseModel):
     initial_history: list[dict] | None = Field(default=None, description="Pre-seeded turns from a forked experiment")
     parent_experiment_id: str | None = Field(default=None, description="ID of the source experiment being forked")
     fork_at_round: int | None = Field(default=None, description="Round count at which the fork occurred")
+    # Phase 16: persona IDs (parallel to agents list or legacy A/B slots)
+    persona_ids: list[str | None] | None = Field(default=None, description="Optional persona ID per agent slot")
+    # Campaign config for RPG mode (tone, setting, difficulty, hook)
+    rpg_config: dict | None = Field(default=None, description="RPG campaign parameters")
 
 
 class RelayStartResponse(BaseModel):
@@ -205,6 +209,9 @@ async def start_relay(body: RelayStartRequest, request: Request):
             db=db,
             human_event=human_event,
             cancel_event=cancel_event,
+            preset=body.preset,
+            participant_persona_ids=body.persona_ids,
+            rpg_config=body.rpg_config,
         ))
         resume_event = asyncio.Event()
         resume_event.set()
@@ -255,6 +262,19 @@ async def start_relay(body: RelayStartRequest, request: Request):
                 max_tokens=body.max_tokens,
             ),
         ]
+
+    # Phase 16: attach personas to agents
+    if body.persona_ids:
+        for i, pid in enumerate(body.persona_ids):
+            if pid and i < len(relay_agents):
+                p_data = await db.get_persona(pid)
+                if p_data:
+                    relay_agents[i].persona = PersonaRecord(
+                        id=p_data["id"],
+                        name=p_data["name"],
+                        personality=p_data["personality"],
+                        backstory=p_data["backstory"],
+                    )
 
     # Launch relay as background task (doesn't block the response)
     resume_event = asyncio.Event()

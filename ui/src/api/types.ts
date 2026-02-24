@@ -1,10 +1,37 @@
 // ── API Request/Response Types ─────────────────────────────────
 
+/** Phase 16: named personality profile */
+export interface PersonaRecord {
+  id: string;
+  name: string;
+  personality: string;
+  backstory: string;
+  avatar_color: string;
+  created_at: string;
+}
+
 /** Phase 15-A: single agent config in N-way relay */
 export interface AgentConfig {
   model: string;
   temperature: number;
   name?: string;
+}
+
+/** RPG campaign participant (extended with class + motivation) */
+export interface RPGParticipant {
+  name: string;
+  model: string;  // 'human' for player, AI model string for NPC
+  role: 'dm' | 'player' | 'npc';
+  char_class?: string;
+  motivation?: string;
+}
+
+/** RPG campaign-level settings (tone, setting, difficulty, hook) */
+export interface RPGConfig {
+  tone: 'cinematic' | 'whimsical' | 'grimdark' | 'serious';
+  setting: string;
+  difficulty: 'casual' | 'normal' | 'deadly';
+  campaign_hook: string;
 }
 
 /** POST /api/relay/start request body */
@@ -34,6 +61,10 @@ export interface RelayStartRequest {
   initial_history?: Array<{ speaker: string; content: string }>;
   parent_experiment_id?: string;
   fork_at_round?: number;
+  // Phase 16: persona IDs parallel to agents list
+  persona_ids?: (string | null)[];
+  // Campaign page: RPG campaign settings
+  rpg_config?: RPGConfig;
 }
 
 /** POST /api/relay/start response */
@@ -206,6 +237,29 @@ export interface PresetsResponse {
   presets: Preset[];
 }
 
+/** Campaign preset for RPG mode — combines system settings + RPG tone/hook + party template */
+export interface CampaignPreset {
+  id: string;
+  name: string;
+  description: string;
+  category: 'fantasy' | 'scifi' | 'historical' | 'competitive';
+  
+  // System settings (affect speed/length)
+  temperature: number;
+  maxTokens: number;
+  turnDelay: number;
+  rounds: number;
+  
+  // Prompt settings (affect behavior/content)
+  rpgTone: 'cinematic' | 'whimsical' | 'grimdark' | 'serious';
+  rpgSetting: string;
+  rpgDifficulty: 'casual' | 'normal' | 'deadly';
+  campaignHook: string;
+  
+  // Party template (starting participants)
+  participantTemplate: Partial<RPGParticipant>[];
+}
+
 // ── REST Response Types ───────────────────────────────────────
 
 /** Single vocabulary word from REST endpoint */
@@ -255,6 +309,8 @@ export interface ExperimentRecord {
   fork_at_round?: number | null;
   // Phase 15-A: N-way agents
   agents_config_json?: string | null;
+  // Phase 16: AI documentary cache
+  documentary?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

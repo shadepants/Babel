@@ -24,6 +24,7 @@ export default function Configure() {
   const isCustom = presetId === 'custom'
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
+  const forkId = searchParams.get('fork')
   const formAccentColor = isCustom ? null : getPresetGlow(presetId)
 
   // -- Data loading --
@@ -59,6 +60,9 @@ export default function Configure() {
   // -- Observer --
   const [observerModel, setObserverModel] = useState<string>('none')
   const [observerInterval, setObserverInterval] = useState(3)
+
+  // -- Fork state --
+  const [forkHistory, setForkHistory] = useState<Array<{ speaker: string; content: string }> | null>(null)
 
   // -- RPG Mode --
   const [rpgMode, setRpgMode] = useState(false)
@@ -145,6 +149,24 @@ export default function Configure() {
             // remix experiment not found — continue with preset defaults
           }
         }
+
+        // Fork: if ?fork=<id> is set, pre-fill settings + load turn history as initial_history
+        if (forkId) {
+          try {
+            const [forkExp, forkTurns] = await Promise.all([
+              api.getExperiment(forkId),
+              api.getExperimentTurns(forkId),
+            ])
+            setModelA(forkExp.model_a)
+            setModelB(forkExp.model_b)
+            if (forkExp.temperature_a != null) setTemperatureA(forkExp.temperature_a)
+            if (forkExp.temperature_b != null) setTemperatureB(forkExp.temperature_b)
+            if (forkExp.seed) { setSeed(forkExp.seed); setSeedEditing(true) }
+            setForkHistory(forkTurns.turns.map((t) => ({ speaker: t.speaker, content: t.content })))
+          } catch {
+            // fork experiment not found — continue with preset defaults
+          }
+        }
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Failed to load configuration')
       } finally {
@@ -152,7 +174,7 @@ export default function Configure() {
       }
     }
     loadData()
-  }, [presetId, isCustom, remixId])
+  }, [presetId, isCustom, remixId, forkId])
 
   // Whether any parameter slider has been moved from the preset default
   const hasParamChanges = presetDefaults !== null && (
@@ -206,6 +228,11 @@ export default function Configure() {
       }
       if (!isCustom && presetId) {
         request.preset = presetId
+      }
+      if (forkId && forkHistory) {
+        request.initial_history = forkHistory
+        request.parent_experiment_id = forkId
+        request.fork_at_round = forkHistory.length
       }
       if (systemPrompt.trim()) {
         request.system_prompt = systemPrompt.trim()
@@ -291,6 +318,16 @@ export default function Configure() {
           </div>
         )}
       </div>
+
+      {/* Fork banner */}
+      {forkId && forkHistory && (
+        <div className="font-mono text-xs border border-cyan-500/30 bg-cyan-500/5 rounded px-3 py-2 text-cyan-400">
+          <span className="opacity-60">// </span>
+          FORKED FROM{' '}
+          <span className="text-cyan-300">{forkId}</span>
+          <span className="text-cyan-500/60"> &middot; {forkHistory.length} turns loaded into context</span>
+        </div>
+      )}
 
       {/* Configuration Form */}
       <div

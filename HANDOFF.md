@@ -1,49 +1,52 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-23 (Session 9)
+**Last Updated:** 2026-02-23 (Session 10)
 **Active Agent:** Claude Code
-**Current Goal:** Phase 13b complete + DF SIM research applied; ready for RPG smoke test + SAO metadata
+**Current Goal:** Phase 14 complete; commit pending + RPG smoke test + Phase 15
 
 ## What Was Done This Session
 
-### Phase 13b: Virtual Tabletop RPG Mode (complete, committed fa1ff1b)
-- Created `server/rpg_engine.py` (NEW, ~175 lines) -- human-yielding RPG engine
-- Added DB migrations (mode, participants_json, metadata columns)
-- Added `app.state.human_events = {}` for per-match asyncio.Event registry
-- Added `RelayEvent.AWAITING_HUMAN` constant to relay_engine.py
-- Updated relay.py: mode branching in POST /start, dual-mode POST /inject
-- Added `AwaitingHumanEvent` + `isAwaitingHuman` to frontend types/hooks
-- Created `HumanInput.tsx` + `RPGTheater.tsx` (new components)
-- Updated Configure.tsx: RPG mode toggle, party member builder
-- Updated App.tsx: /rpg/:matchId route, emerald tint
-- Fixed 7 GEM spec bugs during implementation (see plan file for details)
+### Phase 14-A: VocabBurstChart
+- Created `ui/src/components/dictionary/VocabBurstChart.tsx` (NEW)
+  - Pure-SVG per-round vocabulary coinage bar chart
+  - Burst detection: rounds where count > mean + 1.5sigma highlighted amber
+  - Hover tooltip lists all words coined in that round; click bar calls onSelectWord
+  - ResizeObserver for responsive width
+- Updated `ui/src/pages/Dictionary.tsx`: added `'burst'` to ViewMode + 4th tab button
 
-### DF SIM Research Applied
-- Read all 3 docs in `C:\Users\User\Repositories\DF SIM\`
-- Key insight: **SAO logging (Finding #6)** -- Subject-Action-Object event triples with causal chains
-  - The `metadata TEXT` column on turns already exists but is unpopulated
-  - Prompt DM to emit structured tags, parse on save, enables campaign recap
-- **LOD tiers (Finding #4)** map to campaign persistence via model_memory
-- **Zero-player game (Finding #5)** validates Babel's architecture (standard relay = zero-player, RPG = one-player)
-- Added RPG follow-ups to CONTEXT.md Next Up section
+### Phase 14-B: Experiment Forking
+- `server/db.py`: 2 idempotent migrations (parent_experiment_id TEXT, fork_at_round INTEGER); create_experiment() stores both
+- `server/relay_engine.py`: initial_history + parent_experiment_id params; pre-populates turns[] before loop
+- `server/routers/relay.py`: 3 new fields on RelayStartRequest; forwarded to db + relay
+- `ui/src/api/types.ts`: fork fields on ExperimentRecord + RelayStartRequest
+- `ui/src/pages/Theater.tsx`: Fork button (visible when status completed or stopped)
+- `ui/src/pages/Configure.tsx`: ?fork= param; forkHistory state; fork banner; launch body includes fork fields
+
+### Phase 14-C: Cross-Run Vocabulary Provenance
+- `server/db.py`: origin_experiment_id migration on vocabulary; tag_word_origins() bulk UPDATE (LOWER case-insensitive)
+- `server/relay_engine.py`: asyncio.create_task(tag_word_origins()) at end when parent set
+- `ui/src/api/types.ts`: origin_experiment_id on VocabWord
+- `ui/src/components/dictionary/WordCard.tsx`: [INHERITED] badge links to /analytics/:origin_experiment_id
 
 ## Verification Status
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| Python syntax | PASSED | py_compile on all 5 backend files |
-| TypeScript | PASSED | tsc --noEmit exits 0 |
-| Git commit | DONE | fa1ff1b -- 14 files, 927 insertions |
-| Runtime test | BLOCKED | Zombie Python processes; kill in Task Manager first |
+| Python syntax | PASSED | py_compile on db.py, relay_engine.py, routers/relay.py |
+| TypeScript | PASSED | tsc --noEmit exits 0, zero errors |
+| Runtime test | NOT RUN | Server not started this session |
+| Git commit | PENDING | Phase 14 changes not yet committed |
 
 ## Next Steps (Priority Order)
 
-1. [ ] **RPG smoke test** -- kill zombie Python processes in Task Manager, start server, test end-to-end
-2. [ ] **RPG SAO metadata** -- prompt DM to emit structured events; parse into metadata column (~0.5 day)
-3. [ ] **RPG campaign recap** -- page that reconstructs narrative from SAO metadata (~1 day)
-4. [ ] **RPG campaign persistence** -- DM remembers past sessions via model_memory (~1 day)
-5. [ ] **Phase 14** -- VocabBurstChart, experiment forking, cross-run provenance
+1. [ ] **Commit Phase 14** -- 9 files: VocabBurstChart.tsx (new), Dictionary.tsx, server/db.py,
+       server/relay_engine.py, server/routers/relay.py, ui/src/api/types.ts,
+       Theater.tsx, Configure.tsx, WordCard.tsx
+2. [ ] **RPG smoke test** -- kill zombie Python processes in Task Manager first, then start server, test RPG + standard flow
+3. [ ] **Phase 15-A** -- N-way conversations (N-agent relay loop, N columns in Theater, N-model selector)
+4. [ ] **Phase 15-B** -- Branch tree (/tree/:id, D3 BranchTree, lineage endpoint)
+5. [ ] **RPG SAO metadata** -- prompt DM to emit SAO events; parse into metadata column (DF SIM Finding #6)
 
 ## Key Patterns (carry forward)
 
@@ -51,10 +54,12 @@
 - **Idempotent migrations**: try/except on ALTER TABLE ADD COLUMN
 - **Background tasks**: asyncio.create_task() + _log_task_exception callback
 - **win_write + HTML entities**: never raw Unicode in JSX/TS source files
+- **Forking**: initial_history pre-populates turns[] before relay loop; parent_experiment_id passed to db.create_experiment() + tag_word_origins()
+- **VocabBurstChart**: pure SVG bars (no D3 lifecycle); ResizeObserver width; burst = mean + 1.5sigma
+- **tag_word_origins**: dynamic IN (?,?,?) placeholders; case-insensitive LOWER() match; background task only when parent set
 - **RPG human_events**: separate dict from _running_relays; cleanup removes both
-- **RPG global perspective**: all participants see full conversation; current speaker = assistant, others = user with [name]: prefix
-- **metadata column**: already exists on turns table, ready for SAO structured events
-- **DF SIM reference**: `C:\Users\User\Repositories\DF SIM\findings.md` has 6 findings; #4 (LOD) and #6 (SAO) most relevant
+- **metadata column**: already exists on turns table, ready for SAO structured events (RPG follow-up)
+- **DF SIM reference**: C:\Users\User\Repositories\DF SIM\findings.md -- #4 (LOD tiers) + #6 (SAO events) most relevant for RPG
 
 ## Zombie Python Processes Warning
 12+ zombie Python processes from litellm import hangs (Windows Defender scanning .venv).

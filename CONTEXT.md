@@ -1,6 +1,6 @@
 ﻿&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 9 &mdash; Phase 13b RPG expansion implemented)
+**Last Updated:** 2026-02-23 (session 10 &mdash; Phase 14 cross-experiment intelligence implemented)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -190,19 +190,23 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **App.tsx** &mdash; `/rpg/:matchId` route; emerald tint for RPG routes
 - [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
 
+### Phase 14: Cross-Experiment Intelligence (DONE)
+- [x] **14-A VocabBurstChart** &mdash; `VocabBurstChart.tsx` (NEW): pure-SVG per-round coinage bars; burst detection (mean + 1.5&sigma;) highlights amber rounds; click bar &rarr; onSelectWord; ResizeObserver responsive; 4th `burst` tab added to Dictionary.tsx
+- [x] **14-B Experiment Forking** &mdash; DB migrations (`parent_experiment_id`, `fork_at_round`); `create_experiment()` updated; `run_relay()` accepts `initial_history`; `RelayStartRequest` fork fields; Theater.tsx Fork button; Configure.tsx `?fork=` param + banner + forkHistory
+- [x] **14-C Cross-Run Provenance** &mdash; DB migration (`origin_experiment_id` on vocabulary); `tag_word_origins()` in db.py; relay fires as background task at end; WordCard.tsx `[INHERITED]` badge linking to parent analytics
+- [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
+- [x] **Python syntax** &mdash; `py_compile` on db.py, relay_engine.py, routers/relay.py: OK
+
 ### Next Up
-- [ ] **RPG smoke test** &mdash; kill zombie Python processes, start server, test RPG flow end-to-end with real API keys
+- [ ] **Commit Phase 14** &mdash; stage 9 changed/new files and commit
+- [ ] **RPG smoke test** &mdash; kill zombie Python processes in Task Manager, start server, test RPG + standard flow end-to-end
 - [ ] **RPG SAO metadata** &mdash; populate `metadata` column with structured Subject-Action-Object events from DM (DF SIM Finding #6; column already exists)
 - [ ] **RPG campaign recap** &mdash; parse metadata into narrative summary page after session ends
 - [ ] **RPG campaign persistence** &mdash; DM remembers past sessions via model_memory (DF SIM Finding #4 LOD tiers)
-- [ ] **14-A** &mdash; VocabBurstChart.tsx: D3 per-round coinage bars + burst detection in Dictionary
-- [ ] **14-B** &mdash; Experiment forking: DB migrations, initial_history in relay, fork button in Theater, Configure fork banner
-- [ ] **14-C** &mdash; Cross-run provenance: origin_experiment_id on vocabulary, tag_word_origins(), WordCard badge
 - [ ] **15-A** &mdash; N-way conversations: N-agent relay loop, N columns in Theater, N-model selector in Configure
 - [ ] **15-B** &mdash; Branch tree: /tree/:id page, D3 BranchTree component, lineage endpoint
 
-### Roadmap &mdash; Phases 14&ndash;16
-Full specs in `~/.claude/plans/sunny-chasing-sutton.md` (comprehensive Phase 14+15 plan, session 8)
+### Roadmap &mdash; Phases 15&ndash;16
 
 | Phase | Theme | Effort | Key Features |
 |-------|-------|--------|--------------|
@@ -210,13 +214,13 @@ Full specs in `~/.claude/plans/sunny-chasing-sutton.md` (comprehensive Phase 14+
 | **~~12~~** | ~~Dictionary Revamp~~ | ~~done~~ | ~~Stats bar, search/filter/sort, constellation upgrades, swimlane timeline~~ |
 | **~~13~~** | ~~Interactive Experiments~~ | ~~done~~ | ~~Pause/resume, inject human turn, observer/narrator model~~ |
 | **~~13b~~** | ~~Virtual Tabletop RPG~~ | ~~done~~ | ~~RPG engine, human-in-the-loop, party builder, RPGTheater~~ |
-| **14** | Cross-Experiment Intelligence | 4&ndash;5 d | Vocab burst timeline, experiment forking, cross-run vocabulary provenance |
+| **~~14~~** | ~~Cross-Experiment Intelligence~~ | ~~done~~ | ~~Vocab burst chart, experiment forking, cross-run vocabulary provenance~~ |
 | **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
 | **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
 
-**Recommended next:** Phase 14 (cross-exp intelligence, build lore) &rarr; Phase 15 (N-way conversations)
+**Recommended next:** Commit Phase 14 &rarr; RPG smoke test (deferred since session 9) &rarr; Phase 15
 
-**RPG follow-ups (defer to post-14):** runtime smoke test with real models, RPG-specific presets (campaign seeds), multi-human support, campaign persistence/save-load
+**RPG follow-ups (still deferred):** runtime smoke test, SAO metadata, campaign recap, campaign persistence
 
 ### Tracked Tasks
  (tasks/ directory)
@@ -271,7 +275,7 @@ Babel/
         Settings.tsx           API key status + model registry + in-app key config
       components/
         theater/               SpriteAvatar, TypewriterText, ArenaStage, TurnBubble, ConversationColumn, ThinkingIndicator, RoundDivider, VocabPanel, TheaterCanvas, RPGTheater, HumanInput
-        dictionary/            WordCard, ConstellationGraph (incremental D3)
+        dictionary/            WordCard, ConstellationGraph (incremental D3), VocabBurstChart (per-round coinage bars + burst detection)
         analytics/             VocabGrowthChart, LatencyChart, RadarChart, RoundScoreChart, TokenChart (D3)
         common/                Layout (nav+transitions+glitch+babel-glitch listener), StarField (canvas neural net),
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
@@ -330,3 +334,6 @@ Set-Location ui && .\run_npm.cmd dev
 - **RPG mode:** `mode='rpg'` on experiments table. `human_events` dict on app.state holds per-match asyncio.Event. RPG engine (`rpg_engine.py`) publishes `relay.awaiting_human` then `await human_event.wait()`; POST `/inject` calls `event.set()` to resume. `participants_json` stores party config. DM is Model A; Player is human; AI party members call `call_model()` with global-perspective messages. Cleanup removes both `_running_relays` and `human_events` entries.
 - **Observer model:** Optional fire-and-forget background task. Fires every N turns (configurable 1-10). Rendered inline as centered cards in Theater, not as a 3rd column.
 - **Serena regex DOTALL gotcha:** `.*` in Serena replace_content regex (DOTALL mode) matches newlines &mdash; can greedily consume the rest of the file. Use literal mode or specific anchor text instead of `.*` at line boundaries.
+- **Experiment forking:** `parent_experiment_id` + `fork_at_round` stored in experiments table. Fork flow: Theater Fork button &rarr; `/configure/:presetId?fork=<id>` &rarr; Configure pre-fills models/temps/seed + shows banner + sends `initial_history` + `parent_experiment_id` in POST body. `initial_history` pre-populates `turns[]` before relay loop.
+- **VocabBurstChart:** Client-side burst detection &mdash; mean + 1.5&sigma; of per-round word counts. Burst bars = amber, normal = cyan. Lives in `ui/src/components/dictionary/VocabBurstChart.tsx`. Pure SVG + ResizeObserver (no D3 enter/update/exit needed). Dictionary.tsx ViewMode = `'cards' | 'constellation' | 'timeline' | 'burst'`.
+- **Cross-run provenance:** `origin_experiment_id` column on vocabulary table. `tag_word_origins(experiment_id, parent_experiment_id)` bulk-UPDATE sets it for words in child that also exist in parent (case-insensitive LOWER() match). Fired via `asyncio.create_task()` at end of `run_relay()` only when `parent_experiment_id` is set. WordCard.tsx shows `[INHERITED]` badge linking to `/analytics/:origin_experiment_id`.

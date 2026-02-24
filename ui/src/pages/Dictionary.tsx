@@ -5,11 +5,12 @@ import type { VocabWord, ExperimentRecord } from '@/api/types'
 import { WordCard } from '@/components/dictionary/WordCard'
 import { ConstellationGraph } from '@/components/dictionary/ConstellationGraph'
 import { VocabTimeline } from '@/components/dictionary/VocabTimeline'
+import { VocabBurstChart } from '@/components/dictionary/VocabBurstChart'
 import { buildParticipantColorMap } from '@/lib/participantColors'
 import { modelDisplayName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-type ViewMode = 'cards' | 'constellation' | 'timeline'
+type ViewMode = 'cards' | 'constellation' | 'timeline' | 'burst'
 type SortBy = 'round' | 'usage' | 'alpha'
 
 export default function Dictionary() {
@@ -255,7 +256,7 @@ export default function Dictionary() {
 
         {/* ── View tabs ── */}
         <div className="flex gap-2 mt-3">
-          {(['cards', 'constellation', 'timeline'] as ViewMode[]).map(v => (
+          {(['cards', 'constellation', 'timeline', 'burst'] as ViewMode[]).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -312,10 +313,16 @@ export default function Dictionary() {
             filterParticipant={filterParticipant}
             onSelectWord={setSelectedWord}
           />
-        ) : (
+        ) : view === 'timeline' ? (
           <VocabTimeline
             words={words}
             filteredWords={filteredWords}
+            colorMap={colorMap}
+            onSelectWord={setSelectedWord}
+          />
+        ) : (
+          <VocabBurstChart
+            words={filteredWords}
             colorMap={colorMap}
             onSelectWord={setSelectedWord}
           />

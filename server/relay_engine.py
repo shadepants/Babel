@@ -371,14 +371,19 @@ async def run_relay(
     enable_scoring: bool = False,
     enable_verdict: bool = False,
     enable_memory: bool = False,
+    initial_history: list[dict] | None = None,
+    parent_experiment_id: str | None = None,
 ) -> None:
     """Run an AI-to-AI relay conversation.
 
     Publishes events to the EventHub for SSE streaming and persists
     turns to the database. Runs as a background task — doesn't block
     the API endpoint.
+
+    If initial_history is provided (fork flow), those turns pre-populate
+    the conversation context so models continue from a prior experiment.
     """
-    turns: list[dict] = []
+    turns: list[dict] = list(initial_history) if initial_history else []
     seed_turn = {"speaker": "b", "content": seed}
     known_words: set[str] = set()  # tracks invented words across rounds
     start_time = time.time()
@@ -589,6 +594,12 @@ async def run_relay(
                     logger.info("Memory saved for %s: %.80s", match_id, summary)
             _mem_task = asyncio.create_task(_save_memory())
             _mem_task.add_done_callback(_log_task_exception)
+
+        if parent_experiment_id:
+            _origin_task = asyncio.create_task(
+                db.tag_word_origins(match_id, parent_experiment_id)
+            )
+            _origin_task.add_done_callback(_log_task_exception)
 
     except Exception as e:
         elapsed = time.time() - start_time

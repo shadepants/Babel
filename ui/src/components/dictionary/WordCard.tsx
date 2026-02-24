@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import type { VocabWord } from '@/api/types'
 
@@ -78,6 +79,22 @@ export function WordCard({ word, colorMap, onSelect }: WordCardProps) {
               {parent}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Cross-run provenance badge */}
+      {word.origin_experiment_id && (
+        <div className="mt-2 pt-2 border-t border-border-custom">
+          <Link
+            to={`/analytics/${word.origin_experiment_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-[10px] font-mono text-cyan-400/70 hover:text-cyan-400 transition-colors"
+          >
+            <span className="text-cyan-500/50">[</span>
+            INHERITED
+            <span className="text-cyan-500/50">]</span>
+            <span className="text-text-dim ml-0.5">{word.origin_experiment_id}</span>
+          </Link>
         </div>
       )}
     </div>

@@ -20,6 +20,10 @@ export interface RelayStartRequest {
   observer_interval?: number;
   mode?: 'standard' | 'rpg';
   participants?: Array<{ name: string; model: string; role: string }>;
+  // Phase 14-B: experiment forking
+  initial_history?: Array<{ speaker: string; content: string }>;
+  parent_experiment_id?: string;
+  fork_at_round?: number;
 }
 
 /** POST /api/relay/start response */
@@ -206,6 +210,7 @@ export interface VocabWord {
   usage_count: number;
   parent_words: string[] | null;
   confidence: string | null;
+  origin_experiment_id?: string | null;
 }
 
 /** GET /api/experiments/:id/vocabulary response */
@@ -236,6 +241,8 @@ export interface ExperimentRecord {
   label?: string | null;
   mode?: string;
   participants_json?: string | null;
+  parent_experiment_id?: string | null;
+  fork_at_round?: number | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useLocation, Link } from 'react-router-dom'
+import { useParams, useLocation, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
@@ -20,6 +20,7 @@ const COLOR_DEFAULT = '#8b5cf6'
 export default function Theater() {
   const { matchId }  = useParams<{ matchId: string }>()
   const location     = useLocation()
+  const navigate     = useNavigate()
 
   const [modelAName, setModelAName] = useState(
     (location.state as { modelAName?: string })?.modelAName ?? ''
@@ -405,6 +406,13 @@ export default function Theater() {
           <Link to={`/dictionary/${matchId}`}>
             <Button variant="outline" className="font-mono text-xs">Dictionary</Button>
           </Link>
+          <Button
+            variant="outline"
+            className="font-mono text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
+            onClick={() => navigate(`/configure/${preset ?? 'conlang'}?fork=${matchId}`)}
+          >
+            // Fork
+          </Button>
           <Link to="/">
             <Button variant="outline" className="font-mono text-xs">New Experiment</Button>
           </Link>

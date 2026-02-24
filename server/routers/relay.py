@@ -66,6 +66,10 @@ class RelayStartRequest(BaseModel):
     # Phase 13b: RPG mode
     mode: str = Field(default="standard", description="'standard' or 'rpg'")
     participants: list[dict] | None = Field(default=None, description="RPG participant configs [{name, model, role}]")
+    # Phase 14-B: experiment forking
+    initial_history: list[dict] | None = Field(default=None, description="Pre-seeded turns from a forked experiment")
+    parent_experiment_id: str | None = Field(default=None, description="ID of the source experiment being forked")
+    fork_at_round: int | None = Field(default=None, description="Round count at which the fork occurred")
 
 
 class RelayStartResponse(BaseModel):
@@ -145,6 +149,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
         enable_verdict=body.enable_verdict,
         mode=body.mode,
         participants_json=participants_json,
+        parent_experiment_id=body.parent_experiment_id,
+        fork_at_round=body.fork_at_round,
     )
 
     cancel_event = asyncio.Event()
@@ -226,6 +232,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
             enable_memory=body.enable_memory,
             observer_model=body.observer_model,
             observer_interval=body.observer_interval,
+            initial_history=body.initial_history,
+            parent_experiment_id=body.parent_experiment_id,
         )
     )
     _running_relays[match_id] = (task, cancel_event, resume_event)

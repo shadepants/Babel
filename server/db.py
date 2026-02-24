@@ -216,6 +216,28 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Phase 14-B: experiment forking lineage
+        for col, ddl in [
+            ("parent_experiment_id", "TEXT"),
+            ("fork_at_round", "INTEGER"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} {ddl}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
+        # Phase 14-C: vocabulary cross-run provenance
+        try:
+            await self._db.execute(
+                "ALTER TABLE vocabulary ADD COLUMN origin_experiment_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db:
@@ -246,6 +268,8 @@ class Database:
         enable_verdict: bool = False,
         mode: str = "standard",
         participants_json: str | None = None,
+        parent_experiment_id: str | None = None,
+        fork_at_round: int | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -259,13 +283,15 @@ class Database:
                     system_prompt, rounds_planned, config_json,
                     temperature_a, temperature_b,
                     judge_model, enable_scoring, enable_verdict,
-                    mode, participants_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    mode, participants_json,
+                    parent_experiment_id, fork_at_round)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
                  judge_model, int(enable_scoring), int(enable_verdict),
-                 mode, participants_json),
+                 mode, participants_json,
+                 parent_experiment_id, fork_at_round),
             )
             await self.db.commit()
         return experiment_id
@@ -466,6 +492,39 @@ class Database:
             if row.get("parent_words"):
                 row["parent_words"] = json.loads(row["parent_words"])
         return rows
+
+    async def tag_word_origins(
+        self,
+        experiment_id: str,
+        parent_experiment_id: str,
+    ) -> None:
+        """Mark words in experiment_id that also exist in parent_experiment_id.
+
+        For each word coined in the forked experiment that also appears in the
+        parent, set origin_experiment_id to the parent's ID so the frontend
+        can render an inheritance badge on WordCard.
+        """
+        # Fetch parent word set (case-insensitive)
+        cursor = await self.db.execute(
+            "SELECT LOWER(word) FROM vocabulary WHERE experiment_id = ?",
+            (parent_experiment_id,),
+        )
+        parent_words = {row[0] for row in await cursor.fetchall()}
+        if not parent_words:
+            return
+
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """UPDATE vocabulary
+                   SET origin_experiment_id = ?
+                   WHERE experiment_id = ?
+                     AND LOWER(word) IN ({placeholders})
+                     AND origin_experiment_id IS NULL""".format(
+                    placeholders=",".join("?" for _ in parent_words)
+                ),
+                (parent_experiment_id, experiment_id, *parent_words),
+            )
+            await self.db.commit()
 
     # ── Analytics ─────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import { TheaterCanvas } from '@/components/theater/TheaterCanvas'
 import { ArenaStage } from '@/components/theater/ArenaStage'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { TypewriterText } from '@/components/theater/TypewriterText'
-import type { TurnEvent, ScoreEvent, VocabEvent } from '@/api/types'
+import type { TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
 
 const COLOR_A       = '#F59E0B'
 const COLOR_B       = '#06B6D4'
@@ -34,6 +34,10 @@ export default function Theater() {
   const [dbScores, setDbScores]   = useState<Record<number, ScoreEvent>>({})
   const [dbVerdict, setDbVerdict] = useState<{ winner: string; winner_model: string; reasoning: string } | null>(null)
   const [dbVocab, setDbVocab] = useState<VocabEvent[]>([])
+
+  // Human injection state
+  const [injectText, setInjectText] = useState('')
+  const [injecting, setInjecting] = useState(false)
 
   // Track which speaker is currently "talking" (typewriter active)
   const [talkingSpeaker, setTalkingSpeaker] = useState<string | null>(null)
@@ -151,8 +155,8 @@ export default function Theater() {
   // Tab title — live round counter while running, done indicator when complete
   useEffect(() => {
     const base = 'Babel'
-    if (experiment.status === 'running') {
-      document.title = `\u25CF R.${lastTurn?.round ?? 0} | ${base}`
+    if (experiment.status === 'running' || experiment.status === 'paused') {
+      document.title = `${experiment.status === 'paused' ? '\u23F8' : '\u25CF'} R.${lastTurn?.round ?? 0} | ${base}`
     } else if (experiment.status === 'completed' || experiment.status === 'stopped') {
       document.title = `\u2713 Done | ${base}`
     }
@@ -275,6 +279,24 @@ export default function Theater() {
         />
       </div>
 
+      {/* Observer commentary -- inline centered cards */}
+      {experiment.observers.length > 0 && (
+        <div className="px-4 py-2 space-y-2">
+          {experiment.observers.map((obs: ObserverEvent, i: number) => (
+            <div key={i} className="flex justify-center">
+              <div className="max-w-xl bg-bg-card/60 border border-accent/20 rounded px-4 py-2 text-center">
+                <div className="font-mono text-[10px] text-text-dim/60 uppercase tracking-wider mb-1">
+                  observer &middot; after turn {obs.after_turn}
+                </div>
+                <p className="font-mono text-xs text-text-dim/80 leading-relaxed italic">
+                  {obs.content}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Verdict -- typewriter reveal for the reasoning text */}
       {effectiveVerdict && (
         <div className="px-6 py-4 border-t border-accent/25 bg-bg-card/60">
@@ -301,20 +323,77 @@ export default function Theater() {
         </div>
       )}
 
-      {experiment.status === 'running' && (
-        <div className="px-4 py-2 border-t border-border-custom text-center">
-          <Button
-            variant="outline"
-            className="font-mono text-xs text-danger border-danger/30 hover:bg-danger/10"
-            onClick={async () => {
-              if (matchId) {
-                try { await api.stopExperiment(matchId) }
-                catch (err) { console.error('Failed to stop:', err) }
-              }
-            }}
-          >
-            Stop Experiment
-          </Button>
+      {(experiment.status === 'running' || experiment.status === 'paused') && (
+        <div className="px-4 py-2 border-t border-border-custom space-y-2">
+          {/* Human injection textarea — only visible when paused */}
+          {experiment.status === 'paused' && (
+            <div className="flex gap-2 items-end">
+              <textarea
+                className="flex-1 font-mono text-xs bg-bg-card border border-accent/30 rounded p-2 text-text-primary resize-none focus:outline-none focus:border-accent/60"
+                rows={2}
+                placeholder="Type a message to inject as a human turn..."
+                value={injectText}
+                onChange={(e) => setInjectText(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                className="font-mono text-xs text-accent border-accent/30 hover:bg-accent/10 shrink-0"
+                disabled={!injectText.trim() || injecting}
+                onClick={async () => {
+                  if (!matchId || !injectText.trim()) return
+                  setInjecting(true)
+                  try {
+                    await api.injectTurn(matchId, injectText.trim())
+                    setInjectText('')
+                  } catch (err) { console.error('Failed to inject:', err) }
+                  finally { setInjecting(false) }
+                }}
+              >
+                {injecting ? 'Injecting...' : 'Inject'}
+              </Button>
+            </div>
+          )}
+          <div className="flex justify-center gap-2">
+            {experiment.status === 'running' ? (
+              <Button
+                variant="outline"
+                className="font-mono text-xs text-warning border-warning/30 hover:bg-warning/10"
+                onClick={async () => {
+                  if (matchId) {
+                    try { await api.pauseExperiment(matchId) }
+                    catch (err) { console.error('Failed to pause:', err) }
+                  }
+                }}
+              >
+                Pause
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="font-mono text-xs text-accent border-accent/30 hover:bg-accent/10"
+                onClick={async () => {
+                  if (matchId) {
+                    try { await api.resumeExperiment(matchId) }
+                    catch (err) { console.error('Failed to resume:', err) }
+                  }
+                }}
+              >
+                Resume
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="font-mono text-xs text-danger border-danger/30 hover:bg-danger/10"
+              onClick={async () => {
+                if (matchId) {
+                  try { await api.stopExperiment(matchId) }
+                  catch (err) { console.error('Failed to stop:', err) }
+                }
+              }}
+            >
+              Stop
+            </Button>
+          </div>
         </div>
       )}
 

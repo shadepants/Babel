@@ -3,24 +3,30 @@ import type { VocabWord } from '@/api/types'
 
 interface WordCardProps {
   word: VocabWord
-  modelA: string   // display name for color mapping
-  modelB: string
+  /** name -> hex color map from buildParticipantColorMap */
+  colorMap: Record<string, string>
+  onSelect?: (word: VocabWord) => void
 }
 
 /**
  * Displays an invented word with its meaning, category, and metadata.
- * Color-coded by which model coined it (indigo=A, amber=B).
+ * Color is driven by colorMap so it works for N participants (not just A/B).
  */
-export function WordCard({ word, modelA, modelB }: WordCardProps) {
-  const isModelA = word.coined_by === modelA
-  const color = isModelA ? 'model-a' : 'model-b'
-  const borderColor = isModelA ? 'border-model-a/30' : 'border-model-b/30'
-  const badgeBg = isModelA
-    ? 'bg-model-a/20 text-model-a'
-    : 'bg-model-b/20 text-model-b'
+export function WordCard({ word, colorMap, onSelect }: WordCardProps) {
+  const color = colorMap[word.coined_by] ?? '#888'
+  // Hex alpha suffixes: 4d ~= 30%, 33 ~= 20%
+  const borderColor = `${color}4d`
+  const badgeBg = `${color}33`
 
   return (
-    <div className={cn('rounded-lg border bg-bg-card p-4 animate-fade-in', borderColor)}>
+    <div
+      className={cn(
+        'rounded-lg border bg-bg-card p-4 animate-fade-in',
+        onSelect && 'cursor-pointer hover:border-opacity-70 transition-colors',
+      )}
+      style={{ borderColor }}
+      onClick={onSelect ? () => onSelect(word) : undefined}
+    >
       {/* Word name */}
       <div className="flex items-center gap-2 mb-2">
         <span className="font-mono text-lg font-bold text-text-primary">
@@ -42,14 +48,17 @@ export function WordCard({ word, modelA, modelB }: WordCardProps) {
 
       {/* Metadata row */}
       <div className="flex items-center justify-between text-xs text-text-dim">
-        <span className={cn('px-2 py-0.5 rounded-full', badgeBg)}>
+        <span
+          className="px-2 py-0.5 rounded-full text-xs font-mono"
+          style={{ backgroundColor: badgeBg, color }}
+        >
           {word.coined_by}
         </span>
         <div className="flex items-center gap-3">
           <span>Round {word.coined_round}</span>
           {word.usage_count > 1 && (
-            <span className={cn('text-xs', color === 'model-a' ? 'text-model-a' : 'text-model-b')}>
-              {word.usage_count}x used
+            <span className="text-xs font-mono" style={{ color }}>
+              {word.usage_count}&times; used
             </span>
           )}
         </div>
@@ -58,7 +67,9 @@ export function WordCard({ word, modelA, modelB }: WordCardProps) {
       {/* Parent words */}
       {word.parent_words && word.parent_words.length > 0 && (
         <div className="mt-2 pt-2 border-t border-border-custom flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] text-text-dim uppercase tracking-wider">from:</span>
+          <span className="text-[10px] text-text-dim uppercase tracking-wider">
+            from:
+          </span>
           {word.parent_words.map((parent) => (
             <span
               key={parent}

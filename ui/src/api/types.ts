@@ -16,6 +16,8 @@ export interface RelayStartRequest {
   enable_scoring?: boolean;
   enable_verdict?: boolean;
   enable_memory?: boolean;
+  observer_model?: string | null;
+  observer_interval?: number;
 }
 
 /** POST /api/relay/start response */
@@ -118,6 +120,28 @@ export interface VerdictEvent extends BaseSSEEvent {
 }
 
 /** Discriminated union — switch on `type` for type narrowing */
+/** relay.paused — relay is waiting at a checkpoint */
+export interface PausedEvent extends BaseSSEEvent {
+  type: 'relay.paused';
+  round: number;
+}
+
+/** relay.resumed — relay has resumed after a pause */
+export interface ResumedEvent extends BaseSSEEvent {
+  type: 'relay.resumed';
+  round: number;
+}
+
+/** relay.observer — neutral observer commentary */
+export interface ObserverEvent extends BaseSSEEvent {
+  type: 'relay.observer';
+  speaker: 'Observer';
+  model: string;
+  content: string;
+  after_turn: number;
+}
+
+/** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
   | TurnEvent
@@ -126,7 +150,10 @@ export type RelaySSEEvent =
   | ErrorEvent
   | VocabEvent
   | ScoreEvent
-  | VerdictEvent;
+  | VerdictEvent
+  | PausedEvent
+  | ResumedEvent
+  | ObserverEvent;
 
 // ── Preset Types ─────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
-&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
+﻿&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-23 (session 6 &mdash; Phase 11 complete: remix, nickname, swap, timestamps, vocab linking, tab title)
+**Last Updated:** 2026-02-23 (session 8 &mdash; Phase 14+15 plan written; Phase 12+13 uncommitted)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -161,23 +161,43 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - [x] **Remix button** &mdash; Gallery + Analytics buttons navigate to `/configure/:presetId?remix=<id>`; Configure reads `?remix=` param, fetches that experiment, pre-fills models/temps/seed
 - [x] **effectiveVocab pattern** &mdash; Theater.tsx: SSE vocab events preferred, falls back to DB `api.getVocabulary()` for completed experiments; maps VocabWord &rarr; VocabEvent shape
 
-### Next Up
-- [ ] **Browser smoke test** &mdash; Last-Event-ID reconnect: disable network mid-experiment, re-enable &rarr; confirm only missed turns replay
-- [ ] **Visual smoke tests** &mdash; Gallery sprites, Analytics sprites, Configure preset border, BABEL glitch on turn arrival
+### Phase 12: Dictionary Revamp (DONE)
+- [x] **Stats row** &mdash; word count, unique speakers, vocabulary growth rate (words/round), most active speaker
+- [x] **Search/filter/sort** &mdash; Shadcn Combobox (prefix match), Checkbox filter by speaker origin (A/B/Human), Sort dropdown (frequency/recency/alphabetical)
+- [x] **Constellation upgrades** &mdash; D3 force-directed graph (forces: repulsion, link, center); hoverable nodes; click node &rarr; highlight connected vocabulary
+- [x] **Swimlane timeline** &mdash; horizontal bar chart (words by round); hover bar &rarr; highlight words in that round; supports Human-origin words
 
-### Roadmap &mdash; Phases 12&ndash;16
-Full specs in `~/.claude/plans/wise-sleeping-key.md`
+### Phase 13: Interactive Experiments (DONE)
+- [x] **Pause/Resume** &mdash; `resume_event: asyncio.Event` per relay (initially set, pause clears, resume sets); checkpoints before each turn; history refresh from DB on resume; SSE `PAUSED`/`RESUMED` events
+- [x] **Human Turn Injection** &mdash; POST `/api/relay/{match_id}/inject` endpoint; validates paused state; saves to DB with `speaker="Human"`; republishes as `relay.turn` SSE event; no DB schema changes
+- [x] **Observer/Narrator Model** &mdash; optional third model; configurable interval (1-10 turns); fire-and-forget `_observe()` task; fires every N turns; inline card rendering in Theater (centered, full-width)
+- [x] **New SSE events** &mdash; `RelayEvent.PAUSED`, `RelayEvent.RESUMED`, `RelayEvent.OBSERVER` constants
+- [x] **3-tuple registry** &mdash; `_running_relays` extended from (task, cancel_event) to (task, cancel_event, resume_event)
+- [x] **Configure form** &mdash; observer model dropdown (default "none"), observer interval slider (1-10, default 3)
+- [x] **Theater controls** &mdash; Pause/Resume buttons (yellow/accent), Inject textarea (visible when paused), Inject button, Stop button; observer events render inline
+- [x] **TypeScript check** &mdash; `tsc --noEmit` exits 0, zero errors
+
+### Next Up
+- [ ] **COMMIT FIRST** &mdash; Phase 12+13 working-tree changes uncommitted (feat(phase-12+13) needed before Phase 14)
+- [ ] **14-A** &mdash; VocabBurstChart.tsx: D3 per-round coinage bars + burst detection in Dictionary
+- [ ] **14-B** &mdash; Experiment forking: DB migrations, initial_history in relay, fork button in Theater, Configure fork banner
+- [ ] **14-C** &mdash; Cross-run provenance: origin_experiment_id on vocabulary, tag_word_origins(), WordCard badge
+- [ ] **15-A** &mdash; N-way conversations: N-agent relay loop, N columns in Theater, N-model selector in Configure
+- [ ] **15-B** &mdash; Branch tree: /tree/:id page, D3 BranchTree component, lineage endpoint
+
+### Roadmap &mdash; Phases 14&ndash;16
+Full specs in `~/.claude/plans/sunny-chasing-sutton.md` (comprehensive Phase 14+15 plan, session 8)
 
 | Phase | Theme | Effort | Key Features |
 |-------|-------|--------|--------------|
 | **~~11~~** | ~~Quick Wins &amp; Polish~~ | ~~done~~ | ~~Remix button, tab title, hover timestamps, vocab linking, model swap, nickname~~ |
-| **12** | Spectator &amp; Shareability | 2&ndash;3 d | `/watch/:id` spectator mode, Share button, highlight reel, speed control mid-run |
-| **13** | Interactive Experiments | 3&ndash;4 d | Pause/resume, inject human turn, observer/narrator model (3rd column) |
+| **~~12~~** | ~~Dictionary Revamp~~ | ~~done~~ | ~~Stats bar, search/filter/sort, constellation upgrades, swimlane timeline~~ |
+| **~~13~~** | ~~Interactive Experiments~~ | ~~done~~ | ~~Pause/resume, inject human turn, observer/narrator model~~ |
 | **14** | Cross-Experiment Intelligence | 4&ndash;5 d | Vocab burst timeline, experiment forking, cross-run vocabulary provenance |
 | **15** | New Conversation Structures | 5&ndash;7 d | N-way conversations (3&ndash;4 models), conversation branch tree (D3) |
 | **16** | Depth &amp; Legacy | 1&ndash;3 wk | Conlang export, AI documentary, persistent personas, public deploy |
 
-**Recommended next:** Phase 12 (shareability, highest viral leverage) &rarr; Phase 13b (Virtual Tabletop RPG mode)
+**Recommended next:** Phase 14 (cross-exp intelligence, build lore) &rarr; Phase 15 (N-way conversations)
 
 ### Tracked Tasks
  (tasks/ directory)
@@ -212,7 +232,7 @@ Babel/
       syntax-virus.yaml        Models add mandatory formatting rules; break one = language degrades
       taboo-artifact.yaml      Describe a common object without obvious words (The Artifact)
     routers/
-      relay.py                 POST /start (+ preset resolution + model validation), GET /stream (SSE), GET /models/status
+      relay.py                 POST /start (+ preset resolution + model validation), GET /stream (SSE), GET /models/status, POST /pause, POST /resume, POST /inject
       experiments.py           GET list/detail/vocabulary/stats/turns/radar
       presets.py               GET list/detail
       tournaments.py           POST /start, GET list/detail/leaderboard/stream
@@ -220,9 +240,9 @@ Babel/
     src/
       pages/
         SeedLab.tsx            Landing page &mdash; preset card grid + tag filter + custom card
-        Configure.tsx          Experiment config &mdash; per-model temp sliders, estimate bar, memory toggle, launch
-        Theater.tsx            Live-view + DB fallback &mdash; SSE stream, sprites, verdict, glitch dispatch
-        Dictionary.tsx         WordCard grid + D3 constellation
+        Configure.tsx          Experiment config &mdash; per-model temp sliders, estimate bar, memory toggle, observer settings, launch
+        Theater.tsx            Live-view + DB fallback &mdash; SSE stream, sprites, verdict, pause/resume/inject controls, observer inline cards
+        Dictionary.tsx         WordCard grid + D3 constellation, stats bar, search/filter/sort, swimlane timeline
         Gallery.tsx            Past experiments log rows; mini sprites + preset stripe
         Analytics.tsx          Per-experiment stats, D3 charts, JSON/markdown/CSV export; sprites in header
         Arena.tsx              Tournament setup &mdash; model multi-select, launcher
@@ -237,10 +257,10 @@ Babel/
                                ScrambleText, NoiseOverlay, HudBrackets, ErrorBoundary
         ui/                    9 Shadcn primitives
       api/
-        types.ts               All REST + SSE types including tournament + radar types
-        client.ts              fetchJson + api object (15+ endpoints)
+        types.ts               All REST + SSE types including tournament + radar types + pause/resume/inject/observer types
+        client.ts              fetchJson + api object (18+ endpoints including pause/resume/inject)
         sse.ts                 useSSE hook (EventSource, typed events)
-        hooks.ts               useExperimentState (event sourcing)
+        hooks.ts               useExperimentState (event sourcing, pause/resume/observer state)
       lib/
         presetColors.ts        PRESET_GLOW map + getPresetGlow() helper (shared by ArenaStage, Gallery, Configure)
         format.ts              formatDuration helper
@@ -285,4 +305,7 @@ Set-Location ui && .\run_npm.cmd dev
 - **Preset colors:** `ui/src/lib/presetColors.ts` is the single source of truth for `PRESET_GLOW` map and `getPresetGlow()`. ArenaStage.tsx no longer has its own copy. Gallery + Configure import from here. When adding a new preset YAML, add its color here too.
 - **BABEL glitch event:** Theater dispatches `window.dispatchEvent(new CustomEvent('babel-glitch'))` on each live turn arrival. Layout.tsx listens for it and fires `runGlitch()` immediately (clears pending schedule first). This is a decoupled CustomEvent pattern &mdash; no prop drilling.
 - **Model memory:** `model_memory` table keyed on `(model_a, model_b)` canonical sorted pair. `generate_memory_summary()` is deterministic (vocab-based, no LLM call). `enable_memory` toggle in Configure. Memory injected at experiment start; saved as background task after verdict/completion.
+- **Pause/Resume:** `resume_event` is an asyncio.Event per relay (initially set, pause clears, resume sets). Checkpoints before A and B turns; on resume, history is refreshed from DB. No DB schema changes needed &mdash; pause is transient SSE-only state.
+- **Human turn injection:** Saved to DB with `speaker="Human"`, round inferred. Republished as `relay.turn` SSE event. `build_messages()` treats unknown speakers as "user" role &mdash; no code changes needed.
+- **Observer model:** Optional fire-and-forget background task. Fires every N turns (configurable 1-10). Rendered inline as centered cards in Theater, not as a 3rd column.
 - **Serena regex DOTALL gotcha:** `.*` in Serena replace_content regex (DOTALL mode) matches newlines &mdash; can greedily consume the rest of the file. Use literal mode or specific anchor text instead of `.*` at line boundaries.

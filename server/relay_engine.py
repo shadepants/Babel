@@ -44,6 +44,9 @@ class RelayEvent:
     ERROR = "relay.error"             # Something went wrong
     SCORE = "relay.score"             # Judge scored a turn (async, fire-and-forget)
     VERDICT = "relay.verdict"         # Judge declared final winner
+    PAUSED = "relay.paused"           # Relay yielded at pause checkpoint
+    RESUMED = "relay.resumed"         # Relay continuing after pause
+    OBSERVER = "relay.observer"       # Observer/narrator model commentary
 
 
 # ── Task Exception Logging ──────────────────────────────────────────────
@@ -307,6 +310,45 @@ async def _extract_and_publish_vocab(
         )
 
 
+# ── Observer / Narrator ─────────────────────────────────────────────────
+
+async def _observe(
+    turns: list[dict],
+    observer_model: str,
+    match_id: str,
+    hub: "EventHub",
+) -> None:
+    """Call the observer model with the current transcript and publish commentary."""
+    transcript = "\n\n".join(
+        f"[{'A' if t['speaker'] == 'a' else 'B' if t['speaker'] == 'b' else 'Human'}]: {t['content'][:300]}"
+        for t in turns[-20:]
+    )
+    prompt = (
+        "You are a neutral observer watching an AI conversation unfold. "
+        "In 1-2 sentences, describe what you notice about the dynamics, "
+        "themes, or patterns emerging. Be concise and specific.\n\n"
+        f"Conversation so far:\n{transcript}"
+    )
+    agent = RelayAgent(
+        name="Observer",
+        model=observer_model,
+        temperature=0.5,
+        max_tokens=150,
+        request_timeout=30,
+    )
+    try:
+        content, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        hub.publish(RelayEvent.OBSERVER, {
+            "match_id": match_id,
+            "speaker": "Observer",
+            "model": observer_model,
+            "content": content.strip(),
+            "after_turn": len(turns),
+        })
+    except Exception as exc:
+        logger.warning("Observer call failed for %s: %s", match_id, exc)
+
+
 # ── Main Relay Loop ─────────────────────────────────────────────────────
 
 async def run_relay(
@@ -320,6 +362,9 @@ async def run_relay(
     db: Database,
     turn_delay_seconds: float = 2.0,
     cancel_event: asyncio.Event | None = None,
+    resume_event: asyncio.Event | None = None,
+    observer_model: str | None = None,
+    observer_interval: int = 3,
     preset: str | None = None,
     judge_model: str | None = None,
     enable_scoring: bool = False,
@@ -373,6 +418,22 @@ async def run_relay(
                 logger.info("Relay %s stopped by user after %d rounds", match_id, round_num - 1)
                 return
 
+            # ── Pause checkpoint (before Agent A) ──
+            if resume_event and not resume_event.is_set():
+                hub.publish(RelayEvent.PAUSED, {"match_id": match_id, "round": round_num})
+                await resume_event.wait()
+                # Refresh history from DB to pick up any injected human turns
+                fresh = await db.get_turns(match_id)
+                turns[:] = [
+                    {
+                        "speaker": "a" if t["speaker"] == agent_a.name
+                                   else ("b" if t["speaker"] == agent_b.name else "human"),
+                        "content": t["content"],
+                    }
+                    for t in fresh
+                ]
+                hub.publish(RelayEvent.RESUMED, {"match_id": match_id, "round": round_num})
+
             # ── Agent A's turn ──
             hub.publish(RelayEvent.THINKING, {
                 "match_id": match_id,
@@ -418,6 +479,26 @@ async def run_relay(
             _task_a.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
 
+            # ── Observer after Agent A ──
+            if observer_model and len(turns) % observer_interval == 0:
+                _obs = asyncio.create_task(_observe(turns.copy(), observer_model, match_id, hub))
+                _obs.add_done_callback(_log_task_exception)
+
+            # ── Pause checkpoint (before Agent B) ──
+            if resume_event and not resume_event.is_set():
+                hub.publish(RelayEvent.PAUSED, {"match_id": match_id, "round": round_num})
+                await resume_event.wait()
+                fresh = await db.get_turns(match_id)
+                turns[:] = [
+                    {
+                        "speaker": "a" if t["speaker"] == agent_a.name
+                                   else ("b" if t["speaker"] == agent_b.name else "human"),
+                        "content": t["content"],
+                    }
+                    for t in fresh
+                ]
+                hub.publish(RelayEvent.RESUMED, {"match_id": match_id, "round": round_num})
+
             # ── Agent B's turn ──
             hub.publish(RelayEvent.THINKING, {
                 "match_id": match_id,
@@ -462,6 +543,11 @@ async def run_relay(
             ))
             _task_b.add_done_callback(_log_task_exception)
             await asyncio.sleep(max(0.0, turn_delay_seconds))  # pause so UI animations are visible
+
+            # ── Observer after Agent B ──
+            if observer_model and len(turns) % observer_interval == 0:
+                _obs = asyncio.create_task(_observe(turns.copy(), observer_model, match_id, hub))
+                _obs.add_done_callback(_log_task_exception)
 
             # ── Round complete ──
             hub.publish(RelayEvent.ROUND_COMPLETE, {

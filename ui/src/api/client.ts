@@ -108,6 +108,22 @@ export const api = {
     fetchJson<TurnScoresResponse>(`/api/experiments/${experimentId}/scores`),
 
   /** Stop a running experiment */
+  /** Pause a running experiment between turns */
+  pauseExperiment: (matchId: string) =>
+    fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/pause`, { method: 'POST' }),
+
+  /** Resume a paused experiment */
+  resumeExperiment: (matchId: string) =>
+    fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/resume`, { method: 'POST' }),
+
+  /** Inject a human turn while paused */
+  injectTurn: (matchId: string, content: string) =>
+    fetchJson<{ match_id: string; round: number; status: string }>(`/api/relay/${matchId}/inject`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+
+  /** Stop a running experiment */
   stopExperiment: (matchId: string) =>
     fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/stop`, { method: 'POST' }),
 

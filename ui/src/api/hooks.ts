@@ -7,7 +7,7 @@
  * automatically (backend's include_history=true parameter).
  */
 import { useMemo } from 'react';
-import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent } from './types';
+import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent } from './types';
 
 export interface ExperimentState {
   turns: TurnEvent[];
@@ -17,7 +17,8 @@ export interface ExperimentState {
   currentRound: number;
   totalRounds: number;
   thinkingSpeaker: string | null;
-  status: 'idle' | 'running' | 'completed' | 'error';
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  observers: ObserverEvent[];
   elapsed: number | null;
   errorMessage: string | null;
 }
@@ -35,6 +36,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
       status: 'idle',
       elapsed: null,
       errorMessage: null,
+      observers: [],
     };
 
     for (const event of events) {
@@ -76,6 +78,16 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           break;
         case 'relay.verdict':
           state.verdict = event;
+          break;
+        case 'relay.paused':
+          state.status = 'paused';
+          state.thinkingSpeaker = null;
+          break;
+        case 'relay.resumed':
+          state.status = 'running';
+          break;
+        case 'relay.observer':
+          state.observers.push(event);
           break;
       }
     }

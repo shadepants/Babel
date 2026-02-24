@@ -41,7 +41,7 @@ router = APIRouter(prefix="/relay", tags=["relay"])
 KEEPALIVE_INTERVAL = 15  # seconds
 
 # In-memory registry of running relay tasks and their cancel events
-_running_relays: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
+_running_relays: dict[str, tuple[asyncio.Task, asyncio.Event, asyncio.Event]] = {}
 
 
 # ── Request / Response Models ───────────────────────────────────────────
@@ -61,6 +61,8 @@ class RelayStartRequest(BaseModel):
     enable_scoring: bool = Field(default=DEFAULT_SCORING_ENABLED, description="Fire-and-forget per-turn scoring via judge model")
     enable_verdict: bool = Field(default=DEFAULT_VERDICT_ENABLED, description="Final verdict from judge after all rounds")
     enable_memory: bool = Field(default=False, description="Inject past session vocabulary as memory context")
+    observer_model: str | None = Field(default=None, description="Optional observer/narrator model (None = disabled)")
+    observer_interval: int = Field(default=3, ge=1, le=10, description="Observer fires every N turns")
 
 
 class RelayStartResponse(BaseModel):
@@ -104,6 +106,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
     resolved_judge = body.judge_model or JUDGE_MODEL
     if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
         raise HTTPException(400, f"Judge model '{resolved_judge}' is not in the allowed registry")
+    if body.observer_model and body.observer_model not in _ALLOWED_MODELS:
+        raise HTTPException(400, f"Observer model '{body.observer_model}' is not in the allowed registry")
 
     # Resolve preset if specified (server is authoritative source of truth)
     seed = body.seed
@@ -152,6 +156,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
 
     # Launch relay as background task (doesn't block the response)
     cancel_event = asyncio.Event()
+    resume_event = asyncio.Event()
+    resume_event.set()  # Initially running (not paused)
     task = asyncio.create_task(
         run_relay(
             match_id=match_id,
@@ -164,14 +170,17 @@ async def start_relay(body: RelayStartRequest, request: Request):
             db=db,
             turn_delay_seconds=body.turn_delay_seconds,
             cancel_event=cancel_event,
+            resume_event=resume_event,
             preset=body.preset,
             judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
             enable_scoring=body.enable_scoring,
             enable_verdict=body.enable_verdict,
             enable_memory=body.enable_memory,
+            observer_model=body.observer_model,
+            observer_interval=body.observer_interval,
         )
     )
-    _running_relays[match_id] = (task, cancel_event)
+    _running_relays[match_id] = (task, cancel_event, resume_event)
 
     def _cleanup_task(t: asyncio.Task):
         _running_relays.pop(match_id, None)
@@ -203,9 +212,72 @@ async def stop_relay(match_id: str, request: Request):
             raise HTTPException(404, "Experiment not found")
         raise HTTPException(409, f"Experiment is not running (status: {exp['status']})")
 
-    _task, cancel_event = entry
+    _task, cancel_event, _resume = entry
     cancel_event.set()
     return {"match_id": match_id, "status": "stopping"}
+
+
+@router.post("/{match_id}/pause")
+async def pause_relay(match_id: str):
+    """Pause a running experiment between turns."""
+    entry = _running_relays.get(match_id)
+    if not entry:
+        raise HTTPException(404, "Experiment is not running")
+    _task, _cancel, resume_event = entry
+    resume_event.clear()
+    return {"match_id": match_id, "status": "pausing"}
+
+
+@router.post("/{match_id}/resume")
+async def resume_relay(match_id: str):
+    """Resume a paused experiment."""
+    entry = _running_relays.get(match_id)
+    if not entry:
+        raise HTTPException(404, "Experiment is not running")
+    _task, _cancel, resume_event = entry
+    resume_event.set()
+    return {"match_id": match_id, "status": "running"}
+
+
+class InjectTurnRequest(BaseModel):
+    content: str = Field(..., min_length=1, description="Human turn content to inject")
+
+
+@router.post("/{match_id}/inject")
+async def inject_turn(match_id: str, body: InjectTurnRequest, request: Request):
+    """Inject a human turn while the experiment is paused."""
+    entry = _running_relays.get(match_id)
+    if not entry:
+        raise HTTPException(404, "Experiment is not running")
+    _task, _cancel, resume_event = entry
+    if resume_event.is_set():
+        raise HTTPException(409, "Experiment must be paused before injecting a turn")
+    db = _get_db(request)
+    hub = _get_hub(request)
+
+    # Infer round number from current turn count
+    turns = await db.get_turns(match_id)
+    round_num = len(turns) // 2 + 1
+
+    # Save to DB
+    await db.add_turn(
+        experiment_id=match_id,
+        round_num=round_num,
+        speaker="Human",
+        model="human",
+        content=body.content,
+    )
+
+    # Publish SSE event so the UI shows it immediately
+    from server.relay_engine import RelayEvent
+    hub.publish(RelayEvent.TURN, {
+        "match_id": match_id,
+        "speaker": "Human",
+        "model": "human",
+        "content": body.content,
+        "round": round_num,
+    })
+    return {"match_id": match_id, "round": round_num, "status": "injected"}
 
 
 @router.get("/stream")

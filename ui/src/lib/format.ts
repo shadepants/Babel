@@ -13,3 +13,13 @@ export function formatDuration(seconds: number | null | undefined): string {
   const remM = m % 60
   return remM > 0 ? `${h}h ${remM}m ${rem}s` : `${h}h ${rem}s`
 }
+
+/**
+ * Extract a short display name from a litellm model string.
+ * "anthropic/claude-sonnet-4-20250514" -> "claude-sonnet-4"
+ * "gemini/gemini-2.5-flash"            -> "gemini-2.5-flash"
+ */
+export function modelDisplayName(model: string): string {
+  const after = model.split('/').pop() ?? model
+  return after.replace(/-\d{8}$/, '')
+}

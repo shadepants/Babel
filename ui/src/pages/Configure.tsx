@@ -56,6 +56,10 @@ export default function Configure() {
   // -- Memory --
   const [enableMemory, setEnableMemory] = useState(false)
 
+  // -- Observer --
+  const [observerModel, setObserverModel] = useState<string>('none')
+  const [observerInterval, setObserverInterval] = useState(3)
+
   // Preset defaults — for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperatureA: number; temperatureB: number; maxTokens: number } | null>(null)
   // Suggested model strings from preset (for C3 indicator)
@@ -187,6 +191,7 @@ export default function Configure() {
         enable_verdict: enableVerdict,
         enable_memory: enableMemory,
         ...(judgeModel && judgeModel !== 'auto' ? { judge_model: judgeModel } : {}),
+        ...(observerModel && observerModel !== 'none' ? { observer_model: observerModel, observer_interval: observerInterval } : {}),
       }
       if (!isCustom && presetId) {
         request.preset = presetId
@@ -559,6 +564,46 @@ export default function Configure() {
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
               // inject vocab from past sessions with this model pair
+            </p>
+          </div>
+
+          {/* Observer / Narrator */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// observer</div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                Observer Model
+              </label>
+              <Select value={observerModel} onValueChange={setObserverModel}>
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue placeholder="None (disabled)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="font-mono text-xs">None (disabled)</SelectItem>
+                  {models.map((m) => (
+                    <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {observerModel && observerModel !== 'none' && (
+              <div className="space-y-1.5 pl-4 border-l border-accent/20">
+                <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                  Commentary every <span className="text-accent/60">[{observerInterval}]</span> turns
+                </label>
+                <Slider value={[observerInterval]} onValueChange={(v) => setObserverInterval(v[0])} min={1} max={10} step={1} />
+                <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
+                  <span>1 every turn</span><span>10 every 10</span>
+                </div>
+              </div>
+            )}
+
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // neutral model observes and comments every N turns
             </p>
           </div>
 

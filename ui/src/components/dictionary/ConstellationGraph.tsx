@@ -4,9 +4,11 @@ import type { VocabWord } from '@/api/types'
 
 interface ConstellationGraphProps {
   words: VocabWord[]
-  modelA: string   // display name for color mapping
-  modelB: string
-  onNodeClick?: (word: VocabWord) => void
+  /** name -> hex color map from buildParticipantColorMap */
+  colorMap: Record<string, string>
+  /** When set, dims nodes from other participants to 0.12 opacity */
+  filterParticipant: string | null
+  onSelectWord?: (word: VocabWord) => void
 }
 
 interface SimNode extends d3.SimulationNodeDatum {
@@ -20,42 +22,71 @@ interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   target: string | SimNode
 }
 
-const MODEL_A_COLOR = '#6366f1'  // indigo, matches tailwind model-a
-const MODEL_B_COLOR = '#f59e0b'  // amber, matches tailwind model-b
+/** Expand a convex hull polygon outward from its centroid by `padding` px. */
+function expandPolygon(
+  hull: [number, number][],
+  padding: number,
+): [number, number][] {
+  const cx = hull.reduce((s, p) => s + p[0], 0) / hull.length
+  const cy = hull.reduce((s, p) => s + p[1], 0) / hull.length
+  return hull.map(([x, y]) => {
+    const dx = x - cx
+    const dy = y - cy
+    const len = Math.hypot(dx, dy) || 1
+    return [x + (dx / len) * padding, y + (dy / len) * padding] as [
+      number,
+      number,
+    ]
+  })
+}
+
+/** Build an SVG path string for a circle centred at (cx, cy) with radius r. */
+function circlePath(cx: number, cy: number, r: number): string {
+  return `M${cx - r},${cy}a${r},${r} 0 1,0 ${r * 2},0a${r},${r} 0 1,0-${r * 2},0`
+}
 
 /**
  * D3 force-directed graph showing vocabulary relationships.
  *
- * Uses incremental updates via D3's .data().join() pattern so new words
- * are smoothly added without destroying existing node positions or physics.
- * The simulation is created once and persisted across renders via useRef.
+ * Incremental updates via D3's .data().join() keep existing positions stable
+ * as new words arrive.  Zoom/pan lives on the SVG; a zoom-container <g>
+ * wraps everything so transforms don't affect the SVG bounds.
+ *
+ * Hull regions are redrawn on every simulation tick so they track node
+ * movement.  Colors and filter opacity are driven by refs so they update
+ * without restarting the simulation.
  */
 export function ConstellationGraph({
   words,
-  modelA,
-  modelB,
-  onNodeClick,
+  colorMap,
+  filterParticipant,
+  onSelectWord,
 }: ConstellationGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Persist D3 objects across renders so we don't destroy/rebuild the graph
+  // Persist D3 objects across renders
   const simRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
   const nodeMapRef = useRef<Map<string, SimNode>>(new Map())
   const gLinkRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
   const gNodeRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
   const gLabelRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
+  const gHullRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
 
-  // Stable callback ref so the data-update effect doesn't re-run on callback identity change
-  const onNodeClickRef = useRef(onNodeClick)
-  onNodeClickRef.current = onNodeClick
+  // Live refs — updated every render; read inside D3 callbacks without
+  // needing to restart the simulation when they change.
+  const colorMapRef = useRef(colorMap)
+  colorMapRef.current = colorMap
+  const filterParticipantRef = useRef(filterParticipant)
+  filterParticipantRef.current = filterParticipant
+  const onSelectWordRef = useRef(onSelectWord)
+  onSelectWordRef.current = onSelectWord
 
-  const getColor = useCallback(
-    (word: VocabWord) => word.coined_by === modelA ? MODEL_A_COLOR : MODEL_B_COLOR,
-    [modelA, modelB],
-  )
+  const getColor = useCallback((word: VocabWord) => {
+    return colorMapRef.current[word.coined_by] ?? '#888'
+  }, [])
 
-  // ── One-time init: create SVG groups + simulation (only rebuilds on model identity change) ──
+  // ── One-time init: SVG structure, zoom, simulation ──────────────────────
   useEffect(() => {
     if (!svgRef.current || !containerRef.current) return
 
@@ -66,36 +97,111 @@ export function ConstellationGraph({
     svg.selectAll('*').remove()
     svg.attr('width', width).attr('height', height)
 
-    const gLink = svg.append('g').attr('class', 'links')
-    const gNode = svg.append('g').attr('class', 'nodes')
-    const gLabel = svg.append('g').attr('class', 'labels')
+    // All drawable content lives inside this group so zoom transforms it
+    const g = svg.append('g').attr('class', 'zoom-container')
 
+    // Zoom / pan — wheel to scale, drag to pan
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.25, 5])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform.toString())
+      })
+    svg.call(zoom)
+    // Double-click resets zoom
+    svg.on('dblclick.zoom', () => {
+      svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity)
+    })
+
+    // Layer order: hulls behind links behind nodes behind labels
+    const gHull = g.append('g').attr('class', 'hulls')
+    const gLink = g.append('g').attr('class', 'links')
+    const gNode = g.append('g').attr('class', 'nodes')
+    const gLabel = g.append('g').attr('class', 'labels')
+
+    gHullRef.current = gHull
     gLinkRef.current = gLink
     gNodeRef.current = gNode
     gLabelRef.current = gLabel
 
     const simulation = d3
       .forceSimulation<SimNode, SimLink>([])
-      .force('link', d3.forceLink<SimNode, SimLink>([]).id((d) => d.id).distance(100))
+      .force(
+        'link',
+        d3
+          .forceLink<SimNode, SimLink>([])
+          .id((d) => d.id)
+          .distance(100),
+      )
       .force('charge', d3.forceManyBody().strength(-200))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide<SimNode>().radius((d) => d.r + 6))
+      .force(
+        'collision',
+        d3.forceCollide<SimNode>().radius((d) => d.r + 6),
+      )
 
-    // Tick handler reads from the SVG groups directly — works with any data
     simulation.on('tick', () => {
-      gLink.selectAll<SVGLineElement, SimLink>('line')
+      // ── Standard element position updates ──
+      gLink
+        .selectAll<SVGLineElement, SimLink>('line')
         .attr('x1', (d) => (d.source as SimNode).x!)
         .attr('y1', (d) => (d.source as SimNode).y!)
         .attr('x2', (d) => (d.target as SimNode).x!)
         .attr('y2', (d) => (d.target as SimNode).y!)
 
-      gNode.selectAll<SVGCircleElement, SimNode>('circle')
+      gNode
+        .selectAll<SVGCircleElement, SimNode>('circle')
         .attr('cx', (d) => d.x!)
         .attr('cy', (d) => d.y!)
 
-      gLabel.selectAll<SVGTextElement, SimNode>('text')
+      gLabel
+        .selectAll<SVGTextElement, SimNode>('text')
         .attr('x', (d) => d.x!)
         .attr('y', (d) => d.y!)
+
+      // ── Hull update — runs every tick since node positions change ──
+      const fp = filterParticipantRef.current
+      const nodesByParticipant: Record<string, SimNode[]> = {}
+      for (const n of simulation.nodes()) {
+        const p = n.word.coined_by
+        if (!nodesByParticipant[p]) nodesByParticipant[p] = []
+        nodesByParticipant[p].push(n)
+      }
+
+      // Only draw hulls for the active filter participant (or all if unfiltered)
+      const hullData = Object.entries(nodesByParticipant)
+        .filter(([name]) => !fp || name === fp)
+        .map(([name, nodes]) => {
+          const pts = nodes.map((n) => [n.x!, n.y!] as [number, number])
+          const hull = pts.length >= 3 ? d3.polygonHull(pts) : null
+          const color = colorMapRef.current[name] ?? '#888'
+          return { name, hull, pts, color }
+        })
+
+      gHull
+        .selectAll<SVGPathElement, (typeof hullData)[number]>('path')
+        .data(hullData, (d) => d.name)
+        .join('path')
+        .attr('d', (d) => {
+          if (d.hull) {
+            const expanded = expandPolygon(d.hull, 30)
+            return 'M' + expanded.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L') + 'Z'
+          }
+          // Fallback for 1–2 nodes: draw a circle around their centroid
+          if (!d.pts.length) return ''
+          const cx = d.pts.reduce((s, p) => s + p[0], 0) / d.pts.length
+          const cy = d.pts.reduce((s, p) => s + p[1], 0) / d.pts.length
+          const r =
+            Math.max(30, ...d.pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy))) + 30
+          return circlePath(cx, cy, r)
+        })
+        .attr('fill', (d) => d.color)
+        .attr('fill-opacity', 0.07)
+        .attr('stroke', (d) => d.color)
+        .attr('stroke-width', 1.5)
+        .attr('stroke-opacity', 0.3)
+        .attr('stroke-dasharray', '4 3')
+        .attr('pointer-events', 'none')
     })
 
     simRef.current = simulation
@@ -105,9 +211,9 @@ export function ConstellationGraph({
       simulation.stop()
       simRef.current = null
     }
-  }, [modelA, modelB])
+  }, []) // intentionally empty — uses refs for dynamic values; remounts on unmount only
 
-  // ── Incremental data update: add/update/remove nodes without tearing ──
+  // ── Incremental data update ──────────────────────────────────────────────
   useEffect(() => {
     const simulation = simRef.current
     const gLink = gLinkRef.current
@@ -117,7 +223,6 @@ export function ConstellationGraph({
 
     const existingNodes = nodeMapRef.current
 
-    // Build node list, preserving x/y positions of existing nodes
     const nodes: SimNode[] = words.map((w) => {
       const existing = existingNodes.get(w.word)
       if (existing) {
@@ -135,18 +240,16 @@ export function ConstellationGraph({
     const nodeMap = new Map(nodes.map((n) => [n.id, n]))
     nodeMapRef.current = nodeMap
 
-    // Build links from parent_words
     const links: SimLink[] = words.flatMap((w) =>
       (w.parent_words ?? [])
         .filter((parent) => nodeMap.has(parent))
         .map((parent) => ({ source: parent, target: w.word })),
     )
 
-    // Feed new data to simulation
     simulation.nodes(nodes)
     ;(simulation.force('link') as d3.ForceLink<SimNode, SimLink>).links(links)
 
-    // ── Join links ──
+    // Links
     gLink
       .selectAll<SVGLineElement, SimLink>('line')
       .data(links, (d) =>
@@ -157,7 +260,8 @@ export function ConstellationGraph({
       .attr('stroke-width', 1.5)
       .attr('stroke-opacity', 0.6)
 
-    // ── Join nodes with enter/update/exit transitions ──
+    // Nodes
+    const fp = filterParticipant
     const nodeSel = gNode
       .selectAll<SVGCircleElement, SimNode>('circle')
       .data(nodes, (d) => d.id)
@@ -176,19 +280,24 @@ export function ConstellationGraph({
           exit.call((s) => s.transition().duration(200).attr('r', 0).remove()),
       )
       .attr('fill', (d) => getColor(d.word))
-      .attr('fill-opacity', 0.7)
+      .attr('fill-opacity', (d) =>
+        fp && d.word.coined_by !== fp ? 0.12 : 0.7,
+      )
       .attr('stroke', (d) => getColor(d.word))
       .attr('stroke-width', 2)
-      .on('click', (_event, d) => onNodeClickRef.current?.(d.word))
+      .attr('stroke-opacity', (d) =>
+        fp && d.word.coined_by !== fp ? 0.12 : 1,
+      )
+      .on('click', (_event, d) => onSelectWordRef.current?.(d.word))
 
-    // Tooltips (recreate on each update since word data may have changed)
+    // Tooltips
     nodeSel.select('title').remove()
     nodeSel.append('title').text((d) => {
       const w = d.word
       return `${w.word}${w.meaning ? `: ${w.meaning}` : ''}\nCoined by ${w.coined_by} (Round ${w.coined_round})`
     })
 
-    // Drag behavior
+    // Drag
     const drag = d3
       .drag<SVGCircleElement, SimNode>()
       .on('start', (event, d) => {
@@ -207,7 +316,7 @@ export function ConstellationGraph({
       })
     nodeSel.call(drag)
 
-    // ── Join labels ──
+    // Labels
     gLabel
       .selectAll<SVGTextElement, SimNode>('text')
       .data(nodes, (d) => d.id)
@@ -216,13 +325,30 @@ export function ConstellationGraph({
       .attr('font-size', 11)
       .attr('font-family', 'monospace')
       .attr('fill', '#e2e8f0')
+      .attr('fill-opacity', (d) =>
+        fp && d.word.coined_by !== fp ? 0.12 : 1,
+      )
       .attr('text-anchor', 'middle')
       .attr('dy', (d) => d.r + 14)
       .attr('pointer-events', 'none')
 
-    // Gently reheat — alpha 0.3 gives a soft nudge instead of a violent restart
     simulation.alpha(0.3).restart()
-  }, [words, getColor])
+  }, [words, getColor, filterParticipant])
+
+  // ── Filter-only update: adjust opacity without restarting simulation ────
+  useEffect(() => {
+    const gNode = gNodeRef.current
+    const gLabel = gLabelRef.current
+    if (!gNode || !gLabel) return
+    const fp = filterParticipant
+    gNode
+      .selectAll<SVGCircleElement, SimNode>('circle')
+      .attr('fill-opacity', (d) => (fp && d.word.coined_by !== fp ? 0.12 : 0.7))
+      .attr('stroke-opacity', (d) => (fp && d.word.coined_by !== fp ? 0.12 : 1))
+    gLabel
+      .selectAll<SVGTextElement, SimNode>('text')
+      .attr('fill-opacity', (d) => (fp && d.word.coined_by !== fp ? 0.12 : 1))
+  }, [filterParticipant])
 
   if (words.length < 2) {
     return (
@@ -234,7 +360,10 @@ export function ConstellationGraph({
 
   return (
     <div ref={containerRef} className="w-full h-[500px]">
-      <svg ref={svgRef} className="w-full h-full" />
+      <p className="text-[10px] font-mono text-text-dim/40 mb-1">
+        scroll to zoom &nbsp;&middot;&nbsp; drag to pan &nbsp;&middot;&nbsp; double-click to reset
+      </p>
+      <svg ref={svgRef} className="w-full h-full border border-border-custom/20 rounded" />
     </div>
   )
 }

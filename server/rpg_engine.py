@@ -328,7 +328,11 @@ async def run_rpg_match(
 
     except asyncio.CancelledError:
         logger.info("RPG %s task cancelled", match_id)
-        await db.update_experiment_status(match_id, "stopped")
+        try:
+            await db.update_experiment_status(match_id, "stopped")
+            # Preserve rpg_state on forced cancel -- allows recovery on next startup
+        except Exception as _db_err:
+            logger.debug("RPG %s: DB unavailable during cancel cleanup: %s", match_id, _db_err)
     except Exception as e:
         logger.error("RPG engine failed for %s: %s", match_id, e, exc_info=True)
         hub.publish(RelayEvent.ERROR, {

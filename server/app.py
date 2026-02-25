@@ -63,16 +63,24 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Shutdown ──
-    # Graceful shutdown: signal running relay tasks to stop cleanly before DB closes
+    # Graceful shutdown: signal running relay/RPG tasks to stop, then drain before DB closes
     from server.routers.relay import _running_relays
     if _running_relays:
         logger.info("Shutdown: signaling %d active session(s) to stop", len(_running_relays))
+        tasks_to_drain: list[asyncio.Task] = []
         for _mid, (_task, cancel_ev, _resume) in list(_running_relays.items()):
             cancel_ev.set()
-        
-        # Give in-flight LLM calls and DB writes significant time to settle (Fix #2)
-        logger.info("Shutdown: waiting up to 30s for tasks to settle...")
-        await asyncio.sleep(30.0)
+            tasks_to_drain.append(_task)
+        logger.info("Shutdown: waiting up to 30s for %d task(s) to finish...", len(tasks_to_drain))
+        _done, _pending = await asyncio.wait(tasks_to_drain, timeout=30.0)
+        if _pending:
+            logger.warning(
+                "Shutdown: %d task(s) still running after 30s, force-cancelling", len(_pending)
+            )
+            for t in _pending:
+                t.cancel()
+            await asyncio.gather(*_pending, return_exceptions=True)
+        logger.info("Shutdown: all session tasks settled")
 
     # Final wait for all fire-and-forget tasks (Scoring, Vocab, Summaries)
     if hasattr(app.state, "background_tasks") and app.state.background_tasks:

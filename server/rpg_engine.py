@@ -225,7 +225,16 @@ async def run_rpg_match(
                     world_bible=world_bible
                 )
 
-                content, latency, tokens = await call_model(agent, messages)
+                _model_task = asyncio.create_task(call_model(agent, messages))
+                if cancel_event:
+                    _cw = asyncio.create_task(cancel_event.wait())
+                    await asyncio.wait({_model_task, _cw}, return_when=asyncio.FIRST_COMPLETED)
+                    _cw.cancel()
+                    if cancel_event.is_set():
+                        _model_task.cancel()
+                        await asyncio.gather(_model_task, return_exceptions=True)
+                        raise asyncio.CancelledError()
+                content, latency, tokens = await _model_task
                 turns.append({"speaker": actor["name"], "content": content})
 
                 turn_id = await db.add_turn(

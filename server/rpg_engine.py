@@ -228,8 +228,11 @@ async def run_rpg_match(
                 _model_task = asyncio.create_task(call_model(agent, messages))
                 if cancel_event:
                     _cw = asyncio.create_task(cancel_event.wait())
-                    await asyncio.wait({_model_task, _cw}, return_when=asyncio.FIRST_COMPLETED)
-                    _cw.cancel()
+                    try:
+                        await asyncio.wait({_model_task, _cw}, return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        _cw.cancel()
+                        await asyncio.gather(_cw, return_exceptions=True)
                     if cancel_event.is_set():
                         _model_task.cancel()
                         await asyncio.gather(_model_task, return_exceptions=True)
@@ -340,7 +343,7 @@ async def run_rpg_match(
         try:
             await db.update_experiment_status(match_id, "stopped")
             # Preserve rpg_state on forced cancel -- allows recovery on next startup
-        except Exception as _db_err:
+        except RuntimeError as _db_err:
             logger.debug("RPG %s: DB unavailable during cancel cleanup: %s", match_id, _db_err)
     except Exception as e:
         logger.error("RPG engine failed for %s: %s", match_id, e, exc_info=True)

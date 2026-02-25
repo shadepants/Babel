@@ -4,6 +4,9 @@
 
 # Database
 .babel_data/
+*.db
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/
@@ -13,6 +16,13 @@ __pycache__/
 # Node (for ui/ later)
 node_modules/
 dist/
+
+# Build cache
+.vite/
+
+# Logs
+*.log
+.playwright-mcp/
 
 # IDE
 .vscode/

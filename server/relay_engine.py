@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -122,6 +123,27 @@ def track_task(task: asyncio.Task, background_tasks: set[asyncio.Task]) -> None:
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
     task.add_done_callback(_log_task_exception)
+
+
+# -- Background Task Concurrency ----------------------------------------------
+
+# Non-retryable litellm errors: config/auth failures that retrying won't fix
+_LITELLM_NON_RETRYABLE = (
+    litellm.AuthenticationError,
+    litellm.NotFoundError,
+    litellm.BadRequestError,
+)
+
+# Global semaphore: limits concurrent background work (vocab, scoring, summaries)
+# across all sessions. Prevents slow provider calls or DB pressure from growing
+# unbounded during long multi-session runs.
+_BG_SEMAPHORE = asyncio.Semaphore(8)
+
+
+async def _bg_task(coro) -> None:  # type: ignore[type-arg]
+    """Gate a background coroutine through the shared concurrency semaphore."""
+    async with _BG_SEMAPHORE:
+        await coro
 
 
 # -- JSON Parse Helpers -------------------------------------------------------
@@ -328,25 +350,30 @@ async def call_model(
     agent: RelayAgent,
     messages: list[dict],
     max_retries: int = 2,
+    match_id: str | None = None,
 ) -> tuple[str, float, int | None]:
     """Call an LLM with full conversation history.
 
     Returns (content, latency_seconds, token_count).
-    Retries transient failures with exponential backoff.
-    Guards against null content (safety filters / empty completions).
+    Non-retryable errors (4xx auth/config) surface immediately.
+    Transient failures retry with exponential backoff + jitter.
+    Hard asyncio.wait_for outer timeout guards against provider hangs.
     """
     last_exc: Exception | None = None
     for attempt in range(max_retries + 1):
         t0 = time.time()
         try:
             model_to_use, extra = _get_fallback(agent.model, attempt)
-            response = await litellm.acompletion(
-                model=model_to_use,
-                messages=messages,
-                max_tokens=agent.max_tokens,
-                temperature=agent.temperature,
-                request_timeout=agent.request_timeout,
-                **extra,
+            response = await asyncio.wait_for(
+                litellm.acompletion(
+                    model=model_to_use,
+                    messages=messages,
+                    max_tokens=agent.max_tokens,
+                    temperature=agent.temperature,
+                    request_timeout=agent.request_timeout,
+                    **extra,
+                ),
+                timeout=agent.request_timeout + 5,
             )
             latency = time.time() - t0
             content = response.choices[0].message.content or "[NO OUTPUT]"
@@ -359,15 +386,17 @@ async def call_model(
             else:
                 token_count = None
             return content, latency, token_count
+        except _LITELLM_NON_RETRYABLE:
+            raise
         except Exception as e:
             last_exc = e
             latency = time.time() - t0
             logger.warning(
-                "Model %s attempt %d/%d failed (%.1fs): %s",
-                agent.model, attempt + 1, max_retries + 1, latency, e,
+                "[%s] Model %s attempt %d/%d failed (%.1fs): %s",
+                match_id or "?", agent.model, attempt + 1, max_retries + 1, latency, e,
             )
             if attempt < max_retries:
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2 ** attempt + random.uniform(0, 1))
     raise last_exc  # type: ignore[misc]
 
 
@@ -668,7 +697,7 @@ async def run_relay(
                     cold_context=cold_context,
                     world_bible=world_bible
                 )
-                content, latency, tokens = await call_model(agent, messages)
+                content, latency, tokens = await call_model(agent, messages, match_id=match_id)
 
                 turns.append({"speaker": agent.name, "content": content})
                 turn_id = await db.add_turn(
@@ -693,17 +722,17 @@ async def run_relay(
 
                 if enable_scoring and judge_model and turn_id:
                     _score_task = asyncio.create_task(
-                        score_turn(turn_id, content, judge_model, match_id, hub, db)
+                        _bg_task(score_turn(turn_id, content, judge_model, match_id, hub, db))
                     )
                     if background_tasks is not None:
                         track_task(_score_task, background_tasks)
                     else:
                         _score_task.add_done_callback(_log_task_exception)
 
-                _vocab_task = asyncio.create_task(_extract_and_publish_vocab(
+                _vocab_task = asyncio.create_task(_bg_task(_extract_and_publish_vocab(
                     content, agent.name, round_num, match_id, hub, db, known_words,
                     preset=preset,
-                ))
+                )))
                 if background_tasks is not None:
                     track_task(_vocab_task, background_tasks)
                 else:
@@ -711,7 +740,7 @@ async def run_relay(
 
                 # Phase 17: Update layered context asynchronously every 2 rounds
                 if round_num % 2 == 0 and agent_idx == len(agents) - 1:
-                    _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
+                    _summarize_task = asyncio.create_task(_bg_task(update_layered_context(match_id, db)))
                     if background_tasks is not None:
                         track_task(_summarize_task, background_tasks)
                     else:
@@ -779,7 +808,7 @@ async def run_relay(
 
         if enable_verdict and judge_model:
             _verdict_task = asyncio.create_task(
-                final_verdict(match_id, turns, agents, judge_model, hub, db)
+                _bg_task(final_verdict(match_id, turns, agents, judge_model, hub, db))
             )
             if background_tasks is not None:
                 track_task(_verdict_task, background_tasks)
@@ -792,7 +821,7 @@ async def run_relay(
                 if summary:
                     await db.create_memory(agents[0].model, agents[1].model, match_id, summary)
                     logger.info("Memory saved for %s: %.80s", match_id, summary)
-            _mem_task = asyncio.create_task(_save_memory())
+            _mem_task = asyncio.create_task(_bg_task(_save_memory()))
             if background_tasks is not None:
                 track_task(_mem_task, background_tasks)
             else:

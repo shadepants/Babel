@@ -20,6 +20,7 @@ from server.relay_engine import (
     PersonaRecord,
     RelayAgent,
     RelayEvent,
+    _bg_task,
     call_model,
     build_messages,
     check_pressure_valve,
@@ -225,7 +226,7 @@ async def run_rpg_match(
                     world_bible=world_bible
                 )
 
-                _model_task = asyncio.create_task(call_model(agent, messages))
+                _model_task = asyncio.create_task(call_model(agent, messages, match_id=match_id))
                 if cancel_event:
                     _cw = asyncio.create_task(cancel_event.wait())
                     try:
@@ -260,10 +261,10 @@ async def run_rpg_match(
                     "turn_id": turn_id,
                 })
 
-                _vocab_task = asyncio.create_task(_extract_and_publish_vocab(
+                _vocab_task = asyncio.create_task(_bg_task(_extract_and_publish_vocab(
                     content, actor["name"], round_num, match_id, hub, db, set(),
                     preset=preset,
-                ))
+                )))
                 if background_tasks is not None:
                     track_task(_vocab_task, background_tasks)
                 else:
@@ -271,7 +272,7 @@ async def run_rpg_match(
 
                 # Phase 17: Update layered context asynchronously every 2 rounds
                 if round_num % 2 == 0 and actor_idx == len(participants) - 1:
-                    _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
+                    _summarize_task = asyncio.create_task(_bg_task(update_layered_context(match_id, db)))
                     if background_tasks is not None:
                         track_task(_summarize_task, background_tasks)
                     else:
@@ -330,7 +331,7 @@ async def run_rpg_match(
         # Save campaign memory for future sessions
         if dm_model:
             _mem_task = asyncio.create_task(
-                _save_rpg_memory(match_id, db, dm_model, preset_key),
+                _bg_task(_save_rpg_memory(match_id, db, dm_model, preset_key)),
                 name=f"rpg_memory_{match_id}",
             )
             if background_tasks is not None:

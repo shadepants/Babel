@@ -273,6 +273,48 @@ async def final_verdict(
         logger.warning("Verdict failed for %s: %s", match_id, exc)
 
 
+async def check_pressure_valve(
+    match_id: str,
+    turns: list[dict],
+    judge_model: str,
+) -> str | None:
+    """Detect if adversarial models are 'agreeing too much' and return an intervention.
+
+    Returns intervention text if drift is detected, else None.
+    """
+    if len(turns) < 4:
+        return None
+
+    # Focus on the last 4 turns
+    transcript = "\n".join([f"[{t['speaker']}]: {t['content'][:300]}" for t in turns[-4:]])
+    
+    prompt = (
+        "You are a narrative stability monitor. Analyze this adversarial AI conversation. "
+        "Are the models abandoning their conflicting goals and becoming too cooperative or friendly? "
+        "If YES, provide a 1-sentence 'System Intervention' that introduces environmental stress or "
+        "forced scarcity to reignite the conflict (e.g., 'The oxygen levels drop; only one can survive'). "
+        "If NO, return 'STABLE'.\n\n"
+        f"Transcript:\n{transcript}"
+    )
+    
+    agent = RelayAgent(
+        name="monitor",
+        model=judge_model,
+        temperature=0.3,
+        max_tokens=100,
+        request_timeout=20,
+    )
+    
+    try:
+        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        if "STABLE" in raw.upper():
+            return None
+        return raw.strip()
+    except Exception as exc:
+        logger.warning("Pressure valve check failed: %s", exc)
+        return None
+
+
 # -- LLM Call with Retry ------------------------------------------------------
 
 async def call_model(
@@ -657,6 +699,33 @@ async def run_relay(
                 if round_num % 2 == 0 and agent_idx == len(agents) - 1:
                     _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
                     _summarize_task.add_done_callback(_log_task_exception)
+
+                # Phase 17: Zero-Sum Pressure Valve (E3)
+                # Check for cooperative drift every 3 rounds in adversarial presets
+                if judge_model and round_num % 3 == 0 and agent_idx == len(agents) - 1:
+                    # We assume 'adversarial' is in the preset tags or name
+                    if preset and any(x in preset.lower() for x in ("debate", "conflict", "dilemma", "adversarial")):
+                        intervention = await check_pressure_valve(match_id, turns, judge_model)
+                        if intervention:
+                            logger.info("Pressure valve TRIGGERED for %s: %s", match_id, intervention)
+                            # Inject as a neutral System turn
+                            turns.append({"speaker": "", "content": f"[SYSTEM INTERVENTION]: {intervention}"})
+                            await db.add_turn(
+                                experiment_id=match_id,
+                                round_num=round_num,
+                                speaker="System",
+                                model="monitor",
+                                content=intervention
+                            )
+                            hub.publish(RelayEvent.TURN, {
+                                "match_id": match_id,
+                                "round": round_num,
+                                "speaker": "System",
+                                "model": "monitor",
+                                "content": f"// INTERVENTION: {intervention}",
+                                "latency_s": 0,
+                                "turn_id": 0
+                            })
 
                 await asyncio.sleep(max(0.0, turn_delay_seconds))
 

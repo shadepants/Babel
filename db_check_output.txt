@@ -1,0 +1,15 @@
+Starting database check...
+Connected to database
+Found 6 tables
+  - experiments
+  - turns
+  - sqlite_sequence
+  - vocabulary
+  - tournaments
+  - tournament_matches
+Error: no such column: match_id
+Traceback (most recent call last):
+  File "C:\Users\User\Repositories\Babel\debug_db.py", line 24, in <module>
+    cursor.execute('SELECT id, match_id FROM experiments ORDER BY created_at DESC LIMIT 1')
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such column: match_id

@@ -1,0 +1,115 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\User\\Repositories\\Babel']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [25520] using WatchFiles
+INFO:     Started server process [1088]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_check_recent.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1088]
+INFO:     Started server process [3264]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_runner_check.py'. Reloading...
+meError('Database not connected. Call connect() first.')>
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Repositories\Babel\server\rpg_engine.py", line 210, in run_rpg_match
+    content, latency, tokens = await call_model(agent, messages)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\server\relay_engine.py", line 293, in call_model
+    response = await litellm.acompletion(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\utils.py", line 1862, in wrapper_async
+    result = await original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\main.py", line 612, in acompletion
+    response = await init_response
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 307, in async_completion
+    response = await self._make_common_async_call(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 175, in _make_common_async_call
+    response = await async_httpx_client.post(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\litellm_core_utils\logging_utils.py", line 297, in async_wrapper
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 465, in post
+    response = await self.client.send(req, stream=stream)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1643, in send
+    raise exc
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1637, in send
+    await response.aread()
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_models.py", line 979, in aread
+    self._content = b"".join([part async for part in self.aiter_bytes()])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_models.py", line 997, in aiter_bytes
+    async for raw_bytes in self.aiter_raw():
+    ...<2 lines>...
+            yield chunk
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_models.py", line 1055, in aiter_raw
+    async for raw_stream_bytes in self.stream:
+    ...<2 lines>...
+            yield chunk
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 176, in __aiter__
+    async for chunk in self._stream:
+        yield chunk
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\aiohttp_transport.py", line 86, in __aiter__
+    async for chunk in self._aiohttp_response.content.iter_chunked(self.CHUNK_SIZE):
+        yield chunk
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\streams.py", line 52, in __anext__
+    rv = await self.read_func()
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\streams.py", line 452, in read
+    await self._wait("read")
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\streams.py", line 371, in _wait
+    await waiter
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Repositories\Babel\server\rpg_engine.py", line 267, in run_rpg_match
+    await db.update_experiment_status(match_id, "stopped")
+  File "C:\Users\User\Repositories\Babel\server\db.py", line 397, in update_experiment_status
+    await self.db.execute(
+          ^^^^^^^
+  File "C:\Users\User\Repositories\Babel\server\db.py", line 277, in db
+    raise RuntimeError("Database not connected. Call connect() first.")
+RuntimeError: Database not connected. Call connect() first.
+INFO:     Started server process [14500]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

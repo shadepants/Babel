@@ -1,0 +1,148 @@
+RPG Stress Test Runner
+======================================================================
+Fetching available models...
+Model assignments:
+  claude     -> anthropic/claude-sonnet-4-20250514
+  gemini     -> gemini/gemini-2.5-flash
+  deepseek   -> deepseek/deepseek-chat
+  groq       -> groq/llama-3.3-70b-versatile
+  mistral    -> mistral/mistral-small-latest
+  gpt4mini   -> openai/gpt-4o-mini
+
+[1/13] p1-vocab-decay-8r
+  Pattern: P1  |  Q: Does player-introduced vocabulary (R1-2) persist in DM narration by R6-8?
+  DM=claude-sonnet-4-20250514  rounds=8  actors=4
+  match_id: 726fa8a58bc2
+  timeout: 1430s
+  status: failed | rounds: 3/8 | 150s
+  -> saved: 726fa8a58bc2-p1-vocab-decay-8r.md
+  (pausing 30s before next session...)
+
+[2/13] p7-aligned-baseline
+  Pattern: P7-control  |  Q: Baseline: how do aligned objectives feel vs adversarial? (compare to p7-adversar
+  DM=claude-sonnet-4-20250514  rounds=5  actors=4
+  match_id: 7ef09c722ac4
+  timeout: 950s
+  status: completed | rounds: 5/5 | 180s
+  -> saved: 7ef09c722ac4-p7-aligned-baseline.md
+  (pausing 30s before next session...)
+
+[3/13] p6-claude-player-deepseek-dm
+  Pattern: P6  |  Q: Does Claude-as-player drive narrative pivots (reframes, tone shifts, new framewo
+  DM=deepseek-chat  rounds=6  actors=4
+  match_id: 49998173d83f
+  timeout: 1110s
+  status: failed | rounds: 2/6 | 108s
+  -> saved: 49998173d83f-p6-claude-player-deepseek-dm.md
+  (pausing 30s before next session...)
+
+[4/13] p9-groq-verbose-poet
+  Pattern: P9  |  Q: Does Groq produce short responses even when the scenario demands verbose verse, 
+  DM=claude-sonnet-4-20250514  rounds=5  actors=4
+  match_id: 078dacc8cea8
+  timeout: 950s
+  status: failed | rounds: 0/5 | 18s
+  -> saved: 078dacc8cea8-p9-groq-verbose-poet.md
+  (pausing 30s before next session...)
+
+[5/13] p6-claude-player-groq-dm
+  Pattern: P6  |  Q: Does Claude-as-player drive narrative pivots with Groq as DM? (third P6 data poi
+  DM=llama-3.3-70b-versatile  rounds=5  actors=4
+  match_id: d19c6f9b129b
+  timeout: 950s
+  status: failed | rounds: 0/5 | 6s
+  -> saved: d19c6f9b129b-p6-claude-player-groq-dm.md
+  (pausing 30s before next session...)
+
+[6/13] p7-adversarial-zerosum
+  Pattern: P7  |  Q: Do adversarial zero-sum objectives produce more dramatic conflict than aligned o
+  DM=mistral-small-latest  rounds=5  actors=4
+  match_id: 10e6bd913417
+  timeout: 950s
+  status: completed | rounds: 5/5 | 258s
+  -> saved: 10e6bd913417-p7-adversarial-zerosum.md
+  (pausing 30s before next session...)
+
+[7/13] p11-deepseek-dm-guard-verify
+  Pattern: P11-regression  |  Q: Does the narrator discipline guard prevent Deepseek DM from inventing phantom NP
+  DM=deepseek-chat  rounds=6  actors=4
+  match_id: 328a64955ac5
+  timeout: 1110s
+  status: failed | rounds: 0/6 | 30s
+  -> saved: 328a64955ac5-p11-deepseek-dm-guard-verify.md
+  (pausing 30s before next session...)
+
+[8/13] p6-claude-player-mistral-dm
+  Pattern: P6  |  Q: Does Claude-as-player drive narrative pivots with Mistral as DM? (second P6 data
+  DM=mistral-small-latest  rounds=6  actors=4
+  match_id: d3a732a82ef5
+  timeout: 1110s
+  status: completed | rounds: 6/6 | 204s
+  -> saved: d3a732a82ef5-p6-claude-player-mistral-dm.md
+  (pausing 30s before next session...)
+
+[9/13] p8-gpt4mini-player-overreach
+  Pattern: P8  |  Q: Does GPT-4o-mini-as-player write speech or actions FOR other named player charac
+  DM=claude-sonnet-4-20250514  rounds=5  actors=4
+  match_id: 791ff6ecb8e9
+  timeout: 950s
+  status: completed | rounds: 5/5 | 246s
+  -> saved: 791ff6ecb8e9-p8-gpt4mini-player-overreach.md
+  (pausing 30s before next session...)
+
+[10/13] p12-samemodel-zerosum
+  Pattern: P12  |  Q: Do three same-model (Deepseek) players cooperate or compete in a true zero-sum s
+  DM=claude-sonnet-4-20250514  rounds=6  actors=4
+  match_id: 9fdf7133db2d
+  timeout: 1110s
+  status: completed | rounds: 6/6 | 258s
+  -> saved: 9fdf7133db2d-p12-samemodel-zerosum.md
+  (pausing 30s before next session...)
+
+[11/13] p10-claude-dm-guard-verify
+  Pattern: P10-regression  |  Q: Does the narrator discipline guard prevent Claude DM from speaking in first pers
+  DM=claude-sonnet-4-20250514  rounds=6  actors=4
+  match_id: ff0721028f50
+  timeout: 1110s
+  status: completed | rounds: 6/6 | 216s
+  -> saved: ff0721028f50-p10-claude-dm-guard-verify.md
+  (pausing 30s before next session...)
+
+[12/13] p13-deception-second-trial
+  Pattern: P13  |  Q: Can Deepseek maintain committed deceptive roleplay (deflection, misdirection) ac
+  DM=gemini-2.5-flash  rounds=6  actors=4
+  match_id: f51da46eb6ef
+  timeout: 1110s
+  status: completed | rounds: 6/6 | 228s
+  -> saved: f51da46eb6ef-p13-deception-second-trial.md
+  (pausing 30s before next session...)
+
+[13/13] samemodel-claude-v2-negotiators
+  Pattern: samemodel-claude-rerun  |  Q: Can two Claude instances maintain distinct negotiating positions without converg
+  DM=gemini-2.5-flash  rounds=5  actors=3
+  match_id: ec100713e52b
+  timeout: 750s
+  status: completed | rounds: 5/5 | 150s
+  -> saved: ec100713e52b-samemodel-claude-v2-negotiators.md
+
+======================================================================
+STRESS RUNNER SUMMARY
+======================================================================
+  Name                                     Pattern              Status       Rounds   DM
+  ---------------------------------------- -------------------- ------------ -------- ---
+  p1-vocab-decay-8r                        P1                   failed       3/8      claude-sonnet-4-20250514
+  p7-aligned-baseline                      P7-control           completed    5/5      claude-sonnet-4-20250514
+  p6-claude-player-deepseek-dm             P6                   failed       2/6      deepseek-chat
+  p9-groq-verbose-poet                     P9                   failed       0/5      claude-sonnet-4-20250514
+  p6-claude-player-groq-dm                 P6                   failed       0/5      llama-3.3-70b-versatile
+  p7-adversarial-zerosum                   P7                   completed    5/5      mistral-small-latest
+  p11-deepseek-dm-guard-verify             P11-regression       failed       0/6      deepseek-chat
+  p6-claude-player-mistral-dm              P6                   completed    6/6      mistral-small-latest
+  p8-gpt4mini-player-overreach             P8                   completed    5/5      claude-sonnet-4-20250514
+  p12-samemodel-zerosum                    P12                  completed    6/6      claude-sonnet-4-20250514
+  p10-claude-dm-guard-verify               P10-regression       completed    6/6      claude-sonnet-4-20250514
+  p13-deception-second-trial               P13                  completed    6/6      gemini-2.5-flash
+  samemodel-claude-v2-negotiators          samemodel-claude-rerun completed    5/5      gemini-2.5-flash
+
+Logs saved to: C:\Users\User\Repositories\Babel\gameplay-observations\session-logs
+Total sessions: 13 | Completed: 8

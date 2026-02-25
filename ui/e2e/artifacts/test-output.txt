@@ -1,0 +1,10 @@
+
+Running 1 test using 1 worker
+
+Using model: Claude Sonnet (anthropic/claude-sonnet-4-20250514)
+Match started: 811fc66314b8
+All 8 turns received.
+RPG Campaign E2E: PASSED
+  ok 1 e2e\rpg-campaign.spec.ts:18:1 › RPG Campaign: 4-round all-AI session runs to completion (1.6m)
+
+  1 passed (1.7m)

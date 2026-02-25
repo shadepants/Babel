@@ -22,6 +22,7 @@ from server.relay_engine import (
     RelayEvent,
     call_model,
     build_messages,
+    check_pressure_valve,
     _log_task_exception,
 )
 from server.summarizer_engine import update_layered_context
@@ -248,6 +249,31 @@ async def run_rpg_match(
                 if round_num % 2 == 0 and actor_idx == len(participants) - 1:
                     _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
                     _summarize_task.add_done_callback(_log_task_exception)
+
+                # Phase 17: Zero-Sum Pressure Valve (E3)
+                if round_num % 3 == 0 and actor_idx == len(participants) - 1:
+                    from server.config import JUDGE_MODEL
+                    if preset and any(x in preset.lower() for x in ("debate", "conflict", "dilemma", "adversarial")):
+                        intervention = await check_pressure_valve(match_id, turns, JUDGE_MODEL)
+                        if intervention:
+                            logger.info("RPG Pressure valve TRIGGERED for %s: %s", match_id, intervention)
+                            turns.append({"speaker": "System", "content": intervention})
+                            await db.add_turn(
+                                experiment_id=match_id,
+                                round_num=round_num,
+                                speaker="System",
+                                model="monitor",
+                                content=intervention
+                            )
+                            hub.publish(RelayEvent.TURN, {
+                                "match_id": match_id,
+                                "round": round_num,
+                                "speaker": "System",
+                                "model": "monitor",
+                                "content": f"// INTERVENTION: {intervention}",
+                                "latency_s": 0,
+                                "turn_id": 0
+                            })
 
             # Round complete
             hub.publish(RelayEvent.ROUND_COMPLETE, {

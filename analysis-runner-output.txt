@@ -1,0 +1,70 @@
+Fetching model list...
+Model assignments:
+  claude     -> anthropic/claude-sonnet-4-20250514
+  gemini     -> gemini/gemini-2.5-flash
+  deepseek   -> deepseek/deepseek-chat
+  groq       -> groq/llama-3.3-70b-versatile
+  mistral    -> mistral/mistral-large-latest
+  gpt4mini   -> openai/gpt-4o-mini
+
+[1/7] dm-compare-claude
+  Q: DM comparison: how does Claude DM shape narrative vs. Gemini/Deepseek?
+  DM=claude-sonnet-4-20250514  rounds=4  actors=3
+  match_id: d113a9f35f94
+  status: completed | rounds: 4/4 | 269s
+  -> saved: d113a9f35f94-dm-compare-claude.md
+  (pausing 6s)
+[2/7] dm-compare-gemini
+  Q: DM comparison: how does Gemini Flash DM shape narrative vs. Claude/Deepseek?
+  DM=gemini-2.5-flash  rounds=4  actors=3
+  match_id: 02f764e00591
+  status: completed | rounds: 4/4 | 72s
+  -> saved: 02f764e00591-dm-compare-gemini.md
+  (pausing 6s)
+[3/7] dm-compare-deepseek
+  Q: DM comparison: how does Deepseek DM shape narrative vs. Claude/Gemini?
+  DM=deepseek-chat  rounds=4  actors=3
+  match_id: c51d6ff44270
+  status: completed | rounds: 4/4 | 60s
+  -> saved: c51d6ff44270-dm-compare-deepseek.md
+  (pausing 6s)
+[4/7] long-8r-expedition
+  Q: P1/P2: do models maintain coined terms and narrative callbacks across 8 rounds?
+  DM=claude-sonnet-4-20250514  rounds=8  actors=2
+  match_id: f9afd7bced17
+  status: timeout | rounds: 0/8 | 681s
+  -> saved: f9afd7bced17-long-8r-expedition.md
+  (pausing 10s)
+[5/7] secret-culprit-manor
+  Q: Can a model maintain a deceptive role when only its own system prompt contains the secret?
+  DM=claude-sonnet-4-20250514  rounds=4  actors=4
+  match_id: 4e66268ccc8b
+  status: timeout | rounds: 0/4 | 1283s
+  -> saved: 4e66268ccc8b-secret-culprit-manor.md
+  (pausing 6s)
+[6/7] samemodel-claude-adversarial
+  Q: Two Claude instances with adversarial objectives -- do they cooperate anyway or genuinely oppose?
+  DM=gemini-2.5-flash  rounds=4  actors=3
+  match_id: 7227a9bbec5b
+  status: timeout | rounds: 0/4 | 7851s
+  -> saved: 7227a9bbec5b-samemodel-claude-adversarial.md
+  (pausing 6s)
+[7/7] samemodel-deepseek-contrast
+  Q: Two Deepseek instances with opposite personalities -- do they sound genuinely different?
+  DM=claude-sonnet-4-20250514  rounds=4  actors=3
+  match_id: 629261089444
+  status: completed | rounds: 4/4 | 156s
+  -> saved: 629261089444-samemodel-deepseek-contrast.md
+
+======================================================================
+ANALYSIS RUNNER SUMMARY
+======================================================================
+  dm-compare-claude                   completed    dm=claude-sonnet-4-20250514
+  dm-compare-gemini                   completed    dm=gemini-2.5-flash
+  dm-compare-deepseek                 completed    dm=deepseek-chat
+  long-8r-expedition                  timeout      dm=claude-sonnet-4-20250514
+  secret-culprit-manor                timeout      dm=claude-sonnet-4-20250514
+  samemodel-claude-adversarial        timeout      dm=gemini-2.5-flash
+  samemodel-deepseek-contrast         completed    dm=claude-sonnet-4-20250514
+
+Logs saved to: C:\Users\User\Repositories\Babel\gameplay-observations\session-logs

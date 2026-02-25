@@ -1,0 +1,1 @@
+& "C:\Program Files\nodejs\node.exe" "C:\Users\User\Repositories\Babel\ui\node_modules\@playwright\test\cli.js" test "e2e/rpg-campaign.spec.ts" --reporter=list 2>&1 | Out-File -FilePath "C:\Users\User\Repositories\Babel\ui\e2e\artifacts\test-output.txt" -Encoding utf8

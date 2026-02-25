@@ -50,6 +50,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           state.status = 'running';
           break;
         case 'relay.turn':
+          if (state.status === 'error') state.status = 'running'; // reset transient error when match continues
           state.turns.push(event);
           state.thinkingSpeaker = null;
           state.currentRound = event.round;

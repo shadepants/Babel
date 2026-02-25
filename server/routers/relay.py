@@ -20,6 +20,7 @@ from server.config import (
     DEFAULT_MODEL_A,
     DEFAULT_MODEL_B,
     DEFAULT_ROUNDS,
+    DEFAULT_RPG_SYSTEM_PROMPT,
     DEFAULT_SEED,
     DEFAULT_SCORING_ENABLED,
     DEFAULT_SYSTEM_PROMPT,
@@ -157,12 +158,37 @@ async def start_relay(body: RelayStartRequest, request: Request):
             seed = preset_data.get("seed", seed)
             system_prompt = preset_data.get("system_prompt", system_prompt)
 
+    # RPG mode: swap out the conlang default for an RPG-appropriate system prompt
+    # (only when the caller hasn't provided a custom prompt)
+    if body.mode == "rpg" and system_prompt == DEFAULT_SYSTEM_PROMPT:
+        system_prompt = DEFAULT_RPG_SYSTEM_PROMPT
+
     # Create experiment record
     import json as _json
     config = {
         "temperature_a": body.temperature_a,
         "temperature_b": body.temperature_b,
         "max_tokens": body.max_tokens,
+        # Full recovery config -- used by recover_stale_sessions() on server restart
+        "recovery": {
+            "mode": body.mode,
+            "agents": (
+                [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+                 for ac in resolved_agents]
+                if resolved_agents else
+                [{"model": body.model_a, "temperature": body.temperature_a, "name": None},
+                 {"model": body.model_b, "temperature": body.temperature_b, "name": None}]
+            ),
+            "turn_delay_seconds": body.turn_delay_seconds,
+            "preset": body.preset,
+            "enable_scoring": body.enable_scoring,
+            "enable_verdict": body.enable_verdict,
+            "enable_memory": body.enable_memory,
+            "observer_model": body.observer_model,
+            "observer_interval": body.observer_interval,
+            "participants": body.participants,
+            "rpg_config": body.rpg_config,
+        },
     }
     participants_json = _json.dumps(body.participants) if body.participants else None
     # Serialise agents list for create_experiment (it handles model_a/model_b population)
@@ -657,3 +683,156 @@ async def set_api_key(body: SetKeyRequest):
 
     preview = f"{value[:4]}...{value[-4:]}" if len(value) >= 8 else "****"
     return {"ok": True, "env_var": body.env_var, "key_preview": preview}
+
+
+# ── Startup Recovery ─────────────────────────────────────────────────────
+
+async def recover_stale_sessions(hub, db, min_age_minutes: int = 3) -> int:
+    """On startup: resume or mark-failed any sessions stuck in 'running' from a prior crash.
+
+    Standard (non-RPG) sessions are fully recoverable: agents are reconstructed
+    from config_json.recovery, completed turns are replayed as initial_history,
+    and the relay resumes from rounds_completed + 1.
+
+    RPG sessions are too stateful to recover cleanly — they are marked 'failed'.
+    Returns the number of sessions successfully resumed.
+    """
+    import json as _json
+
+    stale = await db.get_stale_running_sessions(min_age_minutes=min_age_minutes)
+    if not stale:
+        return 0
+
+    logger.info("Found %d stale running session(s) -- attempting recovery", len(stale))
+    recovered = 0
+
+    for session in stale:
+        match_id = session["id"]
+        try:
+            config = _json.loads(session.get("config_json") or "{}")
+            recovery = config.get("recovery", {})
+
+            # ── 1. RPG SESSION RECOVERY ──
+            if recovery.get("mode") == "rpg" or recovery.get("participants"):
+                rpg_state = await db.get_rpg_state(match_id)
+                if not rpg_state:
+                    await db.update_experiment_status(match_id, "failed")
+                    logger.info("Marked RPG session %s as failed (no rpg_state found)", match_id)
+                    continue
+
+                cancel_event = asyncio.Event()
+                human_event = asyncio.Event()
+                
+                if rpg_state["is_awaiting_human"]:
+                    human_event.clear()
+                else:
+                    human_event.set()
+
+                from server.rpg_engine import run_rpg_match
+                
+                turns_done = session.get("rounds_completed") or 0
+                rounds_total = session.get("rounds_planned") or 5
+                # rounds parameter in run_rpg_match is 'total rounds to run', 
+                # but engines treat it as 'remaining rounds' from start_round.
+                # Here we calculate rounds remaining to match the planned total.
+                rounds_remaining = rounds_total - (rpg_state["current_round"] - 1)
+
+                task = asyncio.create_task(run_rpg_match(
+                    match_id=match_id,
+                    participants=recovery.get("participants", []),
+                    seed=session["seed"],
+                    system_prompt=session["system_prompt"],
+                    rounds=rounds_remaining,
+                    hub=hub,
+                    db=db,
+                    human_event=human_event,
+                    cancel_event=cancel_event,
+                    preset=recovery.get("preset"),
+                    rpg_config=recovery.get("rpg_config"),
+                    start_round=rpg_state["current_round"],
+                    start_index=rpg_state["current_speaker_idx"],
+                ))
+                
+                def _rpg_cleanup(t: asyncio.Task, mid: str = match_id) -> None:
+                    _running_relays.pop(mid, None)
+                    if not t.cancelled() and (exc := t.exception()):
+                        logger.error("Recovered RPG session %s raised: %s", mid, exc)
+
+                task.add_done_callback(_rpg_cleanup)
+                _running_relays[match_id] = (task, cancel_event, human_event)
+                
+                logger.info("Recovered RPG session %s: resuming from R.%d, Agent.%d",
+                            match_id, rpg_state["current_round"], rpg_state["current_speaker_idx"])
+                recovered += 1
+                continue
+
+            agent_dicts = recovery.get("agents", [])
+            if len(agent_dicts) < 2:
+                await db.update_experiment_status(match_id, "failed")
+                logger.warning("Session %s has no agent config -- marked failed", match_id)
+                continue
+
+            turns_done = session.get("rounds_completed") or 0
+            rounds_total = session.get("rounds_planned") or 5
+            rounds_remaining = rounds_total - turns_done
+
+            if rounds_remaining <= 0:
+                await db.update_experiment_status(match_id, "completed",
+                                                  rounds_completed=turns_done)
+                continue
+
+            history_rows = await db.get_turns(match_id)
+            initial_history = [{"speaker": r["speaker"], "content": r["content"]}
+                                for r in history_rows]
+
+            max_tokens = config.get("max_tokens", 1500)
+            agents = [
+                RelayAgent(
+                    name=a.get("name") or get_display_name(a["model"]),
+                    model=a["model"],
+                    temperature=a.get("temperature", 0.7),
+                    max_tokens=max_tokens,
+                )
+                for a in agent_dicts
+            ]
+
+            cancel_event = asyncio.Event()
+            resume_event = asyncio.Event()
+            resume_event.set()
+
+            task = asyncio.create_task(run_relay(
+                match_id=match_id,
+                agents=agents,
+                seed=session["seed"],
+                system_prompt=session["system_prompt"],
+                rounds=rounds_remaining,
+                start_round=turns_done + 1,
+                hub=hub,
+                db=db,
+                turn_delay_seconds=recovery.get("turn_delay_seconds", 2.0),
+                cancel_event=cancel_event,
+                resume_event=resume_event,
+                preset=recovery.get("preset"),
+                enable_scoring=recovery.get("enable_scoring", False),
+                enable_verdict=recovery.get("enable_verdict", False),
+                enable_memory=recovery.get("enable_memory", False),
+                initial_history=initial_history,
+            ))
+
+            def _cleanup(t: asyncio.Task, mid: str = match_id) -> None:
+                _running_relays.pop(mid, None)
+                if not t.cancelled() and (exc := t.exception()):
+                    logger.error("Recovered session %s raised: %s", mid, exc, exc_info=exc)
+
+            task.add_done_callback(_cleanup)
+            _running_relays[match_id] = (task, cancel_event, resume_event)
+
+            logger.info("Recovered session %s: resuming from round %d/%d",
+                        match_id, turns_done + 1, rounds_total)
+            recovered += 1
+
+        except Exception as e:
+            logger.error("Recovery failed for session %s: %s", match_id, e, exc_info=True)
+            await db.update_experiment_status(match_id, "failed")
+
+    return recovered

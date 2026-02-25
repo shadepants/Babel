@@ -176,15 +176,13 @@ def extract_vocabulary(
     # Only run for conlang-style presets; skip for debate/story/philosophy
     # to avoid flagging emphatic English words as invented vocabulary.
     use_pass2 = preset in _CONLANG_PRESETS
-    # For non-conlang presets, still allow re-encounters of known words
-    if use_pass2 or known_words:
+    
+    # NEW: For non-conlang presets, we ONLY want to track usage of previously
+    # discovered words, not coin new ones via Pass 2 logic.
+    if use_pass2:
         for match in _ALLCAPS_RE.finditer(content):
             word = match.group(1).upper().strip("-")
             if word in _BLOCKLIST or word in found or len(word) < 3:
-                continue
-
-            # Non-conlang presets: only allow re-encounters, not new discoveries
-            if not use_pass2 and word not in known_words:
                 continue
 
             # For Pass 2, require minimum 4 chars to reduce noise
@@ -198,6 +196,12 @@ def extract_vocabulary(
                 found[word] = ExtractedWord(
                     word=word, category=category, confidence="low",
                 )
+    elif known_words:
+        # For non-conlang presets, ONLY capture re-encounters of known words
+        for match in _ALLCAPS_RE.finditer(content):
+            word = match.group(1).upper().strip("-")
+            if word in known_words and word not in found:
+                found[word] = ExtractedWord(word=word, confidence="low")
 
     return list(found.values())
 

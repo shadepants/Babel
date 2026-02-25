@@ -144,7 +144,7 @@ export default function Dictionary() {
               {' \u00b7 '}
               {experiment.rounds_completed}/{experiment.rounds_planned} rounds
               {experiment.status === 'running' && (
-                <span className="ml-2 text-success animate-pulse-slow">&bull; Live</span>
+                <span className="ml-2 text-success animate-pulse-slow"><span className="font-symbol">&bull;</span> Live</span>
               )}
             </p>
           </div>
@@ -176,7 +176,8 @@ export default function Dictionary() {
                 <span className="text-text-secondary">MOST USED:</span>{' '}
                 <span className="text-text-primary">{mostUsed.word}</span>
                 {' '}
-                <span className="text-accent">&times;{mostUsed.usage_count}</span>
+                <span className="text-accent font-symbol">&times;</span>
+                <span className="text-accent">{mostUsed.usage_count}</span>
               </span>
             )}
             {categoryCount > 0 && (

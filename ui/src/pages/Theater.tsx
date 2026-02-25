@@ -11,6 +11,8 @@ import { TheaterCanvas } from '@/components/theater/TheaterCanvas'
 import { ArenaStage } from '@/components/theater/ArenaStage'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { TypewriterText } from '@/components/theater/TypewriterText'
+import { EndSessionModal } from '@/components/theater/EndSessionModal'
+import { DiceOverlay } from '@/components/theater/DiceOverlay'
 import type { AgentConfig, ExperimentRecord, TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
 
 const COLOR_DEFAULT = '#8b5cf6'
@@ -83,8 +85,10 @@ export default function Theater() {
   const [injectText, setInjectText] = useState('')
   const [injecting, setInjecting] = useState(false)
 
-  // Track which speaker is currently "talking" (typewriter active)
   const [talkingSpeaker, setTalkingSpeaker] = useState<string | null>(null)
+
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
 
   useEffect(() => {
     if (!matchId) return
@@ -192,6 +196,18 @@ export default function Theater() {
     ? lastTurn.turn_id
     : null
 
+  // Phase 17: Visual Choice Architecture (3D Dice)
+  useEffect(() => {
+    if (!lastTurn || experiment.status !== 'running') return
+    const checkMatch = lastTurn.content.match(/\[CHECK:\s*(\w+)\s*DC(\d+)\s*Result:\s*(\d+)\]/i)
+    if (checkMatch) {
+      const skill = checkMatch[1]
+      const dc = parseInt(checkMatch[2], 10)
+      const result = parseInt(checkMatch[3], 10)
+      setActiveRoll({ skill, dc, result, success: result >= dc })
+    }
+  }, [lastTurn?.turn_id, experiment.status])
+
   // BABEL glitch on turn arrival (live only)
   useEffect(() => {
     if (experiment.status !== 'running' || !lastTurn) return
@@ -257,6 +273,12 @@ export default function Theater() {
       </div>
     )
   }
+
+  useEffect(() => {
+    if (experiment.status === 'completed' || experiment.status === 'stopped') {
+      setIsModalOpen(true)
+    }
+  }, [experiment.status])
 
   return (
     <div className="flex-1 flex flex-col">
@@ -459,6 +481,22 @@ export default function Theater() {
           </Link>
         </div>
       )}
+
+      <EndSessionModal
+        isOpen={isModalOpen}
+        matchId={matchId}
+        preset={preset}
+        stats={{
+          turns: effectiveTurns.length,
+          rounds: lastTurn?.round ?? 0,
+          vocab: experiment.vocab.length || dbVocab.length
+        }}
+      />
+
+      <DiceOverlay
+        roll={activeRoll}
+        onComplete={() => setActiveRoll(null)}
+      />
     </div>
   )
 }

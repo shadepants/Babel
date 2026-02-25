@@ -28,7 +28,7 @@ const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
-  const isCustom = presetId === 'custom'
+  const isCustom = presetId === 'custom' || !!(presetId?.startsWith('preset-'))
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
@@ -76,12 +76,6 @@ export default function Configure() {
   // -- Personas --
   const [personas, setPersonas] = useState<PersonaRecord[]>([])
   const [agentPersonaIds, setAgentPersonaIds] = useState<(string | null)[]>([null, null, null, null])
-
-  // -- RPG Mode --
-  const [rpgMode, setRpgMode] = useState<boolean>(() => !!(location.state as { autoRpg?: boolean } | null)?.autoRpg)
-  
-  // Extract campaign preset from location.state (passed from SeedLab or Campaign page)
-  const campaignPreset = (location.state as { preset?: CampaignPreset } | null)?.preset
 
   // Preset defaults -- for divergence indicators + reset (null when custom)
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperature: number; maxTokens: number } | null>(null)
@@ -192,17 +186,6 @@ export default function Configure() {
     api.getPersonas().then(setPersonas).catch(() => {})
   }, [])
 
-  // Auto-populate system settings from campaign preset (passed from SeedLab or Campaign page)
-  useEffect(() => {
-    if (campaignPreset) {
-      setRounds(campaignPreset.rounds)
-      setMaxTokens(campaignPreset.maxTokens)
-      setTurnDelay(campaignPreset.turnDelay)
-      // Update all agent temperatures to match preset temperature
-      setAgents(prev => prev.map(a => ({ ...a, temperature: campaignPreset.temperature })))
-    }
-  }, [campaignPreset])
-
   // Whether any parameter has been moved from the preset default
   const hasParamChanges = presetDefaults !== null && (
     rounds !== presetDefaults.rounds ||
@@ -241,8 +224,8 @@ export default function Configure() {
 
   async function handleLaunch() {
     const activeModel = agents[0]?.model
-    if (!activeModel || (!rpgMode && agents.some(a => !a.model))) {
-      setFormError(rpgMode ? 'Please select a DM model.' : 'Please select models for all agents.')
+    if (!activeModel || agents.some(a => !a.model)) {
+      setFormError('Please select models for all agents.')
       return
     }
     if (!seed.trim()) {
@@ -255,7 +238,7 @@ export default function Configure() {
 
     try {
       // Build the agents array with display names for speaker identification
-      const agentsPayload = rpgMode ? undefined : agents.map((a) => ({
+      const agentsPayload = agents.map((a) => ({
         model: a.model,
         temperature: a.temperature,
         name: models.find((m) => m.model === a.model)?.name ?? a.model.split('/').pop() ?? a.model,
@@ -264,13 +247,13 @@ export default function Configure() {
       const request: Parameters<typeof api.startRelay>[0] = {
         // Phase 15-A: N-way agents path
         ...(agentsPayload ? { agents: agentsPayload } : {}),
-        // Legacy fields kept for RPG mode and backward compat
+        // Legacy fields kept for backward compat
         model_a: activeModel,
-        model_b: rpgMode ? activeModel : (agents[1]?.model ?? ''),
+        model_b: agents[1]?.model ?? '',
         seed: seed.trim(),
         rounds,
         temperature_a: agents[0]?.temperature ?? 0.7,
-        temperature_b: rpgMode ? (agents[0]?.temperature ?? 0.7) : (agents[1]?.temperature ?? 0.7),
+        temperature_b: agents[1]?.temperature ?? 0.7,
         max_tokens: maxTokens,
         turn_delay_seconds: turnDelay,
         enable_scoring: enableScoring,
@@ -298,45 +281,17 @@ export default function Configure() {
 
       const res = await api.startRelay(request)
 
-      if (rpgMode) {
-        navigate(`/rpg/${res.match_id}`)
-      } else {
-        navigate(`/theater/${res.match_id}`, {
-          state: {
-            modelAName: agentsPayload?.[0]?.name ?? agents[0]?.model ?? '',
-            modelBName: agentsPayload?.[1]?.name ?? agents[1]?.model ?? '',
-          },
-        })
-      }
+      navigate(`/theater/${res.match_id}`, {
+        state: {
+          modelAName: agentsPayload?.[0]?.name ?? agents[0]?.model ?? '',
+          modelBName: agentsPayload?.[1]?.name ?? agents[1]?.model ?? '',
+        },
+      })
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to start experiment')
     } finally {
       setStarting(false)
     }
-  }
-
-  function handleConfigureCampaign() {
-    if (!agents[0]?.model) {
-      setFormError('Please select a DM model.')
-      return
-    }
-    navigate(`/campaign/${presetId ?? 'custom'}`, {
-      state: {
-        agents,
-        rounds,
-        maxTokens,
-        turnDelay,
-        enableScoring,
-        judgeModel,
-        enableVerdict,
-        enableMemory,
-        observerModel,
-        observerInterval,
-        preset: presetId,
-        seed,
-        systemPrompt,
-      },
-    })
   }
 
   if (loading) {
@@ -418,42 +373,20 @@ export default function Configure() {
         <div className="neural-card-bar" />
         <div className="p-6 space-y-6">
 
-          {/* RPG Mode Toggle */}
-          <div className="space-y-3">
-            <div className="neural-section-label">// mode</div>
-            <button
-              type="button"
-              onClick={() => setRpgMode(!rpgMode)}
-              className="flex items-center gap-3 group w-full text-left"
-            >
-              <div className={`relative w-8 h-4 rounded-full transition-colors ${rpgMode ? 'bg-emerald-500/70' : 'bg-border-custom'}`}>
-                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${rpgMode ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-              </div>
-              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
-                RPG Mode
-              </span>
-            </button>
-            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
-              // enables campaign-style play: DM model, party members, human-in-the-loop input
-            </p>
-          </div>
-
           {/* Models -- N-way agent slots */}
           <div className="space-y-3">
             <div className="neural-section-label flex items-center justify-between">
-              <span>// {rpgMode ? 'dm_model' : 'model_selection'}</span>
+              <span>// model_selection</span>
               <div className="flex items-center gap-3">
-                {!rpgMode && (
-                  <button
-                    type="button"
-                    onClick={swapAB}
-                    className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
-                    title="Swap Model A and Model B"
-                  >
-                    &#8646; swap A&#8596;B
-                  </button>
-                )}
-                {!rpgMode && agents.length < 4 && (
+                <button
+                  type="button"
+                  onClick={swapAB}
+                  className="font-mono text-[9px] text-accent/60 hover:text-accent tracking-wider uppercase transition-colors"
+                  title="Swap Model A and Model B"
+                >
+                  &#8646; swap A&#8596;B
+                </button>
+                {agents.length < 4 && (
                   <button
                     type="button"
                     onClick={addAgent}
@@ -467,7 +400,7 @@ export default function Configure() {
             </div>
 
             <div className="space-y-3">
-              {(rpgMode ? agents.slice(0, 1) : agents).map((agent, idx) => {
+              {agents.map((agent, idx) => {
                 const agentColor = AGENT_COLORS[idx] ?? AGENT_COLORS[0]
                 const label = AGENT_LABELS[idx] ?? `Agent ${idx + 1}`
                 const isSuggested = !isCustom && suggestedModels[idx] && agent.model === suggestedModels[idx]
@@ -481,7 +414,7 @@ export default function Configure() {
                       >
                         &#9671; {label}
                       </label>
-                      {!rpgMode && agents.length > 2 && (
+                      {agents.length > 2 && (
                         <button
                           type="button"
                           onClick={() => removeAgent(idx)}
@@ -800,7 +733,7 @@ export default function Configure() {
           {/* Pre-launch estimate */}
           {(() => {
             const avgTurnSecs = 6
-            const n = rpgMode ? 1 : agents.length
+            const n = agents.length
             const totalSecs = rounds * n * (avgTurnSecs + turnDelay)
             const mins = Math.floor(totalSecs / 60)
             const secs = Math.round(totalSecs % 60)
@@ -811,7 +744,7 @@ export default function Configure() {
                 <span><span className="text-accent/40">// est</span> {timeStr}</span>
                 <span className="text-accent/25">&middot;</span>
                 <span>&le;{tokenBudget} tokens</span>
-                {!rpgMode && agents.length > 2 && (
+                {agents.length > 2 && (
                   <span className="text-accent/40">&middot; {agents.length} agents</span>
                 )}
               </div>
@@ -820,11 +753,11 @@ export default function Configure() {
 
           {/* Launch */}
           <Button
-            onClick={rpgMode ? handleConfigureCampaign : handleLaunch}
-            disabled={rpgMode ? !agents[0]?.model : (starting || agents.some(a => !a.model))}
+            onClick={handleLaunch}
+            disabled={starting || agents.some(a => !a.model)}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
-            {rpgMode ? 'Configure Campaign →' : (starting ? '// Launching...' : 'Launch Experiment')}
+            {starting ? '// Launching...' : 'Launch Experiment'}
           </Button>
         </div>
       </div>

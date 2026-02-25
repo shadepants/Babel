@@ -13,7 +13,8 @@ def _get_presets(request: Request) -> dict:
     return request.app.state.presets
 
 
-@router.get("/")
+@router.get("/", include_in_schema=False)
+@router.get("", include_in_schema=False)
 async def list_presets(request: Request):
     """Return all available presets as an ordered list."""
     presets = _get_presets(request)

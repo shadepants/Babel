@@ -5,6 +5,7 @@ initializes the database and event hub on startup, and cleans up on
 shutdown.
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -35,10 +36,22 @@ async def lifespan(app: FastAPI):
     hub = EventHub()
     app.state.hub = hub
 
+    # Rehydrate SSE history buffer
+    stale_events = await db.get_system_events(limit=1000)
+    if stale_events:
+        hub.hydrate(stale_events)
+        logger.info("Hydrated %d events from system_events", len(stale_events))
+
     app.state.presets = load_presets()
 
     # Phase 13b: track human-in-the-loop locks per RPG match
     app.state.human_events = {}  # match_id -> asyncio.Event
+
+    # Recovery: resume standard sessions stuck in 'running' from a prior crash
+    from server.routers.relay import recover_stale_sessions
+    recovered = await recover_stale_sessions(hub, db, min_age_minutes=3)
+    if recovered:
+        logger.info("Recovered %d stale session(s) from previous run", recovered)
 
     logger.info(
         "Babel started — database connected, event hub ready, %d presets loaded",
@@ -47,6 +60,20 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Shutdown ──
+    # Graceful shutdown: signal running relay tasks to stop cleanly before DB closes
+    from server.routers.relay import _running_relays
+    if _running_relays:
+        logger.info("Shutdown: signaling %d active session(s) to stop", len(_running_relays))
+        for _mid, (_task, cancel_ev, _resume) in list(_running_relays.items()):
+            cancel_ev.set()
+        await asyncio.sleep(2.0)
+
+    # Persist SSE history buffer
+    events_to_save = hub.serialize(limit=1000)
+    if events_to_save:
+        await db.save_system_events(events_to_save)
+        logger.info("Persisted %d events to system_events", len(events_to_save))
+
     await db.close()
     logger.info("Babel shutdown complete")
 
@@ -87,11 +114,23 @@ def create_app() -> FastAPI:
 
     # --- PASSWORD PROTECTION GATEKEEPER (share mode only) ---
     if os.getenv("SHARE_MODE"):
+        import secrets
+        import string
         from fastapi.responses import HTMLResponse, RedirectResponse
         from fastapi import Request
 
-        # Change this to whatever you want!
-        SHARED_PASSWORD = os.getenv("SHARE_PASSWORD", "babel123")
+        # Default to a random key if no secure password is set via .env
+        SHARED_PASSWORD = os.getenv("SHARE_PASSWORD")
+        if not SHARED_PASSWORD or SHARED_PASSWORD == "babel123":
+            alphabet = string.ascii_letters + string.digits
+            SHARED_PASSWORD = "".join(secrets.choice(alphabet) for _ in range(12))
+            logger.warning(
+                "\n" + "=" * 60 +
+                f"\nSHARE_MODE active — no secure password set."
+                f"\nDYNAMIC ACCESS KEY GENERATED: {SHARED_PASSWORD}"
+                "\nSet SHARE_PASSWORD in .env to use a fixed key."
+                "\n" + "=" * 60
+            )
 
         @app.middleware("http")
         async def password_gate(request: Request, call_next):

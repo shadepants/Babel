@@ -48,7 +48,9 @@ export default function Tournaments() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`status-dot status-dot--${t.status}`} />
+                  <span className="font-symbol block">
+                    <div className={`status-dot status-dot--${t.status}`} />
+                  </span>
                   <div>
                     <span className="font-mono text-sm text-text-primary">{t.name}</span>
                     {t.preset && (

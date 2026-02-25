@@ -138,3 +138,32 @@ class EventHub:
             {"type": e.event_type, "timestamp": e.timestamp, **e.payload}
             for e in events[-limit:]
         ]
+
+    def serialize(self, limit: int = 1000) -> list[dict]:
+        """Convert history buffer to simple dicts for DB storage."""
+        return [
+            {
+                "match_id": e.match_id,
+                "event_type": e.event_type,
+                "payload": json.dumps(e.payload),
+                "timestamp": e.timestamp,
+            }
+            for e in self._history[-limit:]
+        ]
+
+    def hydrate(self, rows: list[dict]) -> None:
+        """Populate buffer from DB records on startup."""
+        self._history = []
+        for row in rows:
+            try:
+                event = SSEEvent(
+                    event_type=row["event_type"],
+                    payload=json.loads(row["payload"]),
+                    timestamp=row["timestamp"],
+                    match_id=row["match_id"],
+                )
+                event.event_id = self._next_id
+                self._next_id += 1
+                self._history.append(event)
+            except Exception as e:
+                logger.warning("Failed to hydrate SSE event: %s", e)

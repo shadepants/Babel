@@ -286,3 +286,7 @@ html[data-active-model="b"] nav {
     rgba(255, 255, 255, 0.012) 4px
   );
 }
+
+.font-symbol {
+  font-family: ui-monospace, 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+}

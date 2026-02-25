@@ -8,6 +8,8 @@ import { HumanInput } from './HumanInput'
 import { ThinkingIndicator } from './ThinkingIndicator'
 import { SpriteAvatar } from './SpriteAvatar'
 import { TheaterCanvas } from './TheaterCanvas'
+import { EndSessionModal } from './EndSessionModal'
+import { DiceOverlay } from './DiceOverlay'
 import type { TurnEvent } from '@/api/types'
 
 /** Speaker role colors (CSS rgb values) */
@@ -73,6 +75,9 @@ export default function RPGTheater() {
   // Load participants from experiment record
   const [participants, setParticipants] = useState<Array<{ name: string; model: string; role: string }> | null>(null)
 
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
+
   useEffect(() => {
     if (!matchId) return
     api.getExperiment(matchId).then((exp) => {
@@ -104,6 +109,12 @@ export default function RPGTheater() {
     }
   }, [state.turns.length, state.isAwaitingHuman])
 
+  useEffect(() => {
+    if (state.status === 'completed') {
+      setIsModalOpen(true)
+    }
+  }, [state.status])
+
   if (!matchId) return null
 
   const playerName = participants?.find((p) => p.role.toLowerCase() === 'player')?.name ?? 'Player'
@@ -112,6 +123,17 @@ export default function RPGTheater() {
 
   // Extract last turn for canvas animation trigger
   const lastTurn = state.turns.length > 0 ? state.turns[state.turns.length - 1] : null
+
+  useEffect(() => {
+    if (!lastTurn || state.status !== 'running') return
+    const checkMatch = lastTurn.content.match(/\[CHECK:\s*(\w+)\s*DC(\d+)\s*Result:\s*(\d+)\]/i)
+    if (checkMatch) {
+      const skill = checkMatch[1]
+      const dc = parseInt(checkMatch[2], 10)
+      const result = parseInt(checkMatch[3], 10)
+      setActiveRoll({ skill, dc, result, success: result >= dc })
+    }
+  }, [lastTurn?.turn_id, state.status])
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary">
@@ -248,6 +270,22 @@ export default function RPGTheater() {
             </span>
           </div>
         )}
+
+        <EndSessionModal
+          isOpen={isModalOpen}
+          matchId={matchId}
+          preset={null} // Preset resolution for RPG handled via Remix route
+          stats={{
+            turns: state.turns.length,
+            rounds: state.currentRound,
+            vocab: state.vocab.length
+          }}
+        />
+
+        <DiceOverlay
+          roll={activeRoll}
+          onComplete={() => setActiveRoll(null)}
+        />
       </main>
     </div>
   )

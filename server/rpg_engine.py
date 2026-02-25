@@ -17,13 +17,29 @@ from typing import Any
 from server.db import Database
 from server.event_hub import EventHub
 from server.relay_engine import (
+    PersonaRecord,
     RelayAgent,
     RelayEvent,
     call_model,
+    build_messages,
     _log_task_exception,
 )
+from server.summarizer_engine import update_layered_context
 
 logger = logging.getLogger(__name__)
+
+
+async def _save_rpg_memory(
+    match_id: str,
+    db: Database,
+    dm_model: str,
+    preset_key: str,
+) -> None:
+    """Background task: generate and persist RPG campaign memory."""
+    summary = await db.generate_rpg_memory_summary(match_id)
+    if summary:
+        await db.create_memory(dm_model, preset_key, match_id, summary)
+        logger.info("RPG memory saved for %s (%s)", match_id, preset_key)
 
 
 async def run_rpg_match(
@@ -36,26 +52,77 @@ async def run_rpg_match(
     db: Database,
     human_event: asyncio.Event,
     cancel_event: asyncio.Event | None = None,
+    preset: str | None = None,
+    participant_persona_ids: list[str | None] | None = None,
+    rpg_config: dict | None = None,
+    # Recovery: start parameters
+    start_round: int = 1,
+    start_index: int = 0,
 ) -> None:
-    """Run an RPG session with human-in-the-loop yielding.
+    """Run an RPG session with human-in-the-loop yielding."""
+    # Build RelayAgent list for build_messages
+    relay_agents = [
+        RelayAgent(name=p["name"], model=p["model"])
+        for p in participants
+    ]
 
-    Args:
-        match_id: Experiment ID for this match.
-        participants: List of dicts with keys: name, model, role.
-                     model="human" means human player (waits for inject).
-        seed: Opening narrative / scenario seed.
-        system_prompt: System prompt for AI participants.
-        rounds: Number of full rounds (each participant speaks once per round).
-        hub: EventHub for SSE publishing.
-        db: Database instance.
-        human_event: asyncio.Event that POST /inject will set() to resume.
-        cancel_event: Optional event to signal early stop.
-    """
     turns: list[dict] = []
+    # If resuming, load existing turns
+    if start_round > 1 or start_index > 0:
+        db_turns = await db.get_turns(match_id)
+        turns = [{"speaker": t["speaker"], "content": t["content"], "visibility_json": t.get("visibility_json")} for t in db_turns]
+
     start_time = time.time()
 
+    # -- Inject campaign parameters into DM system prompt --
+    if rpg_config:
+        tone = rpg_config.get("tone", "cinematic").upper()
+        setting = rpg_config.get("setting", "fantasy").upper()
+        diff = rpg_config.get("difficulty", "normal").upper()
+        hook = rpg_config.get("campaign_hook", "")
+        party_lines = "\n".join(
+            f"  - {p['name']} ({p.get('char_class', p.get('role', 'Adventurer'))}): {p.get('motivation', '')}"
+            for p in participants
+            if p.get("role") != "dm"
+        )
+        campaign_block = (
+            f"CAMPAIGN PARAMETERS\n"
+            f"Tone: {tone} | Setting: {setting} | Difficulty: {diff}\n"
+            f"Hook: {hook}\n\n"
+            f"PARTY:\n{party_lines}\n"
+        )
+        system_prompt = campaign_block + system_prompt
+        logger.info("RPG %s: injected campaign config (tone=%s, setting=%s, difficulty=%s)", match_id, tone, setting, diff)
+
+    # -- Load past campaign memories for DM (inject into system_prompt) --
+    dm_model = next(
+        (p["model"] for p in participants if p.get("role") == "dm" and p["model"] != "human"),
+        None,
+    )
+    preset_key = f"rpg:{preset}" if preset else "rpg:custom"
+    if dm_model:
+        past_memories = await db.get_memories_for_pair(dm_model, preset_key)
+        if past_memories:
+            memory_block = "\n\n".join(m["summary"] for m in past_memories[:3])
+            system_prompt = f"CAMPAIGN HISTORY:\n{memory_block}\n\n{system_prompt}"
+            logger.info("RPG %s: injected %d past campaign memories", match_id, len(past_memories[:3]))
+
+    # -- Build persona map: index -> PersonaRecord (if persona_ids provided) --
+    persona_map: dict[int, PersonaRecord] = {}
+    if participant_persona_ids:
+        for idx, pid in enumerate(participant_persona_ids):
+            if pid:
+                p_data = await db.get_persona(pid)
+                if p_data:
+                    persona_map[idx] = PersonaRecord(
+                        id=p_data["id"],
+                        name=p_data["name"],
+                        personality=p_data["personality"],
+                        backstory=p_data["backstory"],
+                    )
+
     try:
-        for round_num in range(1, rounds + 1):
+        for round_num in range(start_round, start_round + rounds):
             # Check for cancellation at round boundary
             if cancel_event and cancel_event.is_set():
                 elapsed = time.time() - start_time
@@ -64,6 +131,7 @@ async def run_rpg_match(
                     rounds_completed=round_num - 1,
                     elapsed_seconds=round(elapsed, 1),
                 )
+                await db.delete_rpg_state(match_id)
                 hub.publish(RelayEvent.MATCH_COMPLETE, {
                     "match_id": match_id,
                     "rounds": round_num - 1,
@@ -73,7 +141,19 @@ async def run_rpg_match(
                 logger.info("RPG %s stopped by user after %d rounds", match_id, round_num - 1)
                 return
 
-            for actor in participants:
+            for actor_idx, actor in enumerate(participants):
+                # Skip already completed actors if resuming mid-round
+                if round_num == start_round and actor_idx < start_index:
+                    continue
+
+                # --- 1. Persist State for Recovery ---
+                await db.save_rpg_state(
+                    match_id=match_id,
+                    current_round=round_num,
+                    current_speaker_idx=actor_idx,
+                    is_awaiting_human=(actor["model"] == "human")
+                )
+
                 # -- Human turn: yield and wait for inject --
                 if actor["model"] == "human":
                     hub.publish(RelayEvent.AWAITING_HUMAN, {
@@ -108,27 +188,38 @@ async def run_rpg_match(
                     "round": round_num,
                 })
 
+                persona = persona_map.get(actor_idx)
                 agent = RelayAgent(
                     name=actor["name"],
                     model=actor["model"],
                     temperature=actor.get("temperature", 0.7),
                     max_tokens=actor.get("max_tokens", 1500),
+                    persona=persona,
                 )
 
-                # RPG uses global perspective: all participants see the full log.
-                # This differs from standard relay which uses symmetric A/B views.
-                messages: list[dict] = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": seed},
-                ]
-                for t in turns:
-                    if t["speaker"] == actor["name"]:
-                        messages.append({"role": "assistant", "content": t["content"]})
-                    else:
-                        messages.append({
-                            "role": "user",
-                            "content": f"[{t['speaker']}]: {t['content']}",
-                        })
+                # Phase 17: Fetch layered context
+                cold_context = await db.get_latest_cold_summary(match_id)
+                world_bible = await db.get_world_state(match_id)
+
+                if agent.persona:
+                    actor_system = (
+                        f"You are {agent.persona.name}. {agent.persona.personality}"
+                    )
+                    if agent.persona.backstory:
+                        actor_system += f"\n\nBackground: {agent.persona.backstory}"
+                    actor_system += f"\n\n{system_prompt}"
+                else:
+                    actor_system = system_prompt
+
+                # RPG uses layered context: Cold recap + World Bible + Hot sliding window
+                hot_turns = turns[-10:] if len(turns) > 10 else turns
+                
+                seed_turn = {"speaker": "", "content": seed}
+                messages = build_messages(
+                    actor_system, [seed_turn] + hot_turns, actor_idx, relay_agents,
+                    cold_context=cold_context,
+                    world_bible=world_bible
+                )
 
                 content, latency, tokens = await call_model(agent, messages)
                 turns.append({"speaker": actor["name"], "content": content})
@@ -153,6 +244,11 @@ async def run_rpg_match(
                     "turn_id": turn_id,
                 })
 
+                # Phase 17: Update layered context asynchronously every 2 rounds
+                if round_num % 2 == 0 and actor_idx == len(participants) - 1:
+                    _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
+                    _summarize_task.add_done_callback(_log_task_exception)
+
             # Round complete
             hub.publish(RelayEvent.ROUND_COMPLETE, {
                 "match_id": match_id,
@@ -170,12 +266,21 @@ async def run_rpg_match(
             rounds_completed=rounds,
             elapsed_seconds=round(elapsed, 1),
         )
+        await db.delete_rpg_state(match_id)
         hub.publish(RelayEvent.MATCH_COMPLETE, {
             "match_id": match_id,
             "rounds": rounds,
             "elapsed_s": round(elapsed, 1),
         })
         logger.info("RPG %s completed: %d rounds in %.1fs", match_id, rounds, elapsed)
+
+        # Save campaign memory for future sessions
+        if dm_model:
+            _mem_task = asyncio.create_task(
+                _save_rpg_memory(match_id, db, dm_model, preset_key),
+                name=f"rpg_memory_{match_id}",
+            )
+            _mem_task.add_done_callback(_log_task_exception)
 
     except asyncio.CancelledError:
         logger.info("RPG %s task cancelled", match_id)
@@ -186,4 +291,4 @@ async def run_rpg_match(
             "match_id": match_id,
             "message": str(e),
         })
-        await db.update_experiment_status(match_id, "error")
+        await db.update_experiment_status(match_id, "failed")

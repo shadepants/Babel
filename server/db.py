@@ -131,6 +131,40 @@ CREATE TABLE IF NOT EXISTS personas (
     avatar_color TEXT NOT NULL DEFAULT '#F59E0B',
     created_at TEXT NOT NULL
 );
+
+-- Phase 17: Layered Context (Rolling Karp)
+CREATE TABLE IF NOT EXISTS cold_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    through_round INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(match_id, through_round)
+);
+
+CREATE TABLE IF NOT EXISTS world_state (
+    match_id TEXT PRIMARY KEY REFERENCES experiments(id) ON DELETE CASCADE,
+    state_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Resiliency / SSE Buffer Persistence
+CREATE TABLE IF NOT EXISTS system_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id TEXT,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    timestamp REAL NOT NULL
+);
+
+-- RPG Session Recovery
+CREATE TABLE IF NOT EXISTS rpg_state (
+    match_id TEXT PRIMARY KEY REFERENCES experiments(id) ON DELETE CASCADE,
+    current_round INTEGER NOT NULL,
+    current_speaker_idx INTEGER NOT NULL,
+    is_awaiting_human INTEGER NOT NULL DEFAULT 0,
+    last_updated TEXT NOT NULL
+);
 """
 
 
@@ -143,6 +177,8 @@ class Database:
         self.db_path = db_path
         self._db: aiosqlite.Connection | None = None
         self._write_lock: asyncio.Lock | None = None
+        self._queue: asyncio.Queue = asyncio.Queue()
+        self._worker_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
         """Open the database connection and initialize schema."""
@@ -150,6 +186,9 @@ class Database:
         self._write_lock = asyncio.Lock()  # serializes concurrent write tasks
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
+
+        # Start background writer worker
+        self._worker_task = asyncio.create_task(self._writer_worker())
 
         # Hardening pragmas
         await self._db.execute("PRAGMA journal_mode=WAL")
@@ -265,11 +304,52 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Phase 17: asymmetric visibility (fog of war)
+        try:
+            await self._db.execute(
+                "ALTER TABLE turns ADD COLUMN visibility_json TEXT DEFAULT '[]'"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
+        if self._worker_task:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
         if self._db:
             await self._db.close()
             self._db = None
+
+    async def _writer_worker(self):
+        """Sequential background worker for all INSERT/UPDATE/DELETE operations."""
+        while True:
+            try:
+                sql, params, future = await self._queue.get()
+                try:
+                    async with self._write_lock: # Still use lock for internal safety
+                        cursor = await self.db.execute(sql, params)
+                        await self.db.commit()
+                        if future and not future.done():
+                            future.set_result(cursor)
+                except Exception as e:
+                    if future and not future.done():
+                        future.set_exception(e)
+                    logger.error("DB Writer worker error on SQL [%s]: %s", sql, e)
+                finally:
+                    self._queue.task_done()
+            except asyncio.CancelledError:
+                break
+
+    async def _execute_queued(self, sql: str, params: Any = ()) -> Any:
+        """Queue a write operation and wait for its completion."""
+        future = asyncio.get_running_loop().create_future()
+        await self._queue.put((sql, params, future))
+        return await future
 
     @property
     def db(self) -> aiosqlite.Connection:
@@ -393,12 +473,10 @@ class Database:
             params.append(elapsed_seconds)
         params.append(experiment_id)
 
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                f"UPDATE experiments SET {', '.join(parts)} WHERE id = ?",
-                params,
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            f"UPDATE experiments SET {', '.join(parts)} WHERE id = ?",
+            params,
+        )
 
     async def save_verdict(
         self,
@@ -407,27 +485,21 @@ class Database:
         verdict_reasoning: str,
     ) -> None:
         """Persist the final verdict for an experiment."""
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                "UPDATE experiments SET winner = ?, verdict_reasoning = ? WHERE id = ?",
-                (winner, verdict_reasoning, experiment_id),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            "UPDATE experiments SET winner = ?, verdict_reasoning = ? WHERE id = ?",
+            (winner, verdict_reasoning, experiment_id),
+        )
 
     async def delete_experiment(self, experiment_id: str) -> None:
         """Delete an experiment and all associated data (cascades via FK)."""
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
-            await self.db.commit()
+        await self._execute_queued("DELETE FROM experiments WHERE id = ?", (experiment_id,))
 
     async def set_label(self, experiment_id: str, label: str | None) -> None:
         """Set or clear a human-readable nickname for an experiment."""
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                "UPDATE experiments SET label = ? WHERE id = ?",
-                (label, experiment_id),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            "UPDATE experiments SET label = ? WHERE id = ?",
+            (label, experiment_id),
+        )
 
     # ── Turns ────────────────────────────────────────────────────────
 
@@ -440,19 +512,19 @@ class Database:
         content: str,
         latency_seconds: float | None = None,
         token_count: int | None = None,
+        visibility: list[str] | None = None,
     ) -> int:
         """Insert a conversation turn. Returns the turn ID."""
         now = datetime.now(timezone.utc).isoformat()
-        async with self._write_lock:  # type: ignore[union-attr]
-            cursor = await self.db.execute(
-                """INSERT INTO turns
-                   (experiment_id, round, speaker, model, content,
-                    latency_seconds, token_count, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (experiment_id, round_num, speaker, model, content,
-                 latency_seconds, token_count, now),
-            )
-            await self.db.commit()
+        visibility_json = json.dumps(visibility) if visibility else '[]'
+        cursor = await self._execute_queued(
+            """INSERT INTO turns
+                (experiment_id, round, speaker, model, content,
+                latency_seconds, token_count, visibility_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (experiment_id, round_num, speaker, model, content,
+                latency_seconds, token_count, visibility_json, now),
+        )
         return cursor.lastrowid
 
     async def get_turns(self, experiment_id: str) -> list[dict]:
@@ -463,6 +535,23 @@ class Database:
         )
         return [dict(row) for row in await cursor.fetchall()]
 
+    async def get_stale_running_sessions(self, min_age_minutes: int = 3) -> list[dict]:
+        """Return experiments stuck in 'running' status older than min_age_minutes.
+        Used on server startup to detect sessions that survived a crash.
+        """
+        query = """
+            SELECT id, model_a, model_b, seed, system_prompt,
+                   rounds_planned, rounds_completed, config_json
+            FROM experiments
+            WHERE status = 'running'
+              AND created_at < datetime('now', ?)
+            ORDER BY created_at ASC
+        """
+        interval = f"-{min_age_minutes} minutes"
+        cursor = await self.db.execute(query, (interval,))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     async def insert_turn_score(
         self,
         turn_id: int,
@@ -472,13 +561,11 @@ class Database:
         novelty: float,
     ) -> None:
         """Persist scores for a single turn."""
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                """INSERT INTO turn_scores (turn_id, creativity, coherence, engagement, novelty)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (turn_id, creativity, coherence, engagement, novelty),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            """INSERT INTO turn_scores (turn_id, creativity, coherence, engagement, novelty)
+                VALUES (?, ?, ?, ?, ?)""",
+            (turn_id, creativity, coherence, engagement, novelty),
+        )
 
     async def get_turn_scores(self, experiment_id: str) -> list[dict]:
         """Get all turn scores for an experiment, joined on turn_id."""
@@ -513,25 +600,23 @@ class Database:
         On re-encounter, updates meaning if the new one is longer/richer.
         """
         parents_json = json.dumps(parent_words) if parent_words else None
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                """INSERT INTO vocabulary
-                   (experiment_id, word, meaning, coined_by, coined_round,
-                    category, parent_words, confidence)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(experiment_id, word)
-                   DO UPDATE SET
-                       usage_count = usage_count + 1,
-                       meaning = CASE
-                           WHEN excluded.meaning IS NOT NULL
-                                AND (meaning IS NULL OR length(excluded.meaning) > length(meaning))
-                           THEN excluded.meaning
-                           ELSE meaning
-                       END""",
+        await self._execute_queued(
+            """INSERT INTO vocabulary
                 (experiment_id, word, meaning, coined_by, coined_round,
-                 category, parents_json, confidence),
-            )
-            await self.db.commit()
+                category, parent_words, confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(experiment_id, word)
+                DO UPDATE SET
+                    usage_count = usage_count + 1,
+                    meaning = CASE
+                        WHEN excluded.meaning IS NOT NULL
+                            AND (meaning IS NULL OR length(excluded.meaning) > length(meaning))
+                        THEN excluded.meaning
+                        ELSE meaning
+                    END""",
+            (experiment_id, word, meaning, coined_by, coined_round,
+                category, parents_json, confidence),
+        )
 
     async def get_vocabulary(self, experiment_id: str) -> list[dict]:
         """Get all vocabulary for an experiment, ordered by round coined."""
@@ -567,18 +652,16 @@ class Database:
         if not parent_words:
             return
 
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                """UPDATE vocabulary
-                   SET origin_experiment_id = ?
-                   WHERE experiment_id = ?
-                     AND LOWER(word) IN ({placeholders})
-                     AND origin_experiment_id IS NULL""".format(
-                    placeholders=",".join("?" for _ in parent_words)
-                ),
-                (parent_experiment_id, experiment_id, *parent_words),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            """UPDATE vocabulary
+                SET origin_experiment_id = ?
+                WHERE experiment_id = ?
+                    AND LOWER(word) IN ({placeholders})
+                    AND origin_experiment_id IS NULL""".format(
+                placeholders=",".join("?" for _ in parent_words)
+            ),
+            (parent_experiment_id, experiment_id, *parent_words),
+        )
 
     async def get_experiment_tree(self, root_id: str) -> dict | None:
         """Fetch all experiments in a fork lineage as a nested tree.
@@ -734,30 +817,28 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         pairings = list(combinations(models, 2))
 
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                """INSERT INTO tournaments
-                   (id, name, preset, seed, system_prompt, rounds,
-                    config_json, models_json, total_matches, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    tournament_id, name, preset, seed, system_prompt, rounds,
-                    json.dumps(config) if config else None,
-                    json.dumps(models),
-                    len(pairings),
-                    now,
-                ),
+        await self._execute_queued(
+            """INSERT INTO tournaments
+                (id, name, preset, seed, system_prompt, rounds,
+                config_json, models_json, total_matches, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                tournament_id, name, preset, seed, system_prompt, rounds,
+                json.dumps(config) if config else None,
+                json.dumps(models),
+                len(pairings),
+                now,
+            ),
+        )
+
+        for order, (model_a, model_b) in enumerate(pairings, start=1):
+            await self._execute_queued(
+                """INSERT INTO tournament_matches
+                    (tournament_id, model_a, model_b, match_order)
+                    VALUES (?, ?, ?, ?)""",
+                (tournament_id, model_a, model_b, order),
             )
 
-            for order, (model_a, model_b) in enumerate(pairings, start=1):
-                await self.db.execute(
-                    """INSERT INTO tournament_matches
-                       (tournament_id, model_a, model_b, match_order)
-                       VALUES (?, ?, ?, ?)""",
-                    (tournament_id, model_a, model_b, order),
-                )
-
-            await self.db.commit()
         return tournament_id
 
     async def get_tournament(self, tournament_id: str) -> dict | None:
@@ -807,11 +888,9 @@ class Database:
             parts.append("completed_matches = ?")
             params.append(completed_matches)
         params.append(tournament_id)
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                f"UPDATE tournaments SET {', '.join(parts)} WHERE id = ?", params,
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            f"UPDATE tournaments SET {', '.join(parts)} WHERE id = ?", params,
+        )
 
     async def update_tournament_match(
         self,
@@ -826,12 +905,10 @@ class Database:
             parts.append("experiment_id = ?")
             params.append(experiment_id)
         params.append(match_id)
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                f"UPDATE tournament_matches SET {', '.join(parts)} WHERE id = ?",
-                params,
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            f"UPDATE tournament_matches SET {', '.join(parts)} WHERE id = ?",
+            params,
+        )
 
     async def get_tournament_leaderboard(self, tournament_id: str) -> list[dict]:
         """Aggregate per-model stats across all completed tournament matches.
@@ -996,13 +1073,11 @@ class Database:
         """Persist a memory entry for a model pair after an experiment completes."""
         pair = sorted([model_a, model_b])
         now = datetime.now(timezone.utc).isoformat()
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                """INSERT INTO model_memory (model_a, model_b, experiment_id, summary, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (pair[0], pair[1], experiment_id, summary, now),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            """INSERT INTO model_memory (model_a, model_b, experiment_id, summary, created_at)
+                VALUES (?, ?, ?, ?, ?)""",
+            (pair[0], pair[1], experiment_id, summary, now),
+        )
 
     async def get_memories_for_pair(
         self, model_a: str, model_b: str, limit: int = 5
@@ -1027,12 +1102,10 @@ class Database:
     async def delete_memories_for_pair(self, model_a: str, model_b: str) -> int:
         """Delete all memory rows for a model pair. Returns rows deleted."""
         pair = sorted([model_a, model_b])
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                "DELETE FROM model_memory WHERE model_a = ? AND model_b = ?",
-                (pair[0], pair[1]),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            "DELETE FROM model_memory WHERE model_a = ? AND model_b = ?",
+            (pair[0], pair[1]),
+        )
         cursor = await self.db.execute("SELECT changes()")
         row = await cursor.fetchone()
         return row[0] if row else 0
@@ -1227,12 +1300,10 @@ class Database:
 
     async def save_documentary(self, experiment_id: str, text: str) -> None:
         """Cache the generated documentary text on the experiment row."""
-        async with self._write_lock:  # type: ignore[union-attr]
-            await self.db.execute(
-                "UPDATE experiments SET documentary = ? WHERE id = ?",
-                (text, experiment_id),
-            )
-            await self.db.commit()
+        await self._execute_queued(
+            "UPDATE experiments SET documentary = ? WHERE id = ?",
+            (text, experiment_id),
+        )
 
     async def get_documentary(self, experiment_id: str) -> str | None:
         """Return the cached documentary text, or None if not yet generated."""
@@ -1301,4 +1372,75 @@ class Database:
         summary = " ".join(parts)
         return summary[:500]
 
-        return entries
+    # ── Resiliency (Phase 17) ──────────────────────────────────────────
+
+    async def save_system_events(self, events: list[dict]) -> None:
+        """Persist the EventHub buffer to disk."""
+        await self._execute_queued("DELETE FROM system_events")
+        for e in events:
+            await self._execute_queued(
+                """INSERT INTO system_events (match_id, event_type, payload, timestamp)
+                    VALUES (?, ?, ?, ?)""",
+                (e["match_id"], e["event_type"], e["payload"], e["timestamp"]),
+            )
+
+    async def get_system_events(self, limit: int = 1000) -> list[dict]:
+        """Fetch persisted SSE events for hydration."""
+        cursor = await self.db.execute(
+            "SELECT * FROM system_events ORDER BY id DESC LIMIT ?", (limit,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    async def save_rpg_state(
+        self,
+        match_id: str,
+        current_round: int,
+        current_speaker_idx: int,
+        is_awaiting_human: bool,
+    ) -> None:
+        """Persist ephemeral RPG engine state."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._execute_queued(
+            """INSERT INTO rpg_state
+                (match_id, current_round, current_speaker_idx, is_awaiting_human, last_updated)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(match_id) DO UPDATE SET
+                    current_round = excluded.current_round,
+                    current_speaker_idx = excluded.current_speaker_idx,
+                    is_awaiting_human = excluded.is_awaiting_human,
+                    last_updated = excluded.last_updated""",
+            (match_id, current_round, current_speaker_idx, int(is_awaiting_human), now),
+        )
+
+    async def get_rpg_state(self, match_id: str) -> dict | None:
+        """Fetch persisted RPG state for recovery."""
+        cursor = await self.db.execute(
+            "SELECT * FROM rpg_state WHERE match_id = ?", (match_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def delete_rpg_state(self, match_id: str) -> None:
+        """Clean up RPG state after completion or stop."""
+        await self._execute_queued("DELETE FROM rpg_state WHERE match_id = ?", (match_id,))
+
+    # ── Phase 17: Layered Context (Rolling Karp) ───────────────────────
+
+    async def get_latest_cold_summary(self, match_id: str) -> str | None:
+        """Fetch the most recent narrative recap for this match."""
+        cursor = await self.db.execute(
+            "SELECT summary FROM cold_summaries WHERE match_id = ? ORDER BY through_round DESC LIMIT 1",
+            (match_id,),
+        )
+        row = await cursor.fetchone()
+        return row["summary"] if row else None
+
+    async def get_world_state(self, match_id: str) -> str | None:
+        """Fetch the current extracted entity state (World Bible)."""
+        cursor = await self.db.execute(
+            "SELECT state_json FROM world_state WHERE match_id = ?",
+            (match_id,),
+        )
+        row = await cursor.fetchone()
+        return row["state_json"] if row else None

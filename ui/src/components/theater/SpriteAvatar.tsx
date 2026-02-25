@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 
 export type SpriteStatus = 'idle' | 'thinking' | 'talking' | 'error' | 'winner' | 'loser'
 
@@ -25,6 +25,8 @@ const GOLD  = '#FCD34D'
  */
 export function SpriteAvatar({ status, color, accentColor, instanceId, size = 64 }: SpriteAvatarProps) {
   const [blinking, setBlinking] = useState(false)
+  const generatedId = useId().replace(/:/g, '')
+  const clipId = `face-clip-${instanceId ?? generatedId}`
 
   useEffect(() => {
     if (status !== 'idle') { setBlinking(false); return }
@@ -63,7 +65,7 @@ export function SpriteAvatar({ status, color, accentColor, instanceId, size = 64
         aria-label={`${color ? (color === 'model-a' ? 'Model A' : 'Model B') : 'Agent'} avatar — ${status}`}
       >
         <defs>
-          <clipPath id={`face-clip-${instanceId ?? color ?? 'default'}`}>
+          <clipPath id={clipId}>
             <rect x="8" y="14" width="48" height="44" />
           </clipPath>
         </defs>
@@ -145,7 +147,7 @@ export function SpriteAvatar({ status, color, accentColor, instanceId, size = 64
             x="8" y="14" width="20" height="44"
             fill={accent} opacity="0"
             className="sprite-scan-bar"
-            clipPath={`url(#face-clip-${instanceId ?? color ?? 'default'})`}
+            clipPath={`url(#${clipId})`}
           />
         )}
 

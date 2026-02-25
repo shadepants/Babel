@@ -33,17 +33,13 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
         to_summarize = turns[:-hot_threshold]
         last_summarized_round = to_summarize[-1]["round"]
         
-        transcript = "
-".join([f"[{t['speaker']}]: {t['content'][:200]}" for t in to_summarize])
+        transcript = "\n".join([f"[{t['speaker']}]: {t['content'][:200]}" for t in to_summarize])
         
         summary_prompt = (
             "Recap the following conversation history in 3 concise sentences. "
             "Focus on major plot points and character decisions. "
-            "Keep it in third-person narrative style.
-
-"
-            f"History:
-{transcript}"
+            "Keep it in third-person narrative style.\n\n"
+            f"History:\n{transcript}"
         )
         
         res = await litellm.acompletion(
@@ -55,8 +51,6 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
         cold_summary = res.choices[0].message.content.strip()
         
         # Persist summary
-        # Note: we need a method in Database to save cold summary
-        # For now we'll assume it exists or use raw SQL via db.db
         await db.db.execute(
             """INSERT INTO cold_summaries (match_id, through_round, summary, created_at)
                VALUES (?, ?, ?, datetime('now'))
@@ -68,13 +62,10 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
         # --- 2. World Bible Extraction ---
         bible_prompt = (
             "Extract a JSON list of key entities (NPCs, Locations, Artifacts) and their "
-            "current status based on this history. Return ONLY valid JSON:
-"
-            '{"npcs": [{"name": "...", "status": "..."}], "locations": [...], "items": [...]}
-
-'
-            f"History:
-{transcript}"
+            "current status based on this history. Return ONLY valid JSON:\n"
+            '{"npcs": [{"name": "...", "status": "..."}], "locations": [...], "items": [...]}'
+            "\n\n"
+            f"History:\n{transcript}"
         )
         
         res_b = await litellm.acompletion(

@@ -113,3 +113,219 @@ RuntimeError: Database not connected. Call connect() first.
 INFO:     Started server process [14500]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_runner_check.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14500]
+unhandled exception during asyncio.run() shutdown
+task: <Task finished name='Task-469' coro=<run_rpg_match() done, defined at C:\Users\User\Repositories\Babel\server\rpg_engine.py:43> exception=RuntimeError('Database not connected. Call connect() first.')>
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Repositories\Babel\server\rpg_engine.py", line 210, in run_rpg_match
+    actor_system += f"\n\nBackground: {agent.persona.backstory}"
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\server\relay_engine.py", line 293, in call_model
+        "Are the models abandoning their conflicting goals and becoming too cooperative or friendly? "
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    agent = RelayAgent(
+    ^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\utils.py", line 1862, in wrapper_async
+    result = await original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\main.py", line 612, in acompletion
+    response = await init_response
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\vertex_ai\gemini\vertex_and_google_ai_studio_gemini.py", line 2605, in async_completion
+    response = await client.post(
+               ^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )  # type: ignore
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\litellm_core_utils\logging_utils.py", line 297, in async_wrapper
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 465, in post
+    response = await self.client.send(req, stream=stream)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\httpx\_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\aiohttp_transport.py", line 297, in handle_async_request
+    response = await self._make_aiohttp_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\litellm\llms\custom_httpx\aiohttp_transport.py", line 275, in _make_aiohttp_request
+    response = await client_session.request(**request_kwargs).__aenter__()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+                           ^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\client.py", line 779, in _request
+    resp = await handler(req)
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\client.py", line 757, in _connect_and_send_request
+    await resp.start(conn)
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\client_reqrep.py", line 539, in start
+    message, payload = await protocol.read()  # type: ignore[union-attr]
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\aiohttp\streams.py", line 703, in read
+    await self._waiter
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Repositories\Babel\server\rpg_engine.py", line 267, in run_rpg_match
+    )
+  File "C:\Users\User\Repositories\Babel\server\db.py", line 397, in update_experiment_status
+    await self.db.execute(
+          ^^^^^^^
+  File "C:\Users\User\Repositories\Babel\server\db.py", line 277, in db
+    except Exception:
+RuntimeError: Database not connected. Call connect() first.
+WARNING:  WatchFiles detected changes in 'server\summarizer_engine.py', 'server\vocab_extractor.py', 'server\relay_engine.py', '_check_stall.py', 'server\routers\relay.py', 'server\db.py', '_schema_check.py', '_all_today.py', '_check2.py', 'rpg_15round_runner.py', 'server\app.py', '_check3.py', '_watch_runners.py', 'server\rpg_engine.py', 'server\event_hub.py'. Reloading...
+Process SpawnProcess-3:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+    ~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 75, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 79, in serve
+    await self._serve(sockets)
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 86, in _serve
+    config.load()
+    ~~~~~~~~~~~^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\config.py", line 441, in load
+    self.loaded_app = import_from_string(self.app)
+                      ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\User\Repositories\Babel\server\app.py", line 205, in <module>
+    app = create_app()
+  File "C:\Users\User\Repositories\Babel\server\app.py", line 103, in create_app
+    from server.routers.relay import router as relay_router
+  File "C:\Users\User\Repositories\Babel\server\routers\relay.py", line 36, in <module>
+    from server.relay_engine import PersonaRecord, RelayAgent, run_relay
+  File "C:\Users\User\Repositories\Babel\server\relay_engine.py", line 24, in <module>
+    from server.summarizer_engine import update_layered_context
+  File "C:\Users\User\Repositories\Babel\server\summarizer_engine.py", line 36
+    transcript = "
+                 ^
+SyntaxError: unterminated string literal (detected at line 36)
+Process SpawnProcess-4:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+    ~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 75, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 79, in serve
+    await self._serve(sockets)
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\server.py", line 86, in _serve
+    config.load()
+    ~~~~~~~~~~~^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\config.py", line 441, in load
+    self.loaded_app = import_from_string(self.app)
+                      ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\Repositories\Babel\.venv\Lib\site-packages\uvicorn\importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\User\Repositories\Babel\server\app.py", line 205, in <module>
+    app = create_app()
+  File "C:\Users\User\Repositories\Babel\server\app.py", line 103, in create_app
+    from server.routers.relay import router as relay_router
+  File "C:\Users\User\Repositories\Babel\server\routers\relay.py", line 36, in <module>
+    from server.relay_engine import PersonaRecord, RelayAgent, run_relay
+  File "C:\Users\User\Repositories\Babel\server\relay_engine.py", line 24, in <module>
+    from server.summarizer_engine import update_layered_context
+  File "C:\Users\User\Repositories\Babel\server\summarizer_engine.py", line 36
+    transcript = "
+                 ^
+SyntaxError: unterminated string literal (detected at line 36)

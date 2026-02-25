@@ -38,58 +38,75 @@ export function useSSE(
       return;
     }
 
-    // Guard against React 19 Strict Mode double-mount:
-    // Close any existing connection before opening a new one.
-    sourceRef.current?.close();
-
-    // Track whether this effect instance is still active.
-    // If cleanup runs (unmount or re-render), we stop processing events.
+    // Fix #5: Jittered Exponential Backoff state
     let cancelled = false;
+    let retryCount = 0;
+    const MAX_RETRY_DELAY = 10000; // 10s
+    const BASE_DELAY = 500;        // 500ms
 
-    const url = `/api/relay/stream?match_id=${encodeURIComponent(matchId)}`;
-    const source = new EventSource(url);
-    sourceRef.current = source;
-
-    source.onopen = () => {
+    function connect() {
       if (cancelled) return;
-      setConnected(true);
-      setError(null);
-      // Clear old state so backend history replay doesn't duplicate bubbles
-      setEvents([]);
-    };
 
-    source.onmessage = (event) => {
-      if (cancelled) return;
-      try {
-        const parsed: RelaySSEEvent = JSON.parse(event.data);
-        setLastEvent(parsed);
-        setEvents((prev) => {
-          // Deduplicate on reconnect: skip events already in history.
-          // Turn events have turn_id; other events use type+timestamp.
-          if (parsed.type === 'relay.turn') {
-            const turnId = (parsed as { turn_id: string }).turn_id;
-            if (prev.some((e) => e.type === 'relay.turn' && (e as { turn_id: string }).turn_id === turnId)) {
-              return prev;
+      // Close any existing connection
+      sourceRef.current?.close();
+
+      const url = `/api/relay/stream?match_id=${encodeURIComponent(matchId!)}`;
+      const source = new EventSource(url);
+      sourceRef.current = source;
+
+      source.onopen = () => {
+        if (cancelled) return;
+        setConnected(true);
+        setError(null);
+        retryCount = 0; // Reset backoff on success
+        // Clear old state so backend history replay doesn't duplicate bubbles
+        setEvents([]);
+      };
+
+      source.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          const parsed: RelaySSEEvent = JSON.parse(event.data);
+          setLastEvent(parsed);
+          setEvents((prev) => {
+            // Deduplicate on reconnect: skip events already in history.
+            if (parsed.type === 'relay.turn') {
+              const turnId = (parsed as { turn_id: string }).turn_id;
+              if (prev.some((e) => e.type === 'relay.turn' && (e as { turn_id: string }).turn_id === turnId)) {
+                return prev;
+              }
             }
-          }
-          const next = [...prev, parsed];
-          return next.length > maxHistory ? next.slice(-maxHistory) : next;
-        });
-      } catch {
-        // Ignore malformed events (keepalives are SSE comments, not data)
-      }
-    };
+            const next = [...prev, parsed];
+            return next.length > maxHistory ? next.slice(-maxHistory) : next;
+          });
+        } catch { /* ignore keepalives */ }
+      };
 
-    source.onerror = () => {
-      if (cancelled) return;
-      setConnected(false);
-      setError('Connection lost — reconnecting...');
-      // EventSource auto-reconnects natively
-    };
+      source.onerror = () => {
+        if (cancelled) return;
+        setConnected(false);
+        source.close(); // Force close to stop native auto-retry so we can use our backoff
+
+        // Calculate backoff: min(MAX_DELAY, BASE * 2^count) + random jitter
+        const delay = Math.min(MAX_RETRY_DELAY, BASE_DELAY * Math.pow(2, retryCount));
+        const jitter = Math.random() * 500;
+        
+        setError(`Connection lost — retrying in ${Math.round((delay + jitter)/1000)}s...`);
+        
+        setTimeout(() => {
+          if (!cancelled) {
+            retryCount++;
+            connect();
+          }
+        }, delay + jitter);
+      };
+    }
+
+    connect();
 
     return () => {
       cancelled = true;
-      source.close();
+      sourceRef.current?.close();
       sourceRef.current = null;
       setConnected(false);
     };

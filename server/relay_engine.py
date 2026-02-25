@@ -117,6 +117,13 @@ def _log_task_exception(task: asyncio.Task) -> None:  # type: ignore[type-arg]
         logger.error("Background task failed: %s", task.exception())
 
 
+def track_task(task: asyncio.Task, background_tasks: set[asyncio.Task]) -> None:
+    """Add task to tracking set and register cleanup callback."""
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+    task.add_done_callback(_log_task_exception)
+
+
 # -- JSON Parse Helpers -------------------------------------------------------
 
 def _parse_score_json(raw: str) -> dict:
@@ -537,6 +544,7 @@ async def run_relay(
     enable_memory: bool = False,
     initial_history: list[dict] | None = None,
     parent_experiment_id: str | None = None,
+    background_tasks: set[asyncio.Task] | None = None,
     # Backward-compat shim for callers that pass agent_a/agent_b explicitly
     agent_a: RelayAgent | None = None,
     agent_b: RelayAgent | None = None,
@@ -687,18 +695,27 @@ async def run_relay(
                     _score_task = asyncio.create_task(
                         score_turn(turn_id, content, judge_model, match_id, hub, db)
                     )
-                    _score_task.add_done_callback(_log_task_exception)
+                    if background_tasks is not None:
+                        track_task(_score_task, background_tasks)
+                    else:
+                        _score_task.add_done_callback(_log_task_exception)
 
                 _vocab_task = asyncio.create_task(_extract_and_publish_vocab(
                     content, agent.name, round_num, match_id, hub, db, known_words,
                     preset=preset,
                 ))
-                _vocab_task.add_done_callback(_log_task_exception)
+                if background_tasks is not None:
+                    track_task(_vocab_task, background_tasks)
+                else:
+                    _vocab_task.add_done_callback(_log_task_exception)
 
                 # Phase 17: Update layered context asynchronously every 2 rounds
                 if round_num % 2 == 0 and agent_idx == len(agents) - 1:
                     _summarize_task = asyncio.create_task(update_layered_context(match_id, db))
-                    _summarize_task.add_done_callback(_log_task_exception)
+                    if background_tasks is not None:
+                        track_task(_summarize_task, background_tasks)
+                    else:
+                        _summarize_task.add_done_callback(_log_task_exception)
 
                 # Phase 17: Zero-Sum Pressure Valve (E3)
                 # Check for cooperative drift every 3 rounds in adversarial presets
@@ -764,7 +781,10 @@ async def run_relay(
             _verdict_task = asyncio.create_task(
                 final_verdict(match_id, turns, agents, judge_model, hub, db)
             )
-            _verdict_task.add_done_callback(_log_task_exception)
+            if background_tasks is not None:
+                track_task(_verdict_task, background_tasks)
+            else:
+                _verdict_task.add_done_callback(_log_task_exception)
 
         if enable_memory and len(agents) == 2:
             async def _save_memory() -> None:
@@ -773,7 +793,10 @@ async def run_relay(
                     await db.create_memory(agents[0].model, agents[1].model, match_id, summary)
                     logger.info("Memory saved for %s: %.80s", match_id, summary)
             _mem_task = asyncio.create_task(_save_memory())
-            _mem_task.add_done_callback(_log_task_exception)
+            if background_tasks is not None:
+                track_task(_mem_task, background_tasks)
+            else:
+                _mem_task.add_done_callback(_log_task_exception)
 
         if parent_experiment_id:
             _origin_task = asyncio.create_task(

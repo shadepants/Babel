@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI):
     hub = EventHub()
     app.state.hub = hub
 
+    # Fix #3: Track background tasks to prevent silent failures and data loss
+    app.state.background_tasks: set[asyncio.Task] = set()
+
     # Rehydrate SSE history buffer
     stale_events = await db.get_system_events(limit=1000)
     if stale_events:
@@ -49,7 +52,7 @@ async def lifespan(app: FastAPI):
 
     # Recovery: resume standard sessions stuck in 'running' from a prior crash
     from server.routers.relay import recover_stale_sessions
-    recovered = await recover_stale_sessions(hub, db, min_age_minutes=3)
+    recovered = await recover_stale_sessions(hub, db, app.state.background_tasks, min_age_minutes=3)
     if recovered:
         logger.info("Recovered %d stale session(s) from previous run", recovered)
 
@@ -66,7 +69,16 @@ async def lifespan(app: FastAPI):
         logger.info("Shutdown: signaling %d active session(s) to stop", len(_running_relays))
         for _mid, (_task, cancel_ev, _resume) in list(_running_relays.items()):
             cancel_ev.set()
-        await asyncio.sleep(2.0)
+        
+        # Give in-flight LLM calls and DB writes significant time to settle (Fix #2)
+        logger.info("Shutdown: waiting up to 30s for tasks to settle...")
+        await asyncio.sleep(30.0)
+
+    # Final wait for all fire-and-forget tasks (Scoring, Vocab, Summaries)
+    if hasattr(app.state, "background_tasks") and app.state.background_tasks:
+        remaining = len(app.state.background_tasks)
+        logger.info("Shutdown: cleaning up %d background task(s)...", remaining)
+        await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
 
     # Persist SSE history buffer
     events_to_save = hub.serialize(limit=1000)

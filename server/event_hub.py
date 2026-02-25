@@ -77,7 +77,10 @@ class EventHub:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                logger.warning("Subscriber queue full, dropping event")
+                logger.error(
+                    "SSE Subscriber ejected: Queue full (maxsize=%d). Client is too slow or disconnected.",
+                    queue.maxsize
+                )
                 dead.append(i)
 
         for i in reversed(dead):
@@ -89,19 +92,9 @@ class EventHub:
         include_history: bool = True,
         last_event_id: int | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        """Subscribe to events as an async iterator.
-
-        Parameters
-        ----------
-        match_id:
-            Only receive events for this match. None = all events.
-        include_history:
-            Replay recent events before streaming new ones.
-        last_event_id:
-            If provided, only replay history events with event_id > last_event_id.
-            Enables selective replay after a client reconnect (Last-Event-ID header).
-        """
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=2000)
+        """Subscribe to events as an async iterator."""
+        # Fix #4: Increase queue size to handle bursty research sessions
+        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=5000)
         sub_entry = (queue, match_id)
         self._subscribers.append(sub_entry)
 

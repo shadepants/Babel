@@ -237,8 +237,11 @@ async def start_relay(body: RelayStartRequest, request: Request):
             cancel_event=cancel_event,
             preset=body.preset,
             participant_persona_ids=body.persona_ids,
-            rpg_config=body.rpg_config,
-        ))
+                        rpg_config=body.rpg_config,
+                        background_tasks=request.app.state.background_tasks,
+                    )
+                )
+            
         resume_event = asyncio.Event()
         resume_event.set()
         _running_relays[match_id] = (task, cancel_event, resume_event)
@@ -326,6 +329,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
             observer_interval=body.observer_interval,
             initial_history=body.initial_history,
             parent_experiment_id=body.parent_experiment_id,
+            background_tasks=request.app.state.background_tasks,
         )
     )
     _running_relays[match_id] = (task, cancel_event, resume_event)
@@ -687,7 +691,7 @@ async def set_api_key(body: SetKeyRequest):
 
 # ── Startup Recovery ─────────────────────────────────────────────────────
 
-async def recover_stale_sessions(hub, db, min_age_minutes: int = 3) -> int:
+async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | None = None, min_age_minutes: int = 3) -> int:
     """On startup: resume or mark-failed any sessions stuck in 'running' from a prior crash.
 
     Standard (non-RPG) sessions are fully recoverable: agents are reconstructed
@@ -751,6 +755,7 @@ async def recover_stale_sessions(hub, db, min_age_minutes: int = 3) -> int:
                     rpg_config=recovery.get("rpg_config"),
                     start_round=rpg_state["current_round"],
                     start_index=rpg_state["current_speaker_idx"],
+                    background_tasks=background_tasks,
                 ))
                 
                 def _rpg_cleanup(t: asyncio.Task, mid: str = match_id) -> None:
@@ -817,6 +822,7 @@ async def recover_stale_sessions(hub, db, min_age_minutes: int = 3) -> int:
                 enable_verdict=recovery.get("enable_verdict", False),
                 enable_memory=recovery.get("enable_memory", False),
                 initial_history=initial_history,
+                background_tasks=background_tasks,
             ))
 
             def _cleanup(t: asyncio.Task, mid: str = match_id) -> None:

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
@@ -10,16 +10,40 @@ import { SpriteAvatar } from './SpriteAvatar'
 import { TheaterCanvas } from './TheaterCanvas'
 import { EndSessionModal } from './EndSessionModal'
 import { DiceOverlay } from './DiceOverlay'
+import { ProviderSigil } from '@/components/common/ProviderSigil'
 import type { TurnEvent, ActionMenuEvent, RpgContextResponse } from '@/api/types'
 
-/** Speaker role colors (CSS hex values) */
-const ROLE_COLORS: Record<string, string> = {
-  dm: '#F59E0B',       // amber
-  player: '#10B981',   // emerald
-  default: '#06B6D4',  // cyan (AI companions)
+// ── Color system ────────────────────────────────────────────────────────────
+
+/** DM always amber, human player always emerald, companions get unique palette colors */
+const COMPANION_PALETTE = ['#A78BFA', '#F472B6', '#38BDF8', '#FB923C']
+
+type Participant = {
+  name: string
+  model: string
+  role: string
+  char_class?: string
+  motivation?: string
 }
 
-/** Role badge labels */
+function buildColorMap(participants: Participant[] | null): Record<string, string> {
+  if (!participants) return {}
+  const map: Record<string, string> = {}
+  let ci = 0
+  for (const p of participants) {
+    const role = p.role.toLowerCase()
+    if (role === 'dm') {
+      map[p.name.toLowerCase()] = '#F59E0B'
+    } else if (role === 'player') {
+      map[p.name.toLowerCase()] = '#10B981'
+    } else {
+      map[p.name.toLowerCase()] = COMPANION_PALETTE[ci % COMPANION_PALETTE.length]
+      ci++
+    }
+  }
+  return map
+}
+
 const ROLE_LABELS: Record<string, string> = {
   dm: 'DM',
   player: 'YOU',
@@ -27,35 +51,103 @@ const ROLE_LABELS: Record<string, string> = {
   npc: 'NPC',
 }
 
-function speakerColor(speaker: string, participants: Array<{ name: string; role: string }> | null): string {
-  if (!participants) return ROLE_COLORS.default
-  const p = participants.find((pp) => pp.name.toLowerCase() === speaker.toLowerCase())
-  if (!p) return ROLE_COLORS.default
-  const role = p.role.toLowerCase()
-  return ROLE_COLORS[role] ?? ROLE_COLORS.default
+// ── Turn entry components ───────────────────────────────────────────────────
+
+/**
+ * DM turn — full-width narrative prose format.
+ * Italic, wider left border, strip [CHECK: ...] tags (dice overlay handles those).
+ */
+function DMTurnEntry({ turn, color }: { turn: TurnEvent; color: string }) {
+  const displayContent = turn.content.replace(/\[CHECK:[^\]]*\]/gi, '').trim()
+
+  return (
+    <div className="animate-fade-in py-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-3 w-3 rounded-sm flex-shrink-0" style={{ background: color }} />
+        <span
+          className="font-mono text-[9px] uppercase tracking-widest font-bold"
+          style={{ color }}
+        >
+          Dungeon Master
+        </span>
+        <span className="font-mono text-[9px] text-text-dim/40 ml-auto tabular-nums">
+          R.{turn.round}{turn.latency_s ? <> &middot; {turn.latency_s}s</> : null}
+        </span>
+      </div>
+
+      <div
+        className="text-sm leading-7 whitespace-pre-wrap break-words"
+        style={{
+          color: 'rgba(255,255,255,0.88)',
+          fontFamily: 'ui-monospace, monospace',
+          fontStyle: 'italic',
+          borderLeft: `3px solid ${color}50`,
+          paddingLeft: '16px',
+        }}
+      >
+        {displayContent}
+      </div>
+
+      <div
+        className="mt-4 h-px"
+        style={{ background: `linear-gradient(90deg, ${color}25, transparent 60%)` }}
+      />
+    </div>
+  )
 }
 
-/** Single turn in the chronological log */
-function RPGTurnEntry({
+/**
+ * Companion / player turn — character card format.
+ * Shows name + class + model sigil in header, content with colored left border.
+ */
+function CompanionTurnEntry({
   turn,
   color,
+  participant,
 }: {
   turn: TurnEvent
   color: string
+  participant?: Participant
 }) {
+  const isPlayer = participant?.role.toLowerCase() === 'player'
+
   return (
-    <div className="animate-fade-in py-2.5">
-      <div className="flex items-baseline gap-2 mb-1">
+    <div className="animate-fade-in py-3">
+      <div className="flex items-center gap-2 mb-1.5">
         <span className="font-mono text-xs font-semibold" style={{ color }}>
           {turn.speaker}
         </span>
-        <span className="font-mono text-[9px] text-text-dim tabular-nums">
-          R.{turn.round} &middot; {turn.latency_s}s
+
+        {participant?.char_class && (
+          <span
+            className="font-mono text-[9px] uppercase tracking-wide"
+            style={{ color: `${color}80` }}
+          >
+            {participant.char_class}
+          </span>
+        )}
+
+        {!isPlayer && participant?.model && (
+          <span className="flex items-center gap-1 ml-1" style={{ color: `${color}60` }}>
+            <ProviderSigil model={participant.model} size={10} color={`${color}60`} />
+            <span className="font-mono text-[9px]">
+              {participant.model.split('/').pop()}
+            </span>
+          </span>
+        )}
+
+        <span className="font-mono text-[9px] text-text-dim/30 ml-auto tabular-nums">
+          R.{turn.round}{turn.latency_s ? <> &middot; {turn.latency_s}s</> : null}
         </span>
       </div>
+
       <div
-        className="font-mono text-sm text-text-primary leading-relaxed pl-3 whitespace-pre-wrap break-words"
-        style={{ borderLeft: `2px solid ${color}40` }}
+        className="font-mono text-sm leading-relaxed whitespace-pre-wrap break-words"
+        style={{
+          color: 'rgba(255,255,255,0.80)',
+          borderLeft: `2px solid ${color}40`,
+          paddingLeft: '12px',
+        }}
       >
         {turn.content}
       </div>
@@ -63,13 +155,83 @@ function RPGTurnEntry({
   )
 }
 
-/** Collapsible world state panel — NPCs, locations, items discovered so far */
+// ── Narrative arc bar ───────────────────────────────────────────────────────
+
+const ARC_PHASES = [
+  { label: 'Opening', from: 0 },
+  { label: 'Rising Action', from: 0.2 },
+  { label: 'Climax', from: 0.6 },
+  { label: 'Resolution', from: 0.85 },
+]
+
+/** Horizontal story arc indicator — shows current phase + round progress. */
+function NarrativeArcBar({ current, total }: { current: number; total: number }) {
+  if (!total || total < 2) return null
+
+  const progress = Math.min(current / total, 1)
+  let activeLabel = ARC_PHASES[0].label
+  for (const ph of ARC_PHASES) {
+    if (progress >= ph.from) activeLabel = ph.label
+  }
+
+  return (
+    <div
+      className="px-4 py-2 border-b border-border-custom/20 flex items-center gap-3 relative z-10"
+      style={{ background: 'rgba(10,15,30,0.4)' }}
+    >
+      <span className="font-mono text-[9px] uppercase tracking-widest text-text-dim/50 w-28 flex-shrink-0">
+        {activeLabel}
+      </span>
+      <div
+        className="flex-1 h-0.5 rounded-full overflow-hidden"
+        style={{ background: 'rgba(255,255,255,0.06)' }}
+      >
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out"
+          style={{
+            width: `${progress * 100}%`,
+            background: 'linear-gradient(90deg, #F59E0B, #A78BFA)',
+          }}
+        />
+      </div>
+      <span className="font-mono text-[9px] text-text-dim/40 flex-shrink-0 tabular-nums">
+        R.{current} / {total}
+      </span>
+    </div>
+  )
+}
+
+// ── World state panel ───────────────────────────────────────────────────────
+
+/**
+ * World state sidebar panel.
+ * Defaults open (observatory mode). New entities pulse gold on discovery.
+ */
 function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
+  const [freshNames, setFreshNames] = useState<Set<string>>(new Set())
+  const knownRef = useRef<Set<string>>(new Set())
+
   const hasData =
     (world.npcs?.length ?? 0) > 0 ||
     (world.locations?.length ?? 0) > 0 ||
     (world.items?.length ?? 0) > 0
+
+  useEffect(() => {
+    const all = [
+      ...(world.npcs?.map((n) => n.name) ?? []),
+      ...(world.locations?.map((l) => l.name) ?? []),
+      ...(world.items?.map((i) => i.name) ?? []),
+    ]
+    const fresh = new Set(all.filter((n) => !knownRef.current.has(n)))
+    all.forEach((n) => knownRef.current.add(n))
+
+    if (fresh.size > 0) {
+      setFreshNames(fresh)
+      const t = setTimeout(() => setFreshNames(new Set()), 2500)
+      return () => clearTimeout(t)
+    }
+  }, [world])
 
   if (!hasData) return null
 
@@ -83,36 +245,55 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
         <span>World</span>
         <span className="text-text-dim/60">{open ? '\u25B2' : '\u25BC'}</span>
       </button>
+
       {open && (
         <div className="px-2.5 py-2 space-y-2" style={{ background: 'rgba(15,23,42,0.4)' }}>
           {(world.npcs?.length ?? 0) > 0 && (
             <div>
               <div className="text-[9px] font-mono uppercase text-amber-400/60 mb-1">NPCs</div>
               {world.npcs!.map((npc) => (
-                <div key={npc.name} className="text-[10px] font-mono text-text-primary/80 truncate">
-                  <span className="text-amber-300/70">{npc.name}</span>
-                  {npc.status && <span className="text-text-dim"> &mdash; {npc.status}</span>}
+                <div
+                  key={npc.name}
+                  className="text-[10px] font-mono truncate transition-colors duration-700"
+                  style={{ color: freshNames.has(npc.name) ? '#FCD34D' : 'rgba(253,230,138,0.7)' }}
+                >
+                  {npc.name}
+                  {npc.status && (
+                    <span className="text-text-dim"> &mdash; {npc.status}</span>
+                  )}
                 </div>
               ))}
             </div>
           )}
+
           {(world.locations?.length ?? 0) > 0 && (
             <div>
               <div className="text-[9px] font-mono uppercase text-cyan-400/60 mb-1">Locations</div>
               {world.locations!.map((loc) => (
-                <div key={loc.name} className="text-[10px] font-mono text-text-primary/80 truncate">
-                  <span className="text-cyan-300/70">{loc.name}</span>
+                <div
+                  key={loc.name}
+                  className="text-[10px] font-mono truncate transition-colors duration-700"
+                  style={{ color: freshNames.has(loc.name) ? '#67E8F9' : 'rgba(103,232,249,0.7)' }}
+                >
+                  {loc.name}
                 </div>
               ))}
             </div>
           )}
+
           {(world.items?.length ?? 0) > 0 && (
             <div>
               <div className="text-[9px] font-mono uppercase text-violet-400/60 mb-1">Items</div>
               {world.items!.map((item) => (
-                <div key={item.name} className="text-[10px] font-mono text-text-primary/80 truncate">
-                  <span className="text-violet-300/70">{item.name}</span>
-                  {item.holder && <span className="text-text-dim"> ({item.holder})</span>}
+                <div
+                  key={item.name}
+                  className="text-[10px] font-mono truncate transition-colors duration-700"
+                  style={{ color: freshNames.has(item.name) ? '#C4B5FD' : 'rgba(167,139,250,0.7)' }}
+                >
+                  {item.name}
+                  {item.holder && (
+                    <span className="text-text-dim"> ({item.holder})</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -123,10 +304,12 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
   )
 }
 
-/** "Story So Far" banner shown at the top of the chat log when a cold summary exists */
+// ── Story so far banner ─────────────────────────────────────────────────────
+
 function StorySoFarBanner({ summary }: { summary: string }) {
   const [visible, setVisible] = useState(true)
   if (!visible) return null
+
   return (
     <div
       className="mb-4 rounded px-4 py-3 relative"
@@ -151,11 +334,14 @@ function StorySoFarBanner({ summary }: { summary: string }) {
   )
 }
 
+// ── Main component ──────────────────────────────────────────────────────────
+
 /**
- * RPGTheater - full-page RPG session view.
+ * RPGTheater — AI vs AI RPG session observatory.
  *
- * Layout: left sidebar (party roster + world state) + center (chat log + input).
- * Features: action menus, story-so-far banner, world state panel, campaign header.
+ * Pure observation mode: each participant gets a unique color, DM turns render
+ * as narrative prose, companions as character cards. Narrative arc bar shows
+ * story phase. Observer status bar replaces human input for pure AI sessions.
  */
 export default function RPGTheater() {
   const { matchId } = useParams<{ matchId: string }>()
@@ -167,30 +353,31 @@ export default function RPGTheater() {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
 
-  // Load participants from experiment record
-  const [participants, setParticipants] = useState<Array<{
-    name: string; model: string; role: string; char_class?: string; motivation?: string
-  }> | null>(null)
+  const [participants, setParticipants] = useState<Participant[] | null>(null)
   const [rpgConfig, setRpgConfig] = useState<{
     tone?: string; setting?: string; difficulty?: string; campaign_hook?: string
   } | null>(null)
-
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
-
-  // Action menu from backend
+  const [activeRoll, setActiveRoll] = useState<{
+    skill: string; dc: number; result: number; success: boolean
+  } | null>(null)
   const [actionMenu, setActionMenu] = useState<string[] | null>(null)
-
-  // RPG context (cold summary + world state) — polled after round boundaries
   const [rpgContext, setRpgContext] = useState<RpgContextResponse | null>(null)
 
+  // Derived
+  const colorMap = useMemo(() => buildColorMap(participants), [participants])
+  const hasHumanPlayer = useMemo(
+    () => participants?.some((p) => p.model === 'human') ?? false,
+    [participants]
+  )
+
+  // Load experiment metadata
   useEffect(() => {
     if (!matchId) return
     api.getExperiment(matchId).then((exp) => {
       if (exp.participants_json) {
         try { setParticipants(JSON.parse(exp.participants_json)) } catch { /* ignore */ }
       }
-      // Extract rpg_config from config_json if available
       if ((exp as Record<string, unknown>).config_json) {
         try {
           const cfg = JSON.parse((exp as Record<string, unknown>).config_json as string)
@@ -200,13 +387,12 @@ export default function RPGTheater() {
     }).catch(() => {})
   }, [matchId])
 
-  // Handle incoming SSE events for action menu
+  // Action menu events
   useEffect(() => {
     if (!lastEvent) return
     if (lastEvent.type === 'relay.action_menu') {
       setActionMenu((lastEvent as ActionMenuEvent).actions)
     } else if (lastEvent.type === 'relay.turn') {
-      // Clear action menu once the player's turn is received
       const playerName = participants?.find((p) => p.role.toLowerCase() === 'player')?.name ?? ''
       if ((lastEvent as TurnEvent).speaker.toLowerCase() === playerName.toLowerCase()) {
         setActionMenu(null)
@@ -214,14 +400,13 @@ export default function RPGTheater() {
     }
   }, [lastEvent, participants])
 
-  // Fetch rpg-context after each round boundary or when turns arrive
+  // RPG context polling — every 2 turns
   useEffect(() => {
     if (!matchId || state.turns.length === 0) return
-    // Refresh every 2 turns (light polling — context only updates every 2 rounds anyway)
     if (state.turns.length % 2 !== 0) return
     api.getRpgContext(matchId)
       .then((ctx) => setRpgContext(ctx))
-      .catch(() => {/* silent fail — context panel is cosmetic */})
+      .catch(() => {})
   }, [matchId, state.turns.length])
 
   // Auto-scroll when near bottom
@@ -245,10 +430,21 @@ export default function RPGTheater() {
   }, [state.turns.length, state.isAwaitingHuman])
 
   useEffect(() => {
-    if (state.status === 'completed') {
-      setIsModalOpen(true)
-    }
+    if (state.status === 'completed') setIsModalOpen(true)
   }, [state.status])
+
+  // Detect [CHECK: Skill DC# Result: #] in the latest DM turn
+  const lastTurn = state.turns.length > 0 ? state.turns[state.turns.length - 1] : null
+  useEffect(() => {
+    if (!lastTurn || state.status !== 'running') return
+    const m = lastTurn.content.match(/\[CHECK:\s*(\w+)\s*DC(\d+)\s*Result:\s*(\d+)\]/i)
+    if (m) {
+      const skill = m[1]
+      const dc = parseInt(m[2], 10)
+      const result = parseInt(m[3], 10)
+      setActiveRoll({ skill, dc, result, success: result >= dc })
+    }
+  }, [lastTurn?.turn_id, state.status])
 
   if (!matchId) return null
 
@@ -256,55 +452,43 @@ export default function RPGTheater() {
   const dmName = participants?.find((p) => p.role.toLowerCase() === 'dm')?.name ?? 'DM'
   const isDone = state.status === 'completed' || state.status === 'error'
 
-  const lastTurn = state.turns.length > 0 ? state.turns[state.turns.length - 1] : null
-
-  useEffect(() => {
-    if (!lastTurn || state.status !== 'running') return
-    const checkMatch = lastTurn.content.match(/\[CHECK:\s*(\w+)\s*DC(\d+)\s*Result:\s*(\d+)\]/i)
-    if (checkMatch) {
-      const skill = checkMatch[1]
-      const dc = parseInt(checkMatch[2], 10)
-      const result = parseInt(checkMatch[3], 10)
-      setActiveRoll({ skill, dc, result, success: result >= dc })
-    }
-  }, [lastTurn?.turn_id, state.status])
-
-  // Campaign tone badge color
+  // Tone visuals
   const toneBadgeColor: Record<string, string> = {
-    cinematic: '#06B6D4',
-    grimdark: '#EF4444',
-    gritty: '#F97316',
-    whimsical: '#A78BFA',
-    serious: '#94A3B8',
+    cinematic: '#06B6D4', grimdark: '#EF4444', gritty: '#F97316',
+    whimsical: '#A78BFA', serious: '#94A3B8',
   }
   const toneColor = toneBadgeColor[rpgConfig?.tone?.toLowerCase() ?? ''] ?? '#94A3B8'
 
-  // Tone-reactive canvas tint — "R,G,B" string passed to TheaterCanvas
   const toneToTint: Record<string, string> = {
-    grimdark: '239,68,68',
-    gritty: '249,115,22',
-    whimsical: '167,139,250',
-    cinematic: '6,182,212',
-    serious: '148,163,184',
+    grimdark: '239,68,68', gritty: '249,115,22', whimsical: '167,139,250',
+    cinematic: '6,182,212', serious: '148,163,184',
   }
   const canvasTint = toneToTint[rpgConfig?.tone?.toLowerCase() ?? ''] ?? '6,182,212'
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary">
+
       {/* ── Left Sidebar: Party Roster + World State ── */}
       <aside className="w-56 border-r border-border-custom/50 bg-bg-deep/40 p-4 flex flex-col gap-4 overflow-y-auto">
-        <Link to="/" className="text-xs text-text-dim hover:text-text-primary/80 font-mono flex-shrink-0">
+        <Link
+          to="/"
+          className="text-xs text-text-dim hover:text-text-primary/80 font-mono flex-shrink-0"
+        >
           &larr; Babel
         </Link>
 
         {/* Campaign info */}
         {rpgConfig && (
-          <div className="flex-shrink-0 space-y-1">
+          <div className="flex-shrink-0 space-y-1.5">
             {rpgConfig.tone && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span
                   className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded"
-                  style={{ color: toneColor, border: `1px solid ${toneColor}40`, background: `${toneColor}10` }}
+                  style={{
+                    color: toneColor,
+                    border: `1px solid ${toneColor}40`,
+                    background: `${toneColor}10`,
+                  }}
                 >
                   {rpgConfig.tone}
                 </span>
@@ -330,7 +514,7 @@ export default function RPGTheater() {
         {participants ? (
           <ul className="space-y-3 flex-shrink-0">
             {participants.map((p) => {
-              const color = speakerColor(p.name, participants)
+              const color = colorMap[p.name.toLowerCase()] ?? '#06B6D4'
               const isHuman = p.model === 'human'
               const role = p.role.toLowerCase()
               const roleLabel = ROLE_LABELS[role] ?? role.toUpperCase()
@@ -338,11 +522,15 @@ export default function RPGTheater() {
               let avatarStatus: 'idle' | 'thinking' | 'talking' | 'error' | 'winner' | 'loser' = 'idle'
               if (state.thinkingSpeaker?.toLowerCase() === p.name.toLowerCase()) {
                 avatarStatus = 'thinking'
-              } else if (state.turns.length > 0 && state.turns[state.turns.length - 1].speaker.toLowerCase() === p.name.toLowerCase()) {
+              } else if (
+                state.turns.length > 0 &&
+                state.turns[state.turns.length - 1].speaker.toLowerCase() === p.name.toLowerCase()
+              ) {
                 avatarStatus = 'talking'
               }
 
               const isAwaiting = isHuman && state.isAwaitingHuman
+
               return (
                 <li key={p.name} className="flex items-start gap-2.5">
                   <div className="flex-shrink-0 mt-0.5 relative">
@@ -361,7 +549,10 @@ export default function RPGTheater() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-mono font-medium truncate" style={{ color }}>
+                      <span
+                        className="text-sm font-mono font-medium truncate"
+                        style={{ color }}
+                      >
                         {p.name}
                       </span>
                       <span
@@ -380,8 +571,13 @@ export default function RPGTheater() {
                         {p.char_class}
                       </div>
                     )}
-                    <div className="text-[9px] text-text-dim/60 font-mono truncate">
-                      {isHuman ? 'Human player' : p.model.split('/').pop()}
+                    <div className="flex items-center gap-1 text-[9px] text-text-dim/60 font-mono">
+                      {!isHuman && (
+                        <ProviderSigil model={p.model} size={9} color="rgba(148,163,184,0.5)" />
+                      )}
+                      <span className="truncate">
+                        {isHuman ? 'Human player' : p.model.split('/').pop()}
+                      </span>
                     </div>
                   </div>
                 </li>
@@ -392,26 +588,29 @@ export default function RPGTheater() {
           <div className="text-xs text-text-dim font-mono">Loading...</div>
         )}
 
-        {/* World state entities panel */}
+        {/* World state panel */}
         {rpgContext?.world_state && (
           <WorldStatePanel world={rpgContext.world_state} />
         )}
 
-        {/* Status + actions */}
+        {/* Status + recap button */}
         <div className="mt-auto space-y-2 flex-shrink-0">
           <div className="text-[10px] font-mono text-text-dim">
-            Round {state.currentRound} {state.totalRounds > 0 ? `/ ${state.totalRounds}` : ''}
+            Round {state.currentRound}{state.totalRounds > 0 ? ` / ${state.totalRounds}` : ''}
           </div>
-          <div className="text-[10px] font-mono" style={{
-            color: state.status === 'completed' ? '#10B981'
-              : state.status === 'error' ? '#EF4444'
-              : state.isAwaitingHuman ? '#10B981'
-              : '#F59E0B'
-          }}>
+          <div
+            className="text-[10px] font-mono"
+            style={{
+              color: state.status === 'completed' ? '#10B981'
+                : state.status === 'error' ? '#EF4444'
+                : state.isAwaitingHuman ? '#10B981'
+                : '#F59E0B',
+            }}
+          >
             {state.status === 'completed' ? 'Campaign complete'
-              : state.status === 'error' ? 'Error'
+              : state.status === 'error' ? (state.errorMessage || 'Error')
               : state.isAwaitingHuman ? 'Your turn!'
-              : state.thinkingSpeaker ? `${state.thinkingSpeaker} is thinking...`
+              : state.thinkingSpeaker ? `${state.thinkingSpeaker} thinking...`
               : 'In progress...'}
           </div>
           {isDone && state.status === 'completed' && matchId && (
@@ -425,9 +624,8 @@ export default function RPGTheater() {
         </div>
       </aside>
 
-      {/* ── Main Content: Chat Log + Input ── */}
+      {/* ── Main: Story Feed + Status Bar ── */}
       <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Background canvas */}
         <TheaterCanvas
           lastTurn={lastTurn}
           lastVocab={null}
@@ -435,12 +633,13 @@ export default function RPGTheater() {
           tintColor={canvasTint}
         />
 
-        {/* Header bar */}
-        <header className="h-12 border-b border-border-custom/50 flex items-center px-4 gap-3 bg-bg-deep/30 relative z-10">
+        {/* Header */}
+        <header
+          className="h-12 border-b border-border-custom/50 flex items-center px-4 gap-3 relative z-10"
+          style={{ background: 'rgba(10,15,30,0.4)' }}
+        >
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-mono text-sm text-text-primary/80">
-            RPG Session
-          </span>
+          <span className="font-mono text-sm text-text-primary/80">RPG Session</span>
           {rpgConfig?.setting && (
             <span className="font-mono text-xs text-text-dim hidden sm:block">
               &mdash; {rpgConfig.setting}
@@ -451,36 +650,72 @@ export default function RPGTheater() {
           </span>
         </header>
 
-        {/* Scrolling chat log */}
+        {/* Narrative arc bar */}
+        <NarrativeArcBar current={state.currentRound} total={state.totalRounds} />
+
+        {/* Story feed */}
         <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden relative z-10">
-          <div className="p-4 space-y-1 max-w-3xl mx-auto">
-            {/* Story So Far banner (shows once cold summary is available) */}
+          <div className="p-6 space-y-0.5 max-w-3xl mx-auto">
             {rpgContext?.cold_summary && state.turns.length > 0 && (
               <StorySoFarBanner summary={rpgContext.cold_summary} />
             )}
 
-            {state.turns.map((turn) => (
-              <RPGTurnEntry
-                key={turn.turn_id}
-                turn={turn}
-                color={speakerColor(turn.speaker, participants)}
-              />
-            ))}
+            {state.turns.map((turn) => {
+              const color = colorMap[turn.speaker.toLowerCase()] ?? '#06B6D4'
+              const participant = participants?.find(
+                (p) => p.name.toLowerCase() === turn.speaker.toLowerCase()
+              )
+              const isDM = participant?.role.toLowerCase() === 'dm'
+
+              return isDM
+                ? <DMTurnEntry key={turn.turn_id} turn={turn} color={color} />
+                : <CompanionTurnEntry key={turn.turn_id} turn={turn} color={color} participant={participant} />
+            })}
+
             {state.thinkingSpeaker && (
-              <ThinkingIndicator speaker={state.thinkingSpeaker} color="model-a" />
+              <div className="py-2">
+                <ThinkingIndicator speaker={state.thinkingSpeaker} color="model-a" />
+              </div>
             )}
+
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
 
-        {/* Human input bar (anchored at bottom) */}
-        {!isDone && (
+        {/* Bottom bar */}
+        {!isDone && hasHumanPlayer && (
           <HumanInput
             matchId={matchId}
             isEnabled={state.isAwaitingHuman}
             speaker={playerName}
             actionMenu={actionMenu}
           />
+        )}
+
+        {/* Observer status bar — pure AI session */}
+        {!isDone && !hasHumanPlayer && (
+          <div
+            className="border-t flex items-center gap-3 px-4 py-2.5 relative z-10"
+            style={{
+              borderColor: 'rgba(100,116,139,0.12)',
+              background: 'rgba(10,15,30,0.6)',
+            }}
+          >
+            <div
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{
+                background: state.thinkingSpeaker ? '#F59E0B' : '#10B981',
+                animation: 'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite',
+              }}
+            />
+            <span className="font-mono text-xs text-text-dim">
+              {state.thinkingSpeaker
+                ? `${state.thinkingSpeaker} composing...`
+                : state.status === 'running'
+                ? 'Observing live session'
+                : 'Session active'}
+            </span>
+          </div>
         )}
 
         {isDone && (
@@ -501,14 +736,11 @@ export default function RPGTheater() {
           stats={{
             turns: state.turns.length,
             rounds: state.currentRound,
-            vocab: state.vocab.length
+            vocab: state.vocab.length,
           }}
         />
 
-        <DiceOverlay
-          roll={activeRoll}
-          onComplete={() => setActiveRoll(null)}
-        />
+        <DiceOverlay roll={activeRoll} onComplete={() => setActiveRoll(null)} />
       </main>
     </div>
   )

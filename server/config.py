@@ -122,7 +122,6 @@ MODEL_REGISTRY: dict[str, str] = {
     "Mistral Small":     "mistral/mistral-small-latest",
     "Mistral Large":     "mistral/mistral-large-latest",
     # -- OpenRouter (needs OPENROUTER_API_KEY) ---------------------------
-    "Command R+":        "openrouter/cohere/command-r-plus",
     "Qwen 2.5 72B":      "openrouter/qwen/qwen-2.5-72b-instruct",
     # -- AI21 (needs AI21_API_KEY in .env) -------------------------------
     "Jamba 1.5":         "ai21/jamba-1.5-large",

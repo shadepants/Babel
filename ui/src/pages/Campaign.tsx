@@ -27,6 +27,12 @@ const SETTING_MAP: Record<string, string> = {
   modern: 'Modern',
 }
 
+// Models known to fail as DM (0/3 sessions completed, or daily token limits)
+const DM_BLOCKED_MODELS = [
+  'gemini/gemini-2.5-pro',  // silent failure: 0 turns produced in every DM attempt
+  'groq/',                   // daily TPD limit; never completed a DM session
+]
+
 type Tone = typeof TONE_OPTIONS[number]
 type Difficulty = typeof DIFFICULTY_OPTIONS[number]
 
@@ -130,6 +136,16 @@ export default function Campaign() {
   async function handleLaunch() {
     if (!dmModel) {
       setFormError('Please select a Dungeon Master model above.')
+      return
+    }
+    const unnamedMember = participants.find(p => !p.name.trim())
+    if (unnamedMember) {
+      setFormError('All party members must have a name before launching.')
+      return
+    }
+    const emptyNpc = participants.find(p => p.role === 'npc' && (!p.model || p.model === 'human'))
+    if (emptyNpc) {
+      setFormError(`"${emptyNpc.name || 'An NPC'}" has no AI model assigned. Select a model for all NPC participants.`)
       return
     }
     setStarting(true)
@@ -324,11 +340,13 @@ export default function Campaign() {
                   <SelectValue placeholder="Select DM Model..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableModels.map(m => (
-                    <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                      {m.name}
-                    </SelectItem>
-                  ))}
+                  {availableModels
+                    .filter(m => !DM_BLOCKED_MODELS.some(blocked => m.model.startsWith(blocked)))
+                    .map(m => (
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">

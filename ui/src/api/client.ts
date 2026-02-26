@@ -47,7 +47,17 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new ApiError(response.status, `API error: ${response.statusText}`);
+      let message = `API error ${response.status}`;
+      try {
+        const body = await response.json();
+        if (typeof body?.detail === 'string') {
+          message = body.detail;
+        } else if (Array.isArray(body?.detail)) {
+          // Pydantic 422 format: array of {loc, msg, type}
+          message = (body.detail as Array<{ msg: string }>).map(d => d.msg).join(', ');
+        }
+      } catch { /* non-JSON body — keep generic message */ }
+      throw new ApiError(response.status, message);
     }
     return await response.json();
   } finally {

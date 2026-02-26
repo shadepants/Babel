@@ -253,7 +253,16 @@ async def run_rpg_match(
                         _action_task.add_done_callback(_log_task_exception)
 
                     # Block until POST /inject calls human_event.set()
-                    await human_event.wait()
+                    # 5-minute AFK timeout: publish event and skip turn rather than blocking forever
+                    try:
+                        await asyncio.wait_for(human_event.wait(), timeout=300.0)
+                    except asyncio.TimeoutError:
+                        hub.publish(RelayEvent.HUMAN_TIMEOUT, {
+                            "match_id": match_id,
+                            "speaker": actor["name"],
+                            "round": round_num,
+                        })
+                        continue
                     human_event.clear()
 
                     # Check for cancellation after human input

@@ -1,9 +1,9 @@
 """Relay Router — start experiments and stream results via SSE.
 
 Endpoints:
-    POST /api/relay/start   → create experiment + launch relay background task
-    GET  /api/relay/stream   → SSE stream of relay events (with keepalive)
-    GET  /api/relay/history  → REST fallback for event history
+    POST /api/relay/start   -> create experiment + launch relay background task
+    GET  /api/relay/stream   -> SSE stream of relay events (with keepalive)
+    GET  /api/relay/history  -> REST fallback for event history
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ KEEPALIVE_INTERVAL = 15  # seconds
 _running_relays: dict[str, tuple[asyncio.Task, asyncio.Event, asyncio.Event]] = {}
 
 
-# ── Request / Response Models ───────────────────────────────────────────
+# -- Request / Response Models -----------------------------------------------
 
 class AgentConfig(BaseModel):
     """Config for one agent in an N-way relay (Phase 15-A)."""
@@ -99,7 +99,7 @@ class RelayStartResponse(BaseModel):
     status: str
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────
+# -- Helpers -----------------------------------------------------------------
 
 def _get_hub(request: Request):
     hub = getattr(request.app.state, "hub", None)
@@ -115,7 +115,7 @@ def _get_db(request: Request):
     return db
 
 
-# ── Endpoints ───────────────────────────────────────────────────────────
+# -- Endpoints ---------------------------------------------------------------
 
 @router.post("/start", response_model=RelayStartResponse)
 async def start_relay(body: RelayStartRequest, request: Request):
@@ -123,7 +123,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
     db = _get_db(request)
     hub = _get_hub(request)
 
-    # ── Resolve agents list (N-way preferred; fall back to legacy model_a/model_b) ──
+    # -- Resolve agents list (N-way preferred; fall back to legacy model_a/model_b) --
     if body.agents and len(body.agents) >= 2:
         if len(body.agents) > 4:
             raise HTTPException(400, "Maximum 4 agents supported")
@@ -220,8 +220,14 @@ async def start_relay(body: RelayStartRequest, request: Request):
 
     cancel_event = asyncio.Event()
 
-    # ── RPG mode: launch rpg_engine instead of relay ──
+    # -- RPG mode: launch rpg_engine instead of relay --
     if body.mode == "rpg" and body.participants:
+        # Validate participant models against the registry (skip "human" slots)
+        for p in body.participants:
+            p_model = p.get("model") if isinstance(p, dict) else getattr(p, "model", None)
+            if p_model and p_model != "human" and p_model not in _ALLOWED_MODELS:
+                raise HTTPException(400, f"Participant model '{p_model}' is not in the allowed registry")
+
         human_event = asyncio.Event()
         request.app.state.human_events[match_id] = human_event
 
@@ -253,7 +259,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
         task.add_done_callback(_cleanup_rpg)
 
         logger.info(
-            "RPG started: %s — %d participants, %d rounds",
+            "RPG started: %s -- %d participants, %d rounds",
             match_id, len(body.participants), body.rounds,
         )
 
@@ -265,7 +271,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
             status="running",
         )
 
-    # ── Standard relay mode ──
+    # -- Standard relay mode --
     # Build RelayAgent list: N-way if agents provided, else legacy 2-agent
     if resolved_agents:
         relay_agents = [
@@ -341,7 +347,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
 
     agent_names = " / ".join(a.name for a in relay_agents)
     logger.info(
-        "Relay started: %s — %s, %d rounds",
+        "Relay started: %s -- %s, %d rounds",
         match_id, agent_names, body.rounds,
     )
 
@@ -492,8 +498,8 @@ async def relay_stream(
     """Stream relay events via SSE with keepalive heartbeats.
 
     Query params:
-        match_id         — filter to a specific experiment
-        include_history  — replay recent events on connect (default: true)
+        match_id         -- filter to a specific experiment
+        include_history  -- replay recent events on connect (default: true)
 
     Client usage (JavaScript):
         const source = new EventSource('/api/relay/stream?match_id=abc123');
@@ -585,7 +591,7 @@ async def list_models():
 async def check_model_status():
     """Check which models are available by testing API key presence.
 
-    Does NOT make LLM calls — just checks env vars for known provider keys.
+    Does NOT make LLM calls -- just checks env vars for known provider keys.
     """
     import os
 
@@ -665,7 +671,7 @@ async def test_provider_connection(provider: str):
         return {"ok": False, "provider": provider, "error": str(e)}
 
 
-# ── API Key Management ──────────────────────────────────────────────────
+# -- API Key Management ------------------------------------------------------
 
 _ALLOWED_ENV_VARS: frozenset[str] = frozenset({
     "ANTHROPIC_API_KEY",
@@ -709,14 +715,14 @@ async def set_api_key(body: SetKeyRequest):
     except Exception as exc:
         raise HTTPException(500, f"Failed to write .env: {exc}") from exc
 
-    # Update current process immediately — no restart required
+    # Update current process immediately -- no restart required
     os.environ[body.env_var] = value
 
     preview = f"{value[:4]}...{value[-4:]}" if len(value) >= 8 else "****"
     return {"ok": True, "env_var": body.env_var, "key_preview": preview}
 
 
-# ── Startup Recovery ─────────────────────────────────────────────────────
+# -- Startup Recovery --------------------------------------------------------
 
 async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | None = None, min_age_minutes: int = 3) -> int:
     """On startup: resume or mark-failed any sessions stuck in 'running' from a prior crash.
@@ -725,7 +731,7 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
     from config_json.recovery, completed turns are replayed as initial_history,
     and the relay resumes from rounds_completed + 1.
 
-    RPG sessions are too stateful to recover cleanly — they are marked 'failed'.
+    RPG sessions are too stateful to recover cleanly -- they are marked 'failed'.
     Returns the number of sessions successfully resumed.
     """
     import json as _json
@@ -743,7 +749,7 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
             config = _json.loads(session.get("config_json") or "{}")
             recovery = config.get("recovery", {})
 
-            # ── 1. RPG SESSION RECOVERY ──
+            # -- 1. RPG SESSION RECOVERY --
             if recovery.get("mode") == "rpg" or recovery.get("participants"):
                 rpg_state = await db.get_rpg_state(match_id)
                 if not rpg_state:

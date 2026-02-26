@@ -14,17 +14,18 @@
   `_BG_SEMAPHORE`, and `match_id` param were all already committed before this session.
 - CONTEXT.md and HANDOFF.md were stale (still listed them as "planned next").
 
-### 2. Observer task tracking fix (relay_engine.py, line 783)
-- `_obs` tasks created during relay runs were missing `track_task()` call.
-- They had `_log_task_exception` callback but were NOT in `app.state.background_tasks`.
-- On shutdown, these tasks were skipped by the drain in `app.py` lines 85-89 &mdash; could orphan mid-observation.
-- Fix: replaced `_obs.add_done_callback(_log_task_exception)` with `track_task(_obs, background_tasks)`.
-- `track_task()` already adds `_log_task_exception` internally, so no logging regression.
+### 2. Observer task tracking fix (`47fd580`)
+- `_obs` tasks in `relay_engine.py:783` were missing `track_task()` &mdash; invisible to shutdown drain.
+- Replaced bare `_obs.add_done_callback(_log_task_exception)` with `track_task(_obs, background_tasks)`.
 
-### 3. Docs sync (CONTEXT.md + HANDOFF.md)
-- Marked Tier 2 as SHIPPED with correct commit reference (`e2fc07a`).
-- Added Session 19 section with observer fix.
-- Trimmed stale "Next:" entries from CONTEXT.md.
+### 3. GitHub Actions CI (`a9cf113`)
+- `.github/workflows/ci.yml` &mdash; two parallel jobs on push/PR to master:
+  - `backend`: Python 3.13, pip install, compileall + import server.app
+  - `frontend`: Node 20, npm ci, tsc+vite build + eslint
+- E2E excluded (requires live servers + populated DB).
+
+### 4. Docs sync (CONTEXT.md + HANDOFF.md)
+- All session 19 work recorded. CONTEXT.md trimmed and current.
 
 ---
 
@@ -32,22 +33,23 @@
 
 | Change | Status |
 |--------|--------|
-| relay_engine.py observer track_task | VERIFIED (verify_backend.cmd clean) |
-| CONTEXT.md docs sync | Updated |
-| HANDOFF.md docs sync | Updated |
+| relay_engine.py observer fix | verify_backend.cmd clean |
+| ci.yml syntax | Validated by inspection |
+| CONTEXT.md / HANDOFF.md | Updated |
+| Commits pushed to origin | PENDING &mdash; push when ready |
 
 ---
 
 ## Next Steps
 
-No critical reliability work remains. Open tracks:
+Reliability and CI are complete. No known blockers.
 
-1. **GitHub Actions CI** &mdash; `.github/` directory exists (untracked); wire up `verify_backend.cmd` + pytest
-2. **New feature work** &mdash; TBD (check what's next on the product roadmap)
+1. **Push to origin** &mdash; `git push` to trigger first CI run on GitHub Actions
+2. **New feature work** &mdash; TBD (what's next on the product roadmap?)
 
 ---
 
 ## Key Files Modified This Session
-- `server/relay_engine.py` &mdash; line 783: `track_task(_obs, background_tasks)` replacing bare callback
-- `CONTEXT.md` &mdash; full docs sync (sessions 18-19, architecture table, next steps)
-- `HANDOFF.md` &mdash; session 19 state
+- `server/relay_engine.py` &mdash; line 783: observer task tracking fix
+- `.github/workflows/ci.yml` &mdash; new CI workflow
+- `CONTEXT.md` / `HANDOFF.md` &mdash; docs sync

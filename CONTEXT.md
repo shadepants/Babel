@@ -1,6 +1,6 @@
 # Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-26 (session 22 &mdash; design audit + model sigils + sprite burst + dropdown glassmorphism)
+**Last Updated:** 2026-02-26 (session 23 &mdash; AI vs AI observatory overhaul + RPG audit fixes)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -31,58 +31,61 @@ See `docs/CHANGELOG.md` for full history through Phase 19 (reliability tier 2, C
 - [x] SeedLab RPG card removed &mdash; RPG entry point is now /rpg-hub only
 - [x] Campaign.tsx back links fixed &mdash; both point to /rpg-hub (not /configure/...)
 
-### Session 21 - Bug Fix (UNCOMMITTED)
-- [x] Campaign.tsx TDZ crash fixed &mdash; `availableModels` useState moved before useEffect consumer
-- [ ] **UNCOMMITTED** &mdash; SeedLab.tsx cleanup + Campaign.tsx (back links + TDZ fix)
+### Sessions 21-22 - Design Audit + Visual Assets (SHIPPED `dd441c6`, `5139f85`)
+- [x] Campaign.tsx TDZ crash fixed, design token cleanup, CampaignNavState interface
+- [x] ProviderSigil.tsx + modelProvider.ts &mdash; 16x16 SVG glyphs per provider
+- [x] SpriteAvatar winner sparkle + loser fragment burst (one-shot CSS)
+- [x] Dropdown glassmorphism (select.tsx bg-bg-deep/90 backdrop-blur)
 
-### Session 22 - Design Audit + Visual Assets (UNCOMMITTED)
-- [x] **Frontend design audit (P1-P3 fixes):**
-  - `Campaign.tsx` &mdash; added `CampaignNavState` interface (removed `as any`), 4x `text-[11px]` &rarr; `text-xs`, aria-label on remove button, focus border opacity bump
-  - `SeedLab.tsx` &mdash; 2x inline `style={{ position: 'relative' }}` &rarr; `className="relative"`
-  - `RPGTheater.tsx` &mdash; 20+ hardcoded `slate-*` tokens &rarr; semantic (`text-text-primary`, `text-text-dim`, `bg-bg-deep`, `border-border-custom`)
-  - `Analytics.tsx` &mdash; 5 section headings upgraded to `font-display text-xs font-bold tracking-wider uppercase`
-  - `Gallery.tsx` &mdash; metadata row opacity bump (`/55` &rarr; `/70`) + glitch event on Refresh click
-- [x] **Model identity sigils:**
-  - NEW `ui/src/lib/modelProvider.ts` &mdash; `getProvider()` maps litellm prefix to provider enum
-  - NEW `ui/src/components/common/ProviderSigil.tsx` &mdash; 16x16 SVG stroke glyphs per provider
-  - `Gallery.tsx` &mdash; sigil before each model name (amber A, cyan B, size 13)
-  - `Analytics.tsx` &mdash; sigil before each model name in h1 header (amber A, cyan B, size 14)
-- [x] **Victory/defeat sprite burst:**
-  - `SpriteAvatar.tsx` &mdash; 5 gold diamond polygons on winner, 3 falling rects on loser (below feet)
-  - `index.css` &mdash; `sprite-spark` + `sprite-fragment` keyframes (one-shot, `forwards` fill)
-- [x] **Dropdown glassmorphism fix:**
-  - `ui/src/components/ui/select.tsx` &mdash; `bg-popover` (undefined, solid opaque) &rarr; `bg-bg-deep/90 backdrop-blur-md`; `focus:bg-accent` &rarr; `focus:bg-accent/20`; all shadcn foreground vars replaced with project tokens
-- [x] `tsc --noEmit` clean &mdash; zero errors
+### Session 23 - AI vs AI Observatory + Audit Fixes (SHIPPED `21d290f`)
+- [x] **RPGTheater full overhaul &mdash; pivot to AI vs AI experiment view:**
+  - Companion color palette: violet/rose/sky/orange per index (was all cyan)
+  - DMTurnEntry: italic prose, amber gradient left border, strips `[CHECK:...]` tags
+  - CompanionTurnEntry: character card header with ProviderSigil + model name
+  - NarrativeArcBar: 4 story phases (Opening/Rising Action/Climax/Resolution)
+  - WorldStatePanel: open by default, gold pulse on new entity discovery
+  - Observer status bar replaces HumanInput for pure AI sessions
+- [x] **DiceOverlay: cinematic upgrade** &mdash; 224px card, 92px number, 1.2s/4s timing, crit labels
+- [x] **Narrator guard extended** (config.py) &mdash; bracket overreach `[Name]:` inside DM narration
+- [x] **Human turn timeout** (rpg_engine.py) &mdash; `asyncio.wait_for(timeout=300.0)`; publishes `relay.human_timeout`, skips turn; no more infinite block on AFK
+- [x] **DM model guard** (Campaign.tsx) &mdash; `DM_BLOCKED_MODELS` hides `gemini-2.5-pro` + `groq/*` from DM dropdown
+- [x] relay.py: participant model validation against registry on RPG start
+- [x] client.ts: API error handler reads Pydantic `detail` field from response body
 
 ### Next
-- Commit all pending changes from sessions 21 + 22 (single combined commit or two atomic commits)
-- Manual smoke test: Gallery sigils visible, Theater winner/loser burst plays once, dropdowns semi-transparent
+- Manual smoke test: companion colors distinct in theater, dice overlay cinematic, Gemini Pro absent from DM list
+- P11 regression rerun: p11-deepseek-dm-guard-verify with non-Groq party (phantom NPC guard verification)
+- Campaign memory enrichment (medium effort, future milestone)
 
-## 4. Architecture (v22.0)
+## 4. Architecture (v23.0)
 ```
 Babel/
   server/
     app.py                Lifespan: task-drain shutdown, background_tasks tracking
     summarizer_engine.py  Phase 17: Condenses history, extracts entities
     relay_engine.py       call_model: 4xx skip, jitter, hard timeout, match_id; _BG_SEMAPHORE; observer track_task
-    rpg_engine.py         cancel-race pattern, DB-safe cancel handler, rpg_state recovery; action menu generation
-    config.py             COMPANION_SYSTEM_PROMPT, CLASS_ACTION_TEMPLATES, narrator discipline guard
+    rpg_engine.py         cancel-race pattern, DB-safe cancel handler, rpg_state recovery; 5-min human timeout
+    relay_engine.py       RelayEvent.HUMAN_TIMEOUT; call_model retry/backoff/cancel
+    config.py             COMPANION_SYSTEM_PROMPT, CLASS_ACTION_TEMPLATES, narrator + bracket-overreach guard
     db.py                 Non-blocking asyncio.Queue writer worker
     event_hub.py          serialize/hydrate; put_nowait + eject on QueueFull (slow-consumer safe)
-    routers/relay.py      GET /{match_id}/rpg-context endpoint
+    routers/relay.py      participant model validation on RPG start; rpg-context endpoint
   ui/src/
     lib/
-      modelProvider.ts    getProvider(model) -> Provider enum (anthropic/openai/google/meta/mistral/xai/unknown)
+      modelProvider.ts    getProvider(model) -> Provider enum
     components/common/
       ProviderSigil.tsx   16x16 SVG stroke glyph per AI provider family
     components/theater/
-      SpriteAvatar.tsx    winner sparkle diamonds + loser falling fragments (one-shot CSS animations)
+      RPGTheater.tsx      AI vs AI observatory: companion palette, DMTurnEntry, CompanionTurnEntry,
+                          NarrativeArcBar, WorldStatePanel pulse, observer status bar
+      DiceOverlay.tsx     Cinematic full-screen dice event (224px card, crit labels, spring anim)
+      SpriteAvatar.tsx    winner sparkle diamonds + loser falling fragments (one-shot CSS)
     pages/
       RPGHub.tsx          Campaign preset browser (19 presets, 4 categories)
-      Campaign.tsx        Campaign setup form; back button -> /rpg-hub
-      Gallery.tsx         ProviderSigil before each model name; glitch on refresh
-      Analytics.tsx       ProviderSigil before each model name in h1
-    index.css             sprite-spark + sprite-fragment keyframes (appended)
+      Campaign.tsx        DM_BLOCKED_MODELS filter; setup form; back -> /rpg-hub
+      Gallery.tsx         ProviderSigil before model names; glitch on refresh
+      Analytics.tsx       ProviderSigil before model names in h1
+    index.css             sprite-spark + sprite-fragment keyframes
   .github/workflows/ci.yml  Backend + frontend CI (push/PR to master)
 ```
 

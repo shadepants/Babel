@@ -160,6 +160,26 @@ export function SpriteAvatar({ status, color, accentColor, instanceId, size = 64
             <line x1="53" y1="24" x2="37" y2="34" stroke={RED} strokeWidth="2" />
           </>
         )}
+
+        {/* Winner: sparkle diamonds radiating from head/shoulders */}
+        {status === 'winner' && (
+          <g aria-hidden="true">
+            <polygon points="32,3 34,8 32,13 30,8"   className="sprite-spark sprite-spark--1" style={{ fill: GOLD }} />
+            <polygon points="52,12 54,17 52,22 50,17" className="sprite-spark sprite-spark--2" style={{ fill: GOLD }} />
+            <polygon points="12,12 14,17 12,22 10,17" className="sprite-spark sprite-spark--3" style={{ fill: GOLD }} />
+            <polygon points="57,32 59,37 57,42 55,37" className="sprite-spark sprite-spark--4" style={{ fill: GOLD }} />
+            <polygon points=" 7,32  9,37  7,42  5,37" className="sprite-spark sprite-spark--5" style={{ fill: GOLD }} />
+          </g>
+        )}
+
+        {/* Loser: falling fragments below feet */}
+        {status === 'loser' && (
+          <g aria-hidden="true">
+            <rect x="23" y="62" width="4" height="4" rx="0.5" className="sprite-fragment sprite-fragment--1" style={{ fill: accent, opacity: 0.5 }} />
+            <rect x="31" y="64" width="3" height="3" rx="0.5" className="sprite-fragment sprite-fragment--2" style={{ fill: accent, opacity: 0.4 }} />
+            <rect x="38" y="61" width="3" height="3" rx="0.5" className="sprite-fragment sprite-fragment--3" style={{ fill: accent, opacity: 0.35 }} />
+          </g>
+        )}
       </svg>
     </div>
   )

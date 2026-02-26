@@ -13,6 +13,7 @@ import { formatDuration } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
+import { ProviderSigil } from '@/components/common/ProviderSigil'
 
 const MODEL_A_COLOR = '#F59E0B'
 const MODEL_B_COLOR = '#06B6D4'
@@ -277,9 +278,11 @@ export default function Analytics() {
           <div>
             <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3 flex-wrap">
               <SpriteAvatar status={spriteA} color="model-a" size={40} />
+              <ProviderSigil model={experiment.model_a} size={14} color="rgba(245,158,11,0.75)" />
               <span className="text-model-a">{modelA}</span>
               <span className="text-text-dim font-normal"> vs </span>
               <SpriteAvatar status={spriteB} color="model-b" size={40} />
+              <ProviderSigil model={experiment.model_b} size={14} color="rgba(6,182,212,0.75)" />
               <span className="text-model-b">{modelB}</span>
             </h1>
             <div className="flex items-center gap-3 mt-1">
@@ -420,14 +423,14 @@ export default function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="neural-card">
           <div className="p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Vocabulary Growth</h2>
+            <h2 className="font-display text-xs font-bold tracking-wider uppercase text-text-primary mb-4">Vocabulary Growth</h2>
             <VocabGrowthChart data={stats.vocab_by_round} />
           </div>
         </div>
 
         <div className="neural-card">
           <div className="p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Latency per Round</h2>
+            <h2 className="font-display text-xs font-bold tracking-wider uppercase text-text-primary mb-4">Latency per Round</h2>
             <LatencyChart
               data={stats.turns_by_round}
               modelAName={modelA}
@@ -441,7 +444,7 @@ export default function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="neural-card">
           <div className="p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Tokens per Round</h2>
+            <h2 className="font-display text-xs font-bold tracking-wider uppercase text-text-primary mb-4">Tokens per Round</h2>
             <TokenChart
               data={stats.turns_by_round}
               modelAName={modelA}
@@ -453,7 +456,7 @@ export default function Analytics() {
         {radar.length > 0 && (
           <div className="neural-card">
             <div className="p-5">
-              <h2 className="text-sm font-semibold text-text-primary mb-4">Model Personality</h2>
+              <h2 className="font-display text-xs font-bold tracking-wider uppercase text-text-primary mb-4">Model Personality</h2>
               <RadarChart data={radar} height={280} />
             </div>
           </div>
@@ -463,7 +466,7 @@ export default function Analytics() {
       {experiment.enable_scoring && (
         <div className="neural-card">
           <div className="p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Turn Scores</h2>
+            <h2 className="font-display text-xs font-bold tracking-wider uppercase text-text-primary mb-4">Turn Scores</h2>
             <RoundScoreChart scores={scores} />
           </div>
         </div>

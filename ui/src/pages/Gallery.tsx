@@ -7,6 +7,7 @@ import { formatDuration } from '@/lib/format'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { getPresetGlow } from '@/lib/presetColors'
+import { ProviderSigil } from '@/components/common/ProviderSigil'
 
 /** Extract a short display name from a litellm model string like "anthropic/claude-sonnet-4-..." */
 function modelDisplayName(model: string): string {
@@ -107,7 +108,7 @@ export default function Gallery() {
               <span className="text-accent/60">// </span>experiment archive
             </p>
           </div>
-          <button onClick={fetchExperiments} className="neural-btn" disabled={loading}>
+          <button onClick={() => { window.dispatchEvent(new Event('babel-glitch')); fetchExperiments() }} className="neural-btn" disabled={loading}>
             {loading ? '...' : 'Refresh'}
           </button>
         </div>
@@ -183,11 +184,13 @@ export default function Gallery() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <SpriteAvatar status={statuses.a} color="model-a" size={28} />
+                      <ProviderSigil model={exp.model_a} size={13} color="rgba(245,158,11,0.75)" />
                       <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
                         {modelDisplayName(exp.model_a)}
                       </span>
                       <span className="font-mono text-[10px] text-text-dim/60">vs</span>
                       <SpriteAvatar status={statuses.b} color="model-b" size={28} />
+                      <ProviderSigil model={exp.model_b} size={13} color="rgba(6,182,212,0.75)" />
                       <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
                         {modelDisplayName(exp.model_b)}
                       </span>
@@ -202,7 +205,7 @@ export default function Gallery() {
                         </span>
                       )}
                     </div>
-                    <div className="font-mono text-[10px] text-text-dim/55 flex items-center gap-2 mt-0.5 flex-wrap">
+                    <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span>{formatDate(exp.created_at)}</span>
                       <span className="text-accent/25">&middot;</span>
                       <span>{formatDuration(exp.elapsed_seconds)}</span>

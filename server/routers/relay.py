@@ -9,6 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
@@ -454,6 +455,32 @@ async def inject_turn(match_id: str, body: InjectTurnRequest, request: Request):
         "round": round_num,
     })
     return {"match_id": match_id, "round": round_num, "status": "injected"}
+
+
+@router.get("/{match_id}/rpg-context")
+async def get_rpg_context(match_id: str, request: Request):
+    """Return the current RPG session context: cold summary + world state.
+
+    Called by the frontend to power the 'Story So Far' panel and world
+    state sidebar. Returns empty objects gracefully if not yet generated.
+    """
+    db = _get_db(request)
+
+    cold_row = await db.get_latest_cold_summary(match_id)
+    world_row = await db.get_world_state(match_id)
+
+    world_data: dict = {}
+    if world_row:
+        try:
+            world_data = json.loads(world_row) if isinstance(world_row, str) else world_row
+        except (json.JSONDecodeError, TypeError):
+            world_data = {}
+
+    return {
+        "match_id": match_id,
+        "cold_summary": cold_row or None,
+        "world_state": world_data,
+    }
 
 
 @router.get("/stream")

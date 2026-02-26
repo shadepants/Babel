@@ -19,6 +19,7 @@ import type {
   ModelStatusResponse,
   EnvStatusResponse,
   TreeNode,
+  RpgContextResponse,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -130,6 +131,10 @@ export const api = {
   /** Stop a running experiment */
   stopExperiment: (matchId: string) =>
     fetchJson<{ match_id: string; status: string }>(`/api/relay/${matchId}/stop`, { method: 'POST' }),
+
+  /** Get RPG session context: cold summary + world state entities */
+  getRpgContext: (matchId: string) =>
+    fetchJson<RpgContextResponse>(`/api/relay/${matchId}/rpg-context`),
 
   /** Delete a non-running experiment */
   deleteExperiment: (experimentId: string) =>

@@ -10,13 +10,21 @@ import { SpriteAvatar } from './SpriteAvatar'
 import { TheaterCanvas } from './TheaterCanvas'
 import { EndSessionModal } from './EndSessionModal'
 import { DiceOverlay } from './DiceOverlay'
-import type { TurnEvent } from '@/api/types'
+import type { TurnEvent, ActionMenuEvent, RpgContextResponse } from '@/api/types'
 
-/** Speaker role colors (CSS rgb values) */
+/** Speaker role colors (CSS hex values) */
 const ROLE_COLORS: Record<string, string> = {
   dm: '#F59E0B',       // amber
   player: '#10B981',   // emerald
-  default: '#06B6D4',  // cyan (AI party members)
+  default: '#06B6D4',  // cyan (AI companions)
+}
+
+/** Role badge labels */
+const ROLE_LABELS: Record<string, string> = {
+  dm: 'DM',
+  player: 'YOU',
+  companion: 'AI',
+  npc: 'NPC',
 }
 
 function speakerColor(speaker: string, participants: Array<{ name: string; role: string }> | null): string {
@@ -36,7 +44,7 @@ function RPGTurnEntry({
   color: string
 }) {
   return (
-    <div className="animate-fade-in py-2">
+    <div className="animate-fade-in py-2.5">
       <div className="flex items-baseline gap-2 mb-1">
         <span className="font-mono text-xs font-semibold" style={{ color }}>
           {turn.speaker}
@@ -55,17 +63,104 @@ function RPGTurnEntry({
   )
 }
 
+/** Collapsible world state panel — NPCs, locations, items discovered so far */
+function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }) {
+  const [open, setOpen] = useState(false)
+  const hasData =
+    (world.npcs?.length ?? 0) > 0 ||
+    (world.locations?.length ?? 0) > 0 ||
+    (world.items?.length ?? 0) > 0
+
+  if (!hasData) return null
+
+  return (
+    <div className="mt-3 border border-slate-700/30 rounded overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
+        style={{ background: 'rgba(15,23,42,0.6)' }}
+      >
+        <span>World</span>
+        <span className="text-slate-600">{open ? '\u25B2' : '\u25BC'}</span>
+      </button>
+      {open && (
+        <div className="px-2.5 py-2 space-y-2" style={{ background: 'rgba(15,23,42,0.4)' }}>
+          {(world.npcs?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[9px] font-mono uppercase text-amber-400/60 mb-1">NPCs</div>
+              {world.npcs!.map((npc) => (
+                <div key={npc.name} className="text-[10px] font-mono text-slate-300 truncate">
+                  <span className="text-amber-300/70">{npc.name}</span>
+                  {npc.status && <span className="text-slate-500"> &mdash; {npc.status}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {(world.locations?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[9px] font-mono uppercase text-cyan-400/60 mb-1">Locations</div>
+              {world.locations!.map((loc) => (
+                <div key={loc.name} className="text-[10px] font-mono text-slate-300 truncate">
+                  <span className="text-cyan-300/70">{loc.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(world.items?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[9px] font-mono uppercase text-violet-400/60 mb-1">Items</div>
+              {world.items!.map((item) => (
+                <div key={item.name} className="text-[10px] font-mono text-slate-300 truncate">
+                  <span className="text-violet-300/70">{item.name}</span>
+                  {item.holder && <span className="text-slate-500"> ({item.holder})</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** "Story So Far" banner shown at the top of the chat log when a cold summary exists */
+function StorySoFarBanner({ summary }: { summary: string }) {
+  const [visible, setVisible] = useState(true)
+  if (!visible) return null
+  return (
+    <div
+      className="mb-4 rounded px-4 py-3 relative"
+      style={{
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(6,182,212,0.04) 100%)',
+        border: '1px solid rgba(245,158,11,0.2)',
+      }}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[9px] font-mono uppercase tracking-widest text-amber-400/70">
+          Previously...
+        </span>
+        <button
+          onClick={() => setVisible(false)}
+          className="text-[9px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          dismiss
+        </button>
+      </div>
+      <p className="font-mono text-xs text-slate-300/80 leading-relaxed italic">{summary}</p>
+    </div>
+  )
+}
+
 /**
  * RPGTheater - full-page RPG session view.
  *
- * Layout: left sidebar (party roster) + center (scrolling chat log + HumanInput).
- * All turns shown chronologically, colored by speaker role.
- * Background canvas renders expanding pulse rings and vocab burst animations.
+ * Layout: left sidebar (party roster + world state) + center (chat log + input).
+ * Features: action menus, story-so-far banner, world state panel, campaign header.
  */
 export default function RPGTheater() {
   const { matchId } = useParams<{ matchId: string }>()
   const navigate = useNavigate()
-  const { events } = useSSE(matchId)
+  const { events, lastEvent } = useSSE(matchId)
   const state = useExperimentState(events)
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -73,21 +168,61 @@ export default function RPGTheater() {
   const isNearBottomRef = useRef(true)
 
   // Load participants from experiment record
-  const [participants, setParticipants] = useState<Array<{ name: string; model: string; role: string }> | null>(null)
+  const [participants, setParticipants] = useState<Array<{
+    name: string; model: string; role: string; char_class?: string; motivation?: string
+  }> | null>(null)
+  const [rpgConfig, setRpgConfig] = useState<{
+    tone?: string; setting?: string; difficulty?: string; campaign_hook?: string
+  } | null>(null)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
+
+  // Action menu from backend
+  const [actionMenu, setActionMenu] = useState<string[] | null>(null)
+
+  // RPG context (cold summary + world state) — polled after round boundaries
+  const [rpgContext, setRpgContext] = useState<RpgContextResponse | null>(null)
 
   useEffect(() => {
     if (!matchId) return
     api.getExperiment(matchId).then((exp) => {
       if (exp.participants_json) {
+        try { setParticipants(JSON.parse(exp.participants_json)) } catch { /* ignore */ }
+      }
+      // Extract rpg_config from config_json if available
+      if ((exp as Record<string, unknown>).config_json) {
         try {
-          setParticipants(JSON.parse(exp.participants_json))
+          const cfg = JSON.parse((exp as Record<string, unknown>).config_json as string)
+          if (cfg.rpg_config) setRpgConfig(cfg.rpg_config)
         } catch { /* ignore */ }
       }
     }).catch(() => {})
   }, [matchId])
+
+  // Handle incoming SSE events for action menu
+  useEffect(() => {
+    if (!lastEvent) return
+    if (lastEvent.type === 'relay.action_menu') {
+      setActionMenu((lastEvent as ActionMenuEvent).actions)
+    } else if (lastEvent.type === 'relay.turn') {
+      // Clear action menu once the player's turn is received
+      const playerName = participants?.find((p) => p.role.toLowerCase() === 'player')?.name ?? ''
+      if ((lastEvent as TurnEvent).speaker.toLowerCase() === playerName.toLowerCase()) {
+        setActionMenu(null)
+      }
+    }
+  }, [lastEvent, participants])
+
+  // Fetch rpg-context after each round boundary or when turns arrive
+  useEffect(() => {
+    if (!matchId || state.turns.length === 0) return
+    // Refresh every 2 turns (light polling — context only updates every 2 rounds anyway)
+    if (state.turns.length % 2 !== 0) return
+    api.getRpgContext(matchId)
+      .then((ctx) => setRpgContext(ctx))
+      .catch(() => {/* silent fail — context panel is cosmetic */})
+  }, [matchId, state.turns.length])
 
   // Auto-scroll when near bottom
   useEffect(() => {
@@ -121,7 +256,6 @@ export default function RPGTheater() {
   const dmName = participants?.find((p) => p.role.toLowerCase() === 'dm')?.name ?? 'DM'
   const isDone = state.status === 'completed' || state.status === 'error'
 
-  // Extract last turn for canvas animation trigger
   const lastTurn = state.turns.length > 0 ? state.turns[state.turns.length - 1] : null
 
   useEffect(() => {
@@ -135,47 +269,119 @@ export default function RPGTheater() {
     }
   }, [lastTurn?.turn_id, state.status])
 
+  // Campaign tone badge color
+  const toneBadgeColor: Record<string, string> = {
+    cinematic: '#06B6D4',
+    grimdark: '#EF4444',
+    gritty: '#F97316',
+    whimsical: '#A78BFA',
+    serious: '#94A3B8',
+  }
+  const toneColor = toneBadgeColor[rpgConfig?.tone?.toLowerCase() ?? ''] ?? '#94A3B8'
+
+  // Tone-reactive canvas tint — "R,G,B" string passed to TheaterCanvas
+  const toneToTint: Record<string, string> = {
+    grimdark: '239,68,68',
+    gritty: '249,115,22',
+    whimsical: '167,139,250',
+    cinematic: '6,182,212',
+    serious: '148,163,184',
+  }
+  const canvasTint = toneToTint[rpgConfig?.tone?.toLowerCase() ?? ''] ?? '6,182,212'
+
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary">
-      {/* ── Left Sidebar: Party Roster ── */}
-      <aside className="w-52 border-r border-slate-800/50 bg-slate-950/40 p-4 flex flex-col gap-4">
-        <Link to="/" className="text-xs text-slate-500 hover:text-slate-300 font-mono">
+      {/* ── Left Sidebar: Party Roster + World State ── */}
+      <aside className="w-56 border-r border-slate-800/50 bg-slate-950/40 p-4 flex flex-col gap-4 overflow-y-auto">
+        <Link to="/" className="text-xs text-slate-500 hover:text-slate-300 font-mono flex-shrink-0">
           &larr; Babel
         </Link>
 
-        <h2 className="text-xs font-mono uppercase tracking-wider text-slate-400 mt-2">
+        {/* Campaign info */}
+        {rpgConfig && (
+          <div className="flex-shrink-0 space-y-1">
+            {rpgConfig.tone && (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded"
+                  style={{ color: toneColor, border: `1px solid ${toneColor}40`, background: `${toneColor}10` }}
+                >
+                  {rpgConfig.tone}
+                </span>
+                {rpgConfig.setting && (
+                  <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wide truncate">
+                    {rpgConfig.setting}
+                  </span>
+                )}
+              </div>
+            )}
+            {rpgConfig.campaign_hook && (
+              <p className="text-[10px] font-mono text-slate-400/70 leading-snug line-clamp-3 italic">
+                {rpgConfig.campaign_hook}
+              </p>
+            )}
+          </div>
+        )}
+
+        <h2 className="text-xs font-mono uppercase tracking-wider text-slate-400 flex-shrink-0">
           Party
         </h2>
+
         {participants ? (
-          <ul className="space-y-3">
+          <ul className="space-y-3 flex-shrink-0">
             {participants.map((p) => {
               const color = speakerColor(p.name, participants)
               const isHuman = p.model === 'human'
-              
-              // Determine avatar state
+              const role = p.role.toLowerCase()
+              const roleLabel = ROLE_LABELS[role] ?? role.toUpperCase()
+
               let avatarStatus: 'idle' | 'thinking' | 'talking' | 'error' | 'winner' | 'loser' = 'idle'
               if (state.thinkingSpeaker?.toLowerCase() === p.name.toLowerCase()) {
                 avatarStatus = 'thinking'
               } else if (state.turns.length > 0 && state.turns[state.turns.length - 1].speaker.toLowerCase() === p.name.toLowerCase()) {
                 avatarStatus = 'talking'
               }
-              
+
+              const isAwaiting = isHuman && state.isAwaitingHuman
               return (
-                <li key={p.name} className="flex items-center gap-3">
-                  <div className="flex-shrink-0">
+                <li key={p.name} className="flex items-start gap-2.5">
+                  <div className="flex-shrink-0 mt-0.5 relative">
+                    {isAwaiting && (
+                      <span
+                        className="absolute inset-0 rounded-full animate-ping"
+                        style={{ background: 'rgba(16,185,129,0.3)' }}
+                      />
+                    )}
                     <SpriteAvatar
                       status={avatarStatus}
                       accentColor={color}
                       instanceId={p.name}
-                      size={48}
+                      size={40}
                     />
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-mono truncate" style={{ color }}>
-                      {p.name}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-mono font-medium truncate" style={{ color }}>
+                        {p.name}
+                      </span>
+                      <span
+                        className="text-[8px] font-mono px-1 py-0.5 rounded flex-shrink-0"
+                        style={{
+                          color: `${color}cc`,
+                          border: `1px solid ${color}30`,
+                          background: `${color}10`,
+                        }}
+                      >
+                        {roleLabel}
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono truncate">
-                      {isHuman ? 'You' : p.model.split('/').pop()}
+                    {p.char_class && (
+                      <div className="text-[10px] font-mono text-slate-400 truncate">
+                        {p.char_class}
+                      </div>
+                    )}
+                    <div className="text-[9px] text-slate-600 font-mono truncate">
+                      {isHuman ? 'Human player' : p.model.split('/').pop()}
                     </div>
                   </div>
                 </li>
@@ -186,8 +392,13 @@ export default function RPGTheater() {
           <div className="text-xs text-slate-500 font-mono">Loading...</div>
         )}
 
-        {/* Status */}
-        <div className="mt-auto space-y-2">
+        {/* World state entities panel */}
+        {rpgContext?.world_state && (
+          <WorldStatePanel world={rpgContext.world_state} />
+        )}
+
+        {/* Status + actions */}
+        <div className="mt-auto space-y-2 flex-shrink-0">
           <div className="text-[10px] font-mono text-slate-500">
             Round {state.currentRound} {state.totalRounds > 0 ? `/ ${state.totalRounds}` : ''}
           </div>
@@ -216,11 +427,12 @@ export default function RPGTheater() {
 
       {/* ── Main Content: Chat Log + Input ── */}
       <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Background canvas — expanding rings and vocab bursts */}
+        {/* Background canvas */}
         <TheaterCanvas
           lastTurn={lastTurn}
           lastVocab={null}
           modelAName={dmName}
+          tintColor={canvasTint}
         />
 
         {/* Header bar */}
@@ -229,7 +441,12 @@ export default function RPGTheater() {
           <span className="font-mono text-sm text-slate-300">
             RPG Session
           </span>
-          <span className="font-mono text-xs text-slate-500 ml-auto">
+          {rpgConfig?.setting && (
+            <span className="font-mono text-xs text-slate-500 hidden sm:block">
+              &mdash; {rpgConfig.setting}
+            </span>
+          )}
+          <span className="font-mono text-xs text-slate-600 ml-auto tabular-nums">
             {matchId?.slice(0, 8)}
           </span>
         </header>
@@ -237,6 +454,11 @@ export default function RPGTheater() {
         {/* Scrolling chat log */}
         <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden relative z-10">
           <div className="p-4 space-y-1 max-w-3xl mx-auto">
+            {/* Story So Far banner (shows once cold summary is available) */}
+            {rpgContext?.cold_summary && state.turns.length > 0 && (
+              <StorySoFarBanner summary={rpgContext.cold_summary} />
+            )}
+
             {state.turns.map((turn) => (
               <RPGTurnEntry
                 key={turn.turn_id}
@@ -257,6 +479,7 @@ export default function RPGTheater() {
             matchId={matchId}
             isEnabled={state.isAwaitingHuman}
             speaker={playerName}
+            actionMenu={actionMenu}
           />
         )}
 
@@ -274,7 +497,7 @@ export default function RPGTheater() {
         <EndSessionModal
           isOpen={isModalOpen}
           matchId={matchId}
-          preset={null} // Preset resolution for RPG handled via Remix route
+          preset={null}
           stats={{
             turns: state.turns.length,
             rounds: state.currentRound,

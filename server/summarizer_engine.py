@@ -25,7 +25,7 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
     """
     try:
         turns = await db.get_turns(match_id)
-        if len(turns) < 10:
+        if len(turns) < 6:
             return # Not enough history to summarize yet
 
         # --- 1. Cold Summary ---

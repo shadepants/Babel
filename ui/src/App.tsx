@@ -15,6 +15,7 @@ import Settings from './pages/Settings'
 import Tournaments from './pages/Tournaments'
 import RPGTheater from './components/theater/RPGTheater'
 import Campaign from './pages/Campaign'
+import RPGHub from './pages/RPGHub'
 import BranchTree from './pages/BranchTree'
 import Documentary from './pages/Documentary'
 
@@ -60,6 +61,7 @@ function AppInner() {
           <Route path="/tournament/:tournamentId"   element={<Tournament />} />
           <Route path="/settings"                   element={<Settings />} />
           <Route path="/tournaments"                 element={<Tournaments />} />
+          <Route path="/rpg-hub"                          element={<RPGHub />} />
           <Route path="/campaign/:presetId"             element={<Campaign />} />
           <Route path="/rpg/:matchId"                  element={<RPGTheater />} />
           <Route path="/tree/:experimentId"             element={<BranchTree />} />

@@ -6,6 +6,7 @@ When it's a human's turn, the engine publishes an awaiting_human event and
 blocks on an asyncio.Event until POST /inject signals the event.
 
 Phase 13b: Virtual Tabletop expansion.
+Phase 20: Role-specific prompts, constrained action menus, world state extraction.
 """
 
 import asyncio
@@ -14,6 +15,13 @@ import logging
 import time
 from typing import Any
 
+import litellm
+
+from server.config import (
+    CLASS_ACTION_TEMPLATES,
+    COMPANION_SYSTEM_PROMPT,
+    DEFAULT_RPG_SYSTEM_PROMPT,
+)
 from server.db import Database
 from server.event_hub import EventHub
 from server.relay_engine import (
@@ -44,6 +52,61 @@ async def _save_rpg_memory(
     if summary:
         await db.create_memory(dm_model, preset_key, match_id, summary)
         logger.info("RPG memory saved for %s (%s)", match_id, preset_key)
+
+
+async def _generate_action_menu(
+    match_id: str,
+    last_ai_content: str,
+    player_name: str,
+    player_class: str,
+    hub: EventHub,
+) -> None:
+    """Generate 4 contextual action choices after a DM/AI turn and publish them.
+
+    Uses a fast model to produce situation-specific choices. Falls back to
+    class templates if the LLM call fails or times out.
+    """
+    fallback = CLASS_ACTION_TEMPLATES.get(
+        player_class, CLASS_ACTION_TEMPLATES["default"]
+    )
+
+    if last_ai_content:
+        try:
+            prompt = (
+                "You are helping a player in a tabletop RPG choose their next action.\n\n"
+                "The Dungeon Master just narrated:\n"
+                f"{last_ai_content[:600]}\n\n"
+                f"The player's character is a {player_class or 'adventurer'}. "
+                "Generate exactly 4 short, concrete action options they could take right now. "
+                "Each option should be 3-8 words. Make them varied: combat, social, exploration, and creative.\n"
+                'Respond ONLY with valid JSON: {"actions": ["option1", "option2", "option3", "option4"]}'
+            )
+            res = await litellm.acompletion(
+                model="gemini/gemini-2.5-flash",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=120,
+                temperature=0.8,
+                timeout=8,
+            )
+            raw = res.choices[0].message.content
+            parsed = json.loads(raw)
+            actions = parsed.get("actions", fallback)
+            if not isinstance(actions, list) or len(actions) < 2:
+                actions = fallback
+            actions = [str(a) for a in actions[:6]]
+        except Exception as exc:
+            logger.debug("Action menu generation failed for %s: %s", match_id, exc)
+            actions = fallback
+    else:
+        actions = fallback
+
+    hub.publish(RelayEvent.ACTION_MENU, {
+        "match_id": match_id,
+        "speaker": player_name,
+        "actions": actions,
+    })
+    logger.debug("Action menu published for %s (%s): %s", match_id, player_name, actions)
 
 
 async def run_rpg_match(
@@ -112,6 +175,17 @@ async def run_rpg_match(
             system_prompt = f"CAMPAIGN HISTORY:\n{memory_block}\n\n{system_prompt}"
             logger.info("RPG %s: injected %d past campaign memories", match_id, len(past_memories[:3]))
 
+    # -- Build role-specific system prompt variants --
+    # Companions get character-focused instructions; DM keeps narrator discipline.
+    # If the caller passed DEFAULT_RPG_SYSTEM_PROMPT as the base, swap it out for
+    # companions. If a custom prompt was used, append COMPANION_SYSTEM_PROMPT.
+    if DEFAULT_RPG_SYSTEM_PROMPT in system_prompt:
+        companion_system_prompt = system_prompt.replace(
+            DEFAULT_RPG_SYSTEM_PROMPT, COMPANION_SYSTEM_PROMPT
+        )
+    else:
+        companion_system_prompt = system_prompt + "\n\n" + COMPANION_SYSTEM_PROMPT
+
     # -- Build persona map: index -> PersonaRecord (if persona_ids provided) --
     persona_map: dict[int, PersonaRecord] = {}
     if participant_persona_ids:
@@ -159,13 +233,24 @@ async def run_rpg_match(
                     is_awaiting_human=(actor["model"] == "human")
                 )
 
-                # -- Human turn: yield and wait for inject --
+                # -- Human turn: yield, generate action menu, wait for inject --
                 if actor["model"] == "human":
                     hub.publish(RelayEvent.AWAITING_HUMAN, {
                         "match_id": match_id,
                         "speaker": actor["name"],
                         "round": round_num,
                     })
+
+                    # Fire action menu generation concurrently while player reads narration
+                    last_ai_content = turns[-1]["content"] if turns else ""
+                    player_class = actor.get("char_class", "")
+                    _action_task = asyncio.create_task(_bg_task(_generate_action_menu(
+                        match_id, last_ai_content, actor["name"], player_class, hub
+                    )))
+                    if background_tasks is not None:
+                        track_task(_action_task, background_tasks)
+                    else:
+                        _action_task.add_done_callback(_log_task_exception)
 
                     # Block until POST /inject calls human_event.set()
                     await human_event.wait()
@@ -206,15 +291,20 @@ async def run_rpg_match(
                 cold_context = await db.get_latest_cold_summary(match_id)
                 world_bible = await db.get_world_state(match_id)
 
+                # Choose role-specific base prompt: DM keeps narrator discipline,
+                # companions get character-focused instructions.
+                role = actor.get("role", "companion").lower()
+                base_prompt = system_prompt if role == "dm" else companion_system_prompt
+
                 if agent.persona:
                     actor_system = (
                         f"You are {agent.persona.name}. {agent.persona.personality}"
                     )
                     if agent.persona.backstory:
                         actor_system += f"\n\nBackground: {agent.persona.backstory}"
-                    actor_system += f"\n\n{system_prompt}"
+                    actor_system += f"\n\n{base_prompt}"
                 else:
-                    actor_system = system_prompt
+                    actor_system = base_prompt
 
                 # RPG uses layered context: Cold recap + World Bible + Hot sliding window
                 hot_turns = turns[-10:] if len(turns) > 10 else turns

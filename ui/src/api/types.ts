@@ -195,6 +195,13 @@ export interface AwaitingHumanEvent extends BaseSSEEvent {
   round: number;
 }
 
+/** relay.action_menu — contextual action choices for the human player */
+export interface ActionMenuEvent extends BaseSSEEvent {
+  type: 'relay.action_menu';
+  speaker: string;
+  actions: string[];
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
@@ -208,7 +215,44 @@ export type RelaySSEEvent =
   | PausedEvent
   | ResumedEvent
   | ObserverEvent
-  | AwaitingHumanEvent;
+  | AwaitingHumanEvent
+  | ActionMenuEvent;
+
+// ── RPG Context Types ────────────────────────────────────────────
+
+/** NPC entry in world state */
+export interface WorldNpc {
+  name: string;
+  status?: string;
+  role?: string;
+}
+
+/** Location entry in world state */
+export interface WorldLocation {
+  name: string;
+  description?: string;
+}
+
+/** Item entry in world state */
+export interface WorldItem {
+  name: string;
+  holder?: string;
+  significance?: string;
+}
+
+/** World state extracted from session turns */
+export interface WorldState {
+  npcs?: WorldNpc[];
+  locations?: WorldLocation[];
+  items?: WorldItem[];
+}
+
+/** GET /api/relay/:id/rpg-context response */
+export interface RpgContextResponse {
+  match_id: string;
+  cold_summary: string | null;
+  world_state: WorldState;
+}
 
 // ── Preset Types ─────────────────────────────────────────────
 

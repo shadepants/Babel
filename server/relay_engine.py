@@ -108,6 +108,7 @@ class RelayEvent:
     RESUMED = "relay.resumed"         # Relay continuing after pause
     OBSERVER = "relay.observer"       # Observer/narrator model commentary
     AWAITING_HUMAN = "relay.awaiting_human"  # RPG engine waiting for human input
+    ACTION_MENU = "relay.action_menu"         # Contextual action choices for human player
 
 
 # -- Task Exception Logging ---------------------------------------------------

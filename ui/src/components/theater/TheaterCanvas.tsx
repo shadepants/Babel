@@ -18,6 +18,7 @@ interface TheaterCanvasProps {
   lastTurn: TurnEvent | null
   lastVocab: VocabEvent | null
   modelAName: string
+  tintColor?: string  // "R,G,B" — overrides cyan for non-DM pulse rings
 }
 
 /**
@@ -25,10 +26,14 @@ interface TheaterCanvasProps {
  * Draws expanding pulse rings on each turn and particle bursts on vocab discoveries.
  * All animation is pure canvas + requestAnimationFrame — zero dependencies.
  */
-export function TheaterCanvas({ lastTurn, lastVocab, modelAName }: TheaterCanvasProps) {
+export function TheaterCanvas({ lastTurn, lastVocab, modelAName, tintColor }: TheaterCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animsRef  = useRef<Animation[]>([])
   const rafRef    = useRef<number>(undefined)
+  const tintRef   = useRef<string | undefined>(tintColor)
+
+  // Keep tint ref in sync so spawn effects always see the latest tone color
+  useEffect(() => { tintRef.current = tintColor }, [tintColor])
 
   // Track last-seen IDs to avoid double-firing on re-render
   const lastTurnIdRef  = useRef<string | number | null>(null)
@@ -119,7 +124,7 @@ export function TheaterCanvas({ lastTurn, lastVocab, modelAName }: TheaterCanvas
     if (!canvas) return
 
     const isA  = lastTurn.speaker === modelAName
-    const color = isA ? COLOR_A : COLOR_B
+    const color = isA ? COLOR_A : (tintRef.current ? `rgba(${tintRef.current}` : COLOR_B)
 
     animsRef.current.push({
       x: isA ? canvas.width * 0.25 : canvas.width * 0.75,

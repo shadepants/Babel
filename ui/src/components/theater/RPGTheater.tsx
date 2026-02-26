@@ -49,12 +49,12 @@ function RPGTurnEntry({
         <span className="font-mono text-xs font-semibold" style={{ color }}>
           {turn.speaker}
         </span>
-        <span className="font-mono text-[9px] text-slate-500 tabular-nums">
+        <span className="font-mono text-[9px] text-text-dim tabular-nums">
           R.{turn.round} &middot; {turn.latency_s}s
         </span>
       </div>
       <div
-        className="font-mono text-sm text-slate-200 leading-relaxed pl-3 whitespace-pre-wrap break-words"
+        className="font-mono text-sm text-text-primary leading-relaxed pl-3 whitespace-pre-wrap break-words"
         style={{ borderLeft: `2px solid ${color}40` }}
       >
         {turn.content}
@@ -74,14 +74,14 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
   if (!hasData) return null
 
   return (
-    <div className="mt-3 border border-slate-700/30 rounded overflow-hidden">
+    <div className="mt-3 border border-border-custom/30 rounded overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-text-dim hover:text-text-primary transition-colors"
         style={{ background: 'rgba(15,23,42,0.6)' }}
       >
         <span>World</span>
-        <span className="text-slate-600">{open ? '\u25B2' : '\u25BC'}</span>
+        <span className="text-text-dim/60">{open ? '\u25B2' : '\u25BC'}</span>
       </button>
       {open && (
         <div className="px-2.5 py-2 space-y-2" style={{ background: 'rgba(15,23,42,0.4)' }}>
@@ -89,9 +89,9 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
             <div>
               <div className="text-[9px] font-mono uppercase text-amber-400/60 mb-1">NPCs</div>
               {world.npcs!.map((npc) => (
-                <div key={npc.name} className="text-[10px] font-mono text-slate-300 truncate">
+                <div key={npc.name} className="text-[10px] font-mono text-text-primary/80 truncate">
                   <span className="text-amber-300/70">{npc.name}</span>
-                  {npc.status && <span className="text-slate-500"> &mdash; {npc.status}</span>}
+                  {npc.status && <span className="text-text-dim"> &mdash; {npc.status}</span>}
                 </div>
               ))}
             </div>
@@ -100,7 +100,7 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
             <div>
               <div className="text-[9px] font-mono uppercase text-cyan-400/60 mb-1">Locations</div>
               {world.locations!.map((loc) => (
-                <div key={loc.name} className="text-[10px] font-mono text-slate-300 truncate">
+                <div key={loc.name} className="text-[10px] font-mono text-text-primary/80 truncate">
                   <span className="text-cyan-300/70">{loc.name}</span>
                 </div>
               ))}
@@ -110,9 +110,9 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
             <div>
               <div className="text-[9px] font-mono uppercase text-violet-400/60 mb-1">Items</div>
               {world.items!.map((item) => (
-                <div key={item.name} className="text-[10px] font-mono text-slate-300 truncate">
+                <div key={item.name} className="text-[10px] font-mono text-text-primary/80 truncate">
                   <span className="text-violet-300/70">{item.name}</span>
-                  {item.holder && <span className="text-slate-500"> ({item.holder})</span>}
+                  {item.holder && <span className="text-text-dim"> ({item.holder})</span>}
                 </div>
               ))}
             </div>
@@ -141,12 +141,12 @@ function StorySoFarBanner({ summary }: { summary: string }) {
         </span>
         <button
           onClick={() => setVisible(false)}
-          className="text-[9px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+          className="text-[9px] font-mono text-text-dim/60 hover:text-text-dim transition-colors"
         >
           dismiss
         </button>
       </div>
-      <p className="font-mono text-xs text-slate-300/80 leading-relaxed italic">{summary}</p>
+      <p className="font-mono text-xs text-text-primary/70 leading-relaxed italic">{summary}</p>
     </div>
   )
 }
@@ -292,8 +292,8 @@ export default function RPGTheater() {
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary">
       {/* ── Left Sidebar: Party Roster + World State ── */}
-      <aside className="w-56 border-r border-slate-800/50 bg-slate-950/40 p-4 flex flex-col gap-4 overflow-y-auto">
-        <Link to="/" className="text-xs text-slate-500 hover:text-slate-300 font-mono flex-shrink-0">
+      <aside className="w-56 border-r border-border-custom/50 bg-bg-deep/40 p-4 flex flex-col gap-4 overflow-y-auto">
+        <Link to="/" className="text-xs text-text-dim hover:text-text-primary/80 font-mono flex-shrink-0">
           &larr; Babel
         </Link>
 
@@ -309,21 +309,21 @@ export default function RPGTheater() {
                   {rpgConfig.tone}
                 </span>
                 {rpgConfig.setting && (
-                  <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wide truncate">
+                  <span className="text-[9px] font-mono text-text-dim uppercase tracking-wide truncate">
                     {rpgConfig.setting}
                   </span>
                 )}
               </div>
             )}
             {rpgConfig.campaign_hook && (
-              <p className="text-[10px] font-mono text-slate-400/70 leading-snug line-clamp-3 italic">
+              <p className="text-[10px] font-mono text-text-dim/70 leading-snug line-clamp-3 italic">
                 {rpgConfig.campaign_hook}
               </p>
             )}
           </div>
         )}
 
-        <h2 className="text-xs font-mono uppercase tracking-wider text-slate-400 flex-shrink-0">
+        <h2 className="text-xs font-mono uppercase tracking-wider text-text-dim flex-shrink-0">
           Party
         </h2>
 
@@ -376,11 +376,11 @@ export default function RPGTheater() {
                       </span>
                     </div>
                     {p.char_class && (
-                      <div className="text-[10px] font-mono text-slate-400 truncate">
+                      <div className="text-[10px] font-mono text-text-dim truncate">
                         {p.char_class}
                       </div>
                     )}
-                    <div className="text-[9px] text-slate-600 font-mono truncate">
+                    <div className="text-[9px] text-text-dim/60 font-mono truncate">
                       {isHuman ? 'Human player' : p.model.split('/').pop()}
                     </div>
                   </div>
@@ -389,7 +389,7 @@ export default function RPGTheater() {
             })}
           </ul>
         ) : (
-          <div className="text-xs text-slate-500 font-mono">Loading...</div>
+          <div className="text-xs text-text-dim font-mono">Loading...</div>
         )}
 
         {/* World state entities panel */}
@@ -399,7 +399,7 @@ export default function RPGTheater() {
 
         {/* Status + actions */}
         <div className="mt-auto space-y-2 flex-shrink-0">
-          <div className="text-[10px] font-mono text-slate-500">
+          <div className="text-[10px] font-mono text-text-dim">
             Round {state.currentRound} {state.totalRounds > 0 ? `/ ${state.totalRounds}` : ''}
           </div>
           <div className="text-[10px] font-mono" style={{
@@ -436,17 +436,17 @@ export default function RPGTheater() {
         />
 
         {/* Header bar */}
-        <header className="h-12 border-b border-slate-800/50 flex items-center px-4 gap-3 bg-slate-950/30 relative z-10">
+        <header className="h-12 border-b border-border-custom/50 flex items-center px-4 gap-3 bg-bg-deep/30 relative z-10">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-mono text-sm text-slate-300">
+          <span className="font-mono text-sm text-text-primary/80">
             RPG Session
           </span>
           {rpgConfig?.setting && (
-            <span className="font-mono text-xs text-slate-500 hidden sm:block">
+            <span className="font-mono text-xs text-text-dim hidden sm:block">
               &mdash; {rpgConfig.setting}
             </span>
           )}
-          <span className="font-mono text-xs text-slate-600 ml-auto tabular-nums">
+          <span className="font-mono text-xs text-text-dim/60 ml-auto tabular-nums">
             {matchId?.slice(0, 8)}
           </span>
         </header>
@@ -484,8 +484,8 @@ export default function RPGTheater() {
         )}
 
         {isDone && (
-          <div className="border-t border-slate-800/50 px-4 py-3 text-center relative z-10">
-            <span className="font-mono text-sm text-slate-400">
+          <div className="border-t border-border-custom/50 px-4 py-3 text-center relative z-10">
+            <span className="font-mono text-sm text-text-dim">
               Campaign ended.{' '}
               <Link to="/" className="text-emerald-400 hover:text-emerald-300 underline">
                 Return to Babel

@@ -30,13 +30,27 @@ const SETTING_MAP: Record<string, string> = {
 type Tone = typeof TONE_OPTIONS[number]
 type Difficulty = typeof DIFFICULTY_OPTIONS[number]
 
+interface CampaignNavState {
+  preset?: CampaignPreset
+  agents?: Array<{ model: string; name: string }>
+  rounds?: number
+  maxTokens?: number
+  turnDelay?: number
+  systemPrompt?: string
+  enableScoring?: boolean
+  enableVerdict?: boolean
+  enableMemory?: boolean
+  observerModel?: string
+  observerInterval?: number
+  judgeModel?: string
+}
+
 export default function Campaign() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const configState = location.state as any
-  const campaignPreset = (location.state as { preset?: CampaignPreset } | null)?.preset
+  const configState = location.state as CampaignNavState | null
+  const campaignPreset = configState?.preset
 
   const [dmModel, setDmModel] = useState<string>(
     configState?.agents?.[0]?.model ?? ''
@@ -44,6 +58,7 @@ export default function Campaign() {
   const [dmModelName, setDmModelName] = useState<string>(
     configState?.agents?.[0]?.name ?? ''
   )
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; model: string }>>([])
 
   useEffect(() => {
     if (dmModel && !dmModelName) {
@@ -70,8 +85,6 @@ export default function Campaign() {
   const [turnDelay, setTurnDelay] = useState<number>(configState?.turnDelay ?? 1)
   const [temperature, setTemperature] = useState<number>(0.8)
 
-  const [availableModels, setAvailableModels] = useState<Array<{ name: string; model: string }>>([]
-  )
   const [starting, setStarting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -178,10 +191,10 @@ export default function Campaign() {
       {/* Header */}
       <div>
         <Link
-          to={`/configure/${presetId ?? 'custom'}`}
+          to="/rpg-hub"
           className="font-mono text-[10px] text-text-dim hover:text-accent transition-colors tracking-widest uppercase"
         >
-          &larr; Configure
+          &larr; RPG Hub
         </Link>
         <h1 className="font-display font-black tracking-widest text-2xl text-text-primary mt-4">
           Campaign Setup
@@ -269,7 +282,7 @@ export default function Campaign() {
                 onChange={e => setCampaignHook(e.target.value)}
                 rows={5}
                 maxLength={500}
-                className="w-full resize-none bg-bg-deep/80 border border-border-custom/50 rounded-sm px-3 py-2 font-mono text-xs text-text-primary focus:outline-none focus:border-emerald-500/40 placeholder:text-text-dim/30"
+                className="w-full resize-none bg-bg-deep/80 border border-border-custom/50 rounded-sm px-3 py-2 font-mono text-xs text-text-primary focus:outline-none focus:border-emerald-500/50 placeholder:text-text-dim/30"
                 placeholder="A dark wizard has stolen the sacred flame from the village temple..."
               />
               <div className="text-right font-mono text-[9px] text-text-dim/40">
@@ -339,6 +352,7 @@ export default function Campaign() {
                       onClick={() => removeParticipant(i)}
                       className="font-mono text-[10px] text-danger/50 hover:text-danger transition-colors font-symbol"
                       title="Remove"
+                      aria-label="Remove participant"
                     >
                       &#10005;
                     </button>
@@ -465,7 +479,7 @@ export default function Campaign() {
                 <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase">
                   Rounds
                 </label>
-                <span className="font-mono text-[11px] text-emerald-400">{rounds}</span>
+                <span className="font-mono text-xs text-emerald-400">{rounds}</span>
               </div>
               <input
                 type="range"
@@ -483,7 +497,7 @@ export default function Campaign() {
                 <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase">
                   Turn Delay
                 </label>
-                <span className="font-mono text-[11px] text-emerald-400">{turnDelay}s</span>
+                <span className="font-mono text-xs text-emerald-400">{turnDelay}s</span>
               </div>
               <input
                 type="range"
@@ -502,7 +516,7 @@ export default function Campaign() {
                 <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase">
                   Max Tokens
                 </label>
-                <span className="font-mono text-[11px] text-emerald-400">{maxTokens}</span>
+                <span className="font-mono text-xs text-emerald-400">{maxTokens}</span>
               </div>
               <input
                 type="range"
@@ -521,7 +535,7 @@ export default function Campaign() {
                 <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase">
                   Temperature
                 </label>
-                <span className="font-mono text-[11px] text-emerald-400">{temperature.toFixed(1)}</span>
+                <span className="font-mono text-xs text-emerald-400">{temperature.toFixed(1)}</span>
               </div>
               <input
                 type="range"
@@ -557,7 +571,7 @@ export default function Campaign() {
             </span>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <Link to={`/configure/${presetId ?? 'custom'}`}>
+            <Link to="/rpg-hub">
               <Button variant="outline" className="font-mono text-xs tracking-widest uppercase">
                 &larr; Back
               </Button>

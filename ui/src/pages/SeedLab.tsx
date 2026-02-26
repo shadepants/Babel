@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { api } from '@/api/client'
-import type { Preset, CampaignPreset } from '@/api/types'
-import { CAMPAIGN_PRESETS } from '@/lib/presets'
+import type { Preset } from '@/api/types'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { getSymbol } from '@/lib/symbols'
@@ -23,24 +22,12 @@ const headingVariants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 }
 
-const modalVariants = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { duration: 0.2 } },
-}
-
-const overlayVariants = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { duration: 0.15 } },
-}
-
 export default function SeedLab() {
   const navigate = useNavigate()
   const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTag, setActiveTag] = useState<string | null>(null)
-  const [showPresetPicker, setShowPresetPicker] = useState(false)
-  const [activeCategory, setActiveCategory] = useState<'fantasy' | 'scifi' | 'historical' | 'competitive'>('fantasy')
 
   useEffect(() => {
     api.getPresets()
@@ -51,18 +38,6 @@ export default function SeedLab() {
 
   const allTags = Array.from(new Set(presets.flatMap((p) => p.tags))).sort()
   const visiblePresets = activeTag ? presets.filter((p) => p.tags.includes(activeTag)) : presets
-
-  const handlePresetSelect = (preset: CampaignPreset) => {
-    setShowPresetPicker(false)
-    navigate(`/campaign/${preset.id}`, {
-      state: {
-        preset,
-      },
-    })
-  }
-
-  const categories = ['fantasy', 'scifi', 'historical', 'competitive'] as const
-  const categoryPresets = CAMPAIGN_PRESETS.filter((p) => p.category === activeCategory)
 
   return (
     <div className="flex-1 p-6 max-w-5xl mx-auto space-y-8">
@@ -118,7 +93,7 @@ export default function SeedLab() {
             <motion.div
               key={preset.id}
               variants={cardVariants}
-              style={{ position: 'relative' }}
+              className="relative"
               whileHover={{ scale: 1.025, boxShadow: '0 0 28px rgba(139,92,246,0.30)', transition: { duration: 0.2 } }}
               whileTap={{ scale: 0.98 }}
             >
@@ -173,38 +148,10 @@ export default function SeedLab() {
             </motion.div>
           ))}
 
-          {/* RPG Campaign card */}
-          <motion.div
-            variants={cardVariants}
-            style={{ position: 'relative' }}
-            whileHover={{ scale: 1.025, boxShadow: '0 0 28px rgba(16,185,129,0.25)', transition: { duration: 0.2 } }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <HudBrackets />
-            <div
-              className="neural-card h-full cursor-pointer group border-emerald-500/20"
-              onClick={() => setShowPresetPicker(true)}
-            >
-              <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent" />
-              <div className="p-5 flex flex-col items-center justify-center min-h-[160px] space-y-3">
-                <span className="font-symbol font-mono text-3xl text-emerald-500/50 group-hover:text-emerald-400/90 transition-colors select-none">&#9812;</span>
-                <div className="text-center space-y-1">
-                  <h3 className="font-display text-sm font-bold tracking-wider text-text-dim group-hover:text-emerald-400 transition-colors uppercase">
-                    RPG Campaign
-                  </h3>
-                  <p className="font-mono text-[10px] text-text-dim/60 tracking-wide">
-                    dm + party &middot; human-in-the-loop
-                  </p>
-                </div>
-                <span className="font-mono text-[9px] text-emerald-500/40 tracking-widest">// campaign_mode</span>
-              </div>
-            </div>
-          </motion.div>
-
           {/* Custom card */}
           <motion.div
             variants={cardVariants}
-            style={{ position: 'relative' }}
+            className="relative"
             whileHover={{ scale: 1.025, boxShadow: '0 0 28px rgba(139,92,246,0.20)', transition: { duration: 0.2 } }}
             whileTap={{ scale: 0.98 }}
           >
@@ -229,123 +176,6 @@ export default function SeedLab() {
           </motion.div>
         </motion.div>
       )}
-
-      {/* Preset Picker Modal */}
-      <AnimatePresence>
-        {showPresetPicker && (
-          <>
-            {/* Overlay */}
-            <motion.div
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm"
-              variants={overlayVariants}
-              initial="hidden"
-              animate="show"
-              exit="hidden"
-              onClick={() => setShowPresetPicker(false)}
-            />
-
-            {/* Modal */}
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center p-6"
-              variants={modalVariants}
-              initial="hidden"
-              animate="show"
-              exit="hidden"
-              onClick={() => setShowPresetPicker(false)}
-            >
-              <motion.div
-                className="bg-zinc-950 border border-zinc-800/60 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"
-                onClick={(e) => e.stopPropagation()}
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                {/* Header */}
-                <div className="border-b border-zinc-800/60 bg-gradient-to-r from-zinc-900 to-zinc-950 px-6 py-4">
-                  <h2 className="font-mono text-sm font-bold tracking-wider text-emerald-400 uppercase">
-                    <span className="text-emerald-600">// </span>select campaign preset
-                  </h2>
-                </div>
-
-                {/* Category Tabs */}
-                <div className="flex border-b border-zinc-800/60 px-6 py-3 gap-2">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setActiveCategory(cat)}
-                      className={`font-mono text-[11px] tracking-wider px-3 py-1.5 rounded-sm border transition-colors ${
-                        activeCategory === cat
-                          ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/10'
-                          : 'border-zinc-700/50 text-zinc-400 hover:border-emerald-500/30 hover:text-emerald-500/70'
-                      }`}
-                    >
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Presets Grid */}
-                <div className="overflow-y-auto flex-1 p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {categoryPresets.map((preset) => (
-                      <motion.div
-                        key={preset.id}
-                        className="p-4 border border-zinc-800/60 rounded-lg bg-zinc-900/50 hover:bg-zinc-900/80 cursor-pointer transition-colors"
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handlePresetSelect(preset)}
-                      >
-                        <div className="space-y-2">
-                          <h3 className="font-mono text-xs font-bold tracking-wider text-emerald-400 uppercase">
-                            {preset.name}
-                          </h3>
-                          <p className="font-mono text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
-                            {preset.description}
-                          </p>
-
-                          {/* Settings preview */}
-                          <div className="pt-3 border-t border-zinc-800/40 space-y-1">
-                            <div className="font-mono text-[9px] text-zinc-500 flex justify-between">
-                              <span>RND: {preset.rounds}</span>
-                              <span>TEMP: {preset.temperature}</span>
-                            </div>
-                            <div className="font-mono text-[9px] text-zinc-500">
-                              {preset.rpgTone.charAt(0).toUpperCase() + preset.rpgTone.slice(1)} &middot; {preset.rpgDifficulty}
-                            </div>
-                          </div>
-
-                          {/* Party template preview */}
-                          <div className="pt-3 border-t border-zinc-800/40">
-                            <p className="font-mono text-[9px] text-zinc-600 mb-1">Party:</p>
-                            <div className="space-y-0.5">
-                              {preset.participantTemplate.map((p, i) => (
-                                <div key={i} className="font-mono text-[9px] text-zinc-500">
-                                  &middot; {p.name} ({p.char_class})
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div className="border-t border-zinc-800/60 px-6 py-4 flex justify-end">
-                  <button
-                    onClick={() => setShowPresetPicker(false)}
-                    className="font-mono text-[11px] tracking-wider px-4 py-2 rounded-sm border border-zinc-700/50 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300 transition-colors"
-                  >
-                    cancel
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

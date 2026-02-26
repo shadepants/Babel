@@ -780,7 +780,7 @@ async def run_relay(
                     _obs = asyncio.create_task(
                         _observe(turns.copy(), observer_model, match_id, hub)
                     )
-                    _obs.add_done_callback(_log_task_exception)
+                    track_task(_obs, background_tasks)
 
             # -- Round complete --
             hub.publish(RelayEvent.ROUND_COMPLETE, {

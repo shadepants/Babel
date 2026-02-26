@@ -7,6 +7,7 @@ const PREFIX_MAP: Record<string, Provider> = {
   meta: 'meta', llama: 'meta',
   mistral: 'mistral', mixtral: 'mistral',
   xai: 'xai', grok: 'xai',
+  groq: 'meta',  // Groq hosts Llama models -- show Meta sigil for companion cards
 }
 
 /** Extract provider from a litellm model string like "anthropic/claude-sonnet-4-20250514"

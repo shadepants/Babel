@@ -11,7 +11,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 # -- Defaults ----------------------------------------------------------------
 
-DEFAULT_MODEL_A = "anthropic/claude-sonnet-4-20250514"
+DEFAULT_MODEL_A = "anthropic/claude-sonnet-4-5-20250929"
 DEFAULT_MODEL_B = "gemini/gemini-2.5-flash"
 
 DEFAULT_SEED = (
@@ -104,27 +104,28 @@ DEFAULT_VERDICT_ENABLED = False
 
 MODEL_REGISTRY: dict[str, str] = {
     # -- Anthropic -------------------------------------------------------
-    "Claude Haiku 4.5":  "anthropic/claude-haiku-4-5-20251001",
-    "Claude Sonnet":     "anthropic/claude-sonnet-4-20250514",
-    "Claude Opus 4":     "anthropic/claude-opus-4-5",
+    "Claude Haiku 4.5":    "anthropic/claude-haiku-4-5-20251001",
+    "Claude Sonnet 4.5":   "anthropic/claude-sonnet-4-5-20250929",
+    "Claude Opus 4.5":     "anthropic/claude-opus-4-5-20251101",
     # -- Google ----------------------------------------------------------
-    "Gemini Flash":      "gemini/gemini-2.5-flash",
-    "Gemini Pro":        "gemini/gemini-2.5-pro",
+    "Gemini Flash":        "gemini/gemini-2.5-flash",
+    "Gemini Pro":          "gemini/gemini-2.5-pro",
     # -- OpenAI ----------------------------------------------------------
-    "GPT-4o Mini":       "openai/gpt-4o-mini",
-    "GPT-4o":            "openai/gpt-4o",
+    "GPT-4.1 Mini":        "openai/gpt-4.1-mini",
+    "GPT-4.1":             "openai/gpt-4.1",
     # -- DeepSeek --------------------------------------------------------
-    "DeepSeek Chat":     "deepseek/deepseek-chat",
-    "DeepSeek R1":       "deepseek/deepseek-reasoner",
-    # -- Groq (Llama / fast inference) -----------------------------------
-    "Llama 3.3 70B":     "groq/llama-3.3-70b-versatile",
+    "DeepSeek Chat":       "deepseek/deepseek-chat",
+    "DeepSeek R1":         "deepseek/deepseek-reasoner",
+    # -- Groq (Llama 4 / fast inference) ---------------------------------
+    "Llama 4 Scout":       "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+    "Llama 4 Maverick":    "groq/meta-llama/llama-4-maverick-17b-128e-instruct",
     # -- Mistral ---------------------------------------------------------
-    "Mistral Small":     "mistral/mistral-small-latest",
-    "Mistral Large":     "mistral/mistral-large-latest",
+    "Mistral Small":       "mistral/mistral-small-latest",
+    "Mistral Large":       "mistral/mistral-large-latest",
     # -- OpenRouter (needs OPENROUTER_API_KEY) ---------------------------
-    "Qwen 2.5 72B":      "openrouter/qwen/qwen-2.5-72b-instruct",
+    "Qwen 3 32B":          "openrouter/qwen/qwen3-32b",
     # -- AI21 (needs AI21_API_KEY in .env) -------------------------------
-    "Jamba 1.5":         "ai21/jamba-1.5-large",
+    "Jamba 1.5":           "ai21/jamba-1.5-large",
 }
 
 

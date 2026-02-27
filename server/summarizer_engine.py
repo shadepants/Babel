@@ -1,4 +1,4 @@
-"""Summarizer engine — condensing conversation history and extracting world state.
+"""Summarizer engine -- condensing conversation history and extracting world state.
 
 Uses a fast, low-cost model (gemini-2.5-flash) to generate narrative recaps
 (Cold Context) and maintain a persistent JSON world bible (Frozen Context).
@@ -88,3 +88,61 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
 
     except Exception as e:
         logger.error("Layered context update failed for %s: %s", match_id, e)
+
+
+async def generate_entity_snapshot(
+    match_id: str, db: "Database", model: str = "gemini/gemini-2.5-flash"
+) -> dict | None:
+    """LLM-generated entity chronicle for a completed RPG session.
+
+    Fetches world state + cold summary + last 15 turns, then calls an LLM
+    to produce a structured JSON chronicle keyed on NPCs, locations, items,
+    unresolved threads, and party character arcs.
+    Returns a dict on success, or None if the session is empty or the LLM fails.
+    """
+    try:
+        turns = await db.get_turns(match_id)
+        if not turns:
+            return None
+
+        recent = turns[-15:]
+        transcript = "\n".join(
+            f"[{t['speaker']}]: {t['content'][:300]}" for t in recent
+        )
+
+        world_json = await db.get_world_state(match_id)
+        cold_summary = await db.get_latest_cold_summary(match_id)
+
+        context_parts: list[str] = []
+        if cold_summary:
+            context_parts.append(f"NARRATIVE RECAP:\n{cold_summary}")
+        if world_json:
+            context_parts.append(f"KNOWN ENTITIES:\n{world_json}")
+        context_parts.append(f"RECENT TURNS:\n{transcript}")
+        context = "\n\n".join(context_parts)
+
+        prompt = (
+            "You are archiving a completed RPG campaign session. "
+            "Based on the session context below, create a structured entity chronicle. "
+            "Return ONLY valid JSON with exactly these keys:\n"
+            '{"npcs": [{"name": "...", "initial_role": "...", "final_status": "...", "key_moment": "..."}], '
+            '"locations": [{"name": "...", "description": "...", "significance": "..."}], '
+            '"items": [{"name": "...", "last_holder": "...", "fate": "..."}], '
+            '"unresolved_threads": ["..."], '
+            '"party_arcs": {"<character_name>": "<one-line arc>"}}\n\n'
+            f"{context}"
+        )
+
+        res = await litellm.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=800,
+            temperature=0.3,
+        )
+        raw = res.choices[0].message.content
+        return json.loads(raw)
+
+    except Exception as exc:
+        logger.error("Entity snapshot generation failed for %s: %s", match_id, exc)
+        return None

@@ -165,6 +165,15 @@ CREATE TABLE IF NOT EXISTS rpg_state (
     is_awaiting_human INTEGER NOT NULL DEFAULT 0,
     last_updated TEXT NOT NULL
 );
+
+-- Session 24: Entity Snapshots (LLM-generated chronicles at session end)
+CREATE TABLE IF NOT EXISTS entity_snapshots (
+    match_id TEXT PRIMARY KEY REFERENCES experiments(id) ON DELETE CASCADE,
+    dm_model TEXT NOT NULL,
+    preset_key TEXT,
+    snapshot_json TEXT NOT NULL,
+    generated_at TEXT NOT NULL
+);
 """
 
 
@@ -1444,3 +1453,33 @@ class Database:
         )
         row = await cursor.fetchone()
         return row["state_json"] if row else None
+
+    # -- Entity Snapshots (Session 24) ----------------------------------------
+
+    async def save_entity_snapshot(
+        self, match_id: str, dm_model: str, preset_key: str | None, snapshot_json: str
+    ) -> None:
+        """Persist the LLM-generated entity chronicle for a completed RPG session."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._execute_queued(
+            """INSERT INTO entity_snapshots
+                (match_id, dm_model, preset_key, snapshot_json, generated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(match_id) DO UPDATE SET
+                    snapshot_json = excluded.snapshot_json,
+                    generated_at = excluded.generated_at""",
+            (match_id, dm_model, preset_key, snapshot_json, now),
+        )
+
+    async def get_entity_snapshots_for_pair(
+        self, dm_model: str, preset_key: str | None, limit: int = 2
+    ) -> list[dict]:
+        """Fetch recent entity snapshots for a (dm_model, preset_key) pair, newest first."""
+        cursor = await self.db.execute(
+            """SELECT match_id, snapshot_json, generated_at
+               FROM entity_snapshots
+               WHERE dm_model = ? AND (preset_key = ? OR (preset_key IS NULL AND ? IS NULL))
+               ORDER BY generated_at DESC LIMIT ?""",
+            (dm_model, preset_key, preset_key, limit),
+        )
+        return [dict(row) for row in await cursor.fetchall()]

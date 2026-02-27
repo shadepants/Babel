@@ -36,7 +36,7 @@ from server.relay_engine import (
     _log_task_exception,
     _extract_and_publish_vocab,
 )
-from server.summarizer_engine import update_layered_context
+from server.summarizer_engine import generate_entity_snapshot, update_layered_context
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,20 @@ async def _save_rpg_memory(
     if summary:
         await db.create_memory(dm_model, preset_key, match_id, summary)
         logger.info("RPG memory saved for %s (%s)", match_id, preset_key)
+
+
+async def _save_entity_snapshot_bg(
+    match_id: str,
+    db: Database,
+    dm_model: str,
+    preset_key: str,
+) -> None:
+    """Background task: generate and persist entity snapshot at session end."""
+    snapshot = await generate_entity_snapshot(match_id, db)
+    if snapshot:
+        snapshot_json = json.dumps(snapshot)
+        await db.save_entity_snapshot(match_id, dm_model, preset_key, snapshot_json)
+        logger.info("Entity snapshot saved for %s (%s)", match_id, preset_key)
 
 
 async def _generate_action_menu(
@@ -174,6 +188,31 @@ async def run_rpg_match(
             memory_block = "\n\n".join(m["summary"] for m in past_memories[:3])
             system_prompt = f"CAMPAIGN HISTORY:\n{memory_block}\n\n{system_prompt}"
             logger.info("RPG %s: injected %d past campaign memories", match_id, len(past_memories[:3]))
+
+    # Inject prior entity snapshot for richer campaign continuity
+    prior_snapshots = await db.get_entity_snapshots_for_pair(dm_model, preset_key)
+    if prior_snapshots:
+        try:
+            snap = json.loads(prior_snapshots[0]["snapshot_json"])
+            chronicle_lines: list[str] = []
+            if snap.get("npcs"):
+                npc_strs = "; ".join(
+                    f"{n['name']} ({n.get('initial_role', '?')} -> {n.get('final_status', '?')})"
+                    for n in snap["npcs"][:5]
+                )
+                chronicle_lines.append(f"NPCs: {npc_strs}")
+            if snap.get("unresolved_threads"):
+                threads = "; ".join(snap["unresolved_threads"][:3])
+                chronicle_lines.append(f"Unresolved threads: {threads}")
+            if snap.get("party_arcs"):
+                arcs = "; ".join(f"{k}: {v}" for k, v in list(snap["party_arcs"].items())[:3])
+                chronicle_lines.append(f"Party arcs: {arcs}")
+            if chronicle_lines:
+                chronicle = "PRIOR SESSION ENTITY CHRONICLE:\n" + "\n".join(chronicle_lines)
+                system_prompt = chronicle + "\n\n" + system_prompt
+                logger.info("RPG %s: injected entity snapshot from prior session", match_id)
+        except Exception as _snap_err:
+            logger.debug("RPG %s: failed to parse prior snapshot: %s", match_id, _snap_err)
 
     # -- Build role-specific system prompt variants --
     # Companions get character-focused instructions; DM keeps narrator discipline.
@@ -437,6 +476,16 @@ async def run_rpg_match(
                 track_task(_mem_task, background_tasks)
             else:
                 _mem_task.add_done_callback(_log_task_exception)
+
+            # Save entity snapshot for future sessions
+            _snap_task = asyncio.create_task(
+                _bg_task(_save_entity_snapshot_bg(match_id, db, dm_model, preset_key)),
+                name=f"rpg_snapshot_{match_id}",
+            )
+            if background_tasks is not None:
+                track_task(_snap_task, background_tasks)
+            else:
+                _snap_task.add_done_callback(_log_task_exception)
 
     except asyncio.CancelledError:
         logger.info("RPG %s task cancelled", match_id)

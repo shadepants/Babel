@@ -1,6 +1,6 @@
-# Babel &mdash; AI-to-AI Conversation Arena
+&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-27 (session 24 &mdash; campaign memory enrichment + launch.json)
+**Last Updated:** 2026-02-27 (session 26 &mdash; frontend audit + 17 bug fixes)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -47,16 +47,36 @@ See `docs/CHANGELOG.md` for full history through Phase 19 (reliability tier 2, C
 
 ### Session 24 - Campaign Memory Enrichment + Dev Tooling (SHIPPED `3c98e2b`)
 - [x] **A1 verified:** `DM_BLOCKED_MODELS` filter confirmed working at Campaign.tsx:344
-- [x] **Entity snapshots feature** &mdash; LLM-generated chronicle at session end, injected at next session start:
-  - `db.py`: `entity_snapshots` table + `save_entity_snapshot()` + `get_entity_snapshots_for_pair()`
-  - `summarizer_engine.py`: `generate_entity_snapshot()` &mdash; gemini-2.5-flash, uses world_state + cold_summary + last 15 turns, returns `{npcs, locations, items, unresolved_threads, party_arcs}`
-  - `rpg_engine.py`: `_save_entity_snapshot_bg()` fires at session end; prior snapshot injected as `PRIOR SESSION ENTITY CHRONICLE` in DM system prompt
+- [x] **Entity snapshots feature** &mdash; LLM-generated chronicle at session end, injected at next session start
 - [x] `.claude/launch.json` &mdash; dev server configs for `preview_start` (backend + frontend)
 
+### Sessions 25-26 - Dev Tooling + Frontend Audit (UNCOMMITTED)
+- [x] `vite.config.ts`: `host: '0.0.0.0'` &mdash; binds all interfaces for preview_start
+- [x] `postcss.config.js`: absolute tailwind config path via `import.meta.url` &mdash; fixes CWD mismatch
+- [x] **Full frontend audit** &mdash; 8 bugs + 6 quality + 2 accessibility issues fixed across 12 files
+  - BUG 1: `Theater.tsx` &mdash; `useEffect` moved above early return (Rules of Hooks violation)
+  - BUG 2: `ConversationColumn` + `TurnBubble` &mdash; N-way agent colors via `accentColor` hex prop + `hexToRgba`
+  - BUG 3: `Gallery.tsx` + `Analytics.tsx` &mdash; winner badges now handle `agent_0`/`agent_1` format
+  - BUG 4: `Configure.tsx` &mdash; `bg-surface-1` (nonexistent) replaced with `bg-zinc-900`
+  - BUG 5: `RPGTheater.tsx` &mdash; `h-screen` replaced with `flex-1 overflow-hidden` (Layout overflow)
+  - BUG 6: `RPGTheater.tsx` &mdash; `ThinkingIndicator` derives color from participant role (not hardcoded amber)
+  - BUG 7: `Theater.tsx` + `RPGTheater.tsx` &mdash; `DiceOverlay.onComplete` stabilized with `useCallback`
+  - BUG 8: `Campaign.tsx` &mdash; `preset: id ?? null` changed to `preset: id` (optional field type fix)
+  - Q1: `modelDisplayName` extracted to `lib/format.ts`; duplicate copies removed from Gallery + Analytics
+  - Q2: Dead `preset-` branch removed from `Configure.tsx` `isCustom`
+  - Q3: `HumanInput.tsx` &mdash; imperative `e.currentTarget.style` mutations replaced with React state hover
+  - Q4: `fetchExperiments` wrapped in `useCallback` in `Gallery.tsx`
+  - Q5: `vocabRegex` in `TurnBubble.tsx` wrapped in `useMemo`
+  - Q6: Explanatory comment added to `config_json` unsafe cast in `RPGTheater.tsx`
+  - A1: `SeedLab.tsx` preset cards converted from `div` to `<button>`; `Gallery.tsx` rows get `role="button"`
+  - A2: `ErrorBoundary.tsx` &mdash; `componentDidCatch` added for error logging
+- [x] `tsc --noEmit` &mdash; zero errors after all fixes
+
 ### Next
+- [ ] Commit sessions 25-26 changes (`fix(ui): frontend audit -- 17 issues resolved`)
 - [ ] A2: Visual test &mdash; run pure-AI RPG session; verify companion colors, DM prose, companion cards
 - [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard
-- [ ] Entity snapshot quality check &mdash; after a session completes, verify `entity_snapshots` table has data and snapshot is injected into the next session's DM prompt
+- [ ] Entity snapshot quality check &mdash; after a session completes, verify `entity_snapshots` table populated
 
 ## 4. Architecture (v24.0)
 ```
@@ -72,17 +92,22 @@ Babel/
     routers/relay.py      participant model validation on RPG start; rpg-context endpoint
   ui/src/
     lib/
+      format.ts           modelDisplayName() now exported here (session 26 -- removed duplicates)
       modelProvider.ts    getProvider(model) -> Provider enum
     components/common/
       ProviderSigil.tsx   16x16 SVG stroke glyph per AI provider family
+      ErrorBoundary.tsx   componentDidCatch added (session 26)
     components/theater/
-      RPGTheater.tsx      AI vs AI observatory: companion palette, DMTurnEntry, CompanionTurnEntry,
-                          NarrativeArcBar, WorldStatePanel pulse, observer status bar
+      RPGTheater.tsx      AI vs AI observatory; h-screen fix; ThinkingIndicator dynamic color (session 26)
+      TurnBubble.tsx      accentColor hex prop + hexToRgba for N-way agent colors (session 26)
+      ConversationColumn  passes accentColor={agentColor} to TurnBubble (session 26)
       DiceOverlay.tsx     Cinematic full-screen dice event (224px card, crit labels, spring anim)
       SpriteAvatar.tsx    winner sparkle diamonds + loser falling fragments (one-shot CSS)
     pages/
       RPGHub.tsx          Campaign preset browser (19 presets, 4 categories)
-      Campaign.tsx        DM_BLOCKED_MODELS filter; setup form; back -> /rpg-hub
+      Campaign.tsx        DM_BLOCKED_MODELS filter; preset type fix (session 26)
+      SeedLab.tsx         Preset cards now semantic &lt;button&gt; (session 26)
+      Gallery.tsx         agent_0/agent_1 winner badges; a11y row fix (session 26)
   .claude/launch.json     preview_start configs: backend (:8000) + frontend (:5173)
   .github/workflows/ci.yml  Backend + frontend CI (push/PR to master)
 ```
@@ -97,7 +122,7 @@ Babel/
 - **`verify_backend.cmd`:** run after every server-side change before starting the server.
 - **CI scope:** E2E tests excluded from CI (need live servers + DB). Run locally with `npm run test:e2e`.
 - **RPG entry point:** /rpg-hub only. SeedLab no longer has an RPG card or preset picker.
-- **React hook order:** useState declarations must appear BEFORE any useEffect that references them (TDZ).
-- **ProviderSigil color prop:** pass explicit rgba hex (amber `rgba(245,158,11,0.75)` for A, cyan `rgba(6,182,212,0.75)` for B) &mdash; defaults to `currentColor`.
-- **Sprite animations one-shot:** `animation-iteration-count: 1` + `forwards` fill &mdash; they do NOT loop.
-- **launch.json frontend:** uses `node vite.js <root-path>` pattern &mdash; passes ui/ as positional root arg so vite finds its own node_modules.
+- **React hook order:** ALL hooks must appear BEFORE any conditional early return (Rules of Hooks).
+- **TurnBubble accentColor:** pass hex string for agents 2+ (emerald `#10B981`, violet `#8B5CF6`); 2-slot `color` prop retained for ThinkingIndicator backward compat.
+- **Vite host binding:** `vite.config.ts` `host: '0.0.0.0'` &mdash; preview tool connects via 127.0.0.1 (IPv4), browser via localhost/::1 (IPv6).
+- **Tailwind + preview_start CWD:** `postcss.config.js` must pass absolute tailwind config path via `import.meta.url`.

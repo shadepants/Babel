@@ -1,73 +1,38 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-02-27 (Session 24 -- end of session)
-**Active Agent:** Claude Code
-**Current Goal:** Priority list execution from session 23 backlog -- COMPLETE, COMMITTED
+**Last Updated:** 2026-02-27
+**Active Agent:** Claude Code (session 26)
+**Current Goal:** Frontend audit complete; changes uncommitted
 
----
-
-## What Was Done This Session
-
-### 1. A1 Smoke Test -- Verified (code inspection)
-`DM_BLOCKED_MODELS = ['gemini/gemini-2.5-pro', 'groq/']` at Campaign.tsx:31-34.
-Filter applied via `.startsWith()` at line 344 -- confirmed correct. Browser verification
-attempted but preview_start frontend config needed fixing first (see item 3).
-
-### 2. Campaign Memory Enrichment (B1-B4) -- SHIPPED `3c98e2b`
-Upgraded RPG session memory from thin 200-500 char strings to rich LLM-generated chronicles.
-
-**db.py:**
-- `entity_snapshots` table (match_id PK, dm_model, preset_key, snapshot_json, generated_at)
-- `save_entity_snapshot(match_id, dm_model, preset_key, snapshot_json)`
-- `get_entity_snapshots_for_pair(dm_model, preset_key, limit=2)` -- keyed on (dm_model, preset_key), newest first
-
-**summarizer_engine.py:**
-- `generate_entity_snapshot(match_id, db, model)` -- calls gemini/gemini-2.5-flash with
-  world_state JSON + cold_summary + last 15 turns; returns structured dict or None on failure
-
-**rpg_engine.py:**
-- `_save_entity_snapshot_bg()` -- background task, fires at session end alongside `_save_rpg_memory`
-- Prior snapshot injection at session start (lines 192-215): fetches latest snapshot for
-  (dm_model, preset_key) and prepends `PRIOR SESSION ENTITY CHRONICLE:` to system_prompt
-
-### 3. Dev Tooling -- .claude/launch.json
-Fixed and stabilised `preview_start` configs. Frontend Vite server required passing the
-`ui/` directory as a positional root argument to vite.js (not --config flag, not npm.cmd).
-Working config: `node vite.js C:\...\ui` -- vite resolves node_modules from the given root.
-
----
+## Changes This Session
+- [x] Full recursive frontend audit -- 17 findings across 12 files
+- [x] BUG 1: Theater.tsx -- useEffect moved above early return (Rules of Hooks fix)
+- [x] BUG 2: ConversationColumn + TurnBubble -- N-way agent hex colors via accentColor prop
+- [x] BUG 3: Gallery.tsx + Analytics.tsx -- winner badges handle agent_0/agent_1 format
+- [x] BUG 4: Configure.tsx -- bg-surface-1 (nonexistent class) replaced with bg-zinc-900
+- [x] BUG 5: RPGTheater.tsx -- h-screen replaced with flex-1 overflow-hidden
+- [x] BUG 6: RPGTheater.tsx -- ThinkingIndicator derives color from participant role
+- [x] BUG 7: Theater.tsx + RPGTheater.tsx -- DiceOverlay.onComplete stabilized with useCallback
+- [x] BUG 8: Campaign.tsx -- preset: id ?? null -> preset: id (optional field type fix)
+- [x] Q1: modelDisplayName extracted to lib/format.ts (was duplicated in Gallery + Analytics)
+- [x] Q2: Dead preset- branch removed from Configure.tsx isCustom
+- [x] Q3: HumanInput.tsx -- imperative DOM hover mutations replaced with React state
+- [x] Q4: fetchExperiments wrapped in useCallback in Gallery.tsx
+- [x] Q5: vocabRegex wrapped in useMemo in TurnBubble.tsx
+- [x] Q6: Explanatory comment on config_json cast in RPGTheater.tsx
+- [x] A1: SeedLab preset cards -> semantic button; Gallery rows -> role=button + tabIndex
+- [x] A2: ErrorBoundary.tsx -- componentDidCatch added
 
 ## Verification Status
-
 | Check | Status | Notes |
 |-------|--------|-------|
-| A1: Gemini Pro absent from DM dropdown | VERIFIED | Code inspection, Campaign.tsx:344 |
-| Import check (rpg_engine + summarizer) | PASSED | `imports OK` via Start-Process |
-| `3c98e2b` committed + pushed | DONE | On master |
-| A2: Visual test -- companion colors, theater UI | UNVERIFIED | Needs live RPG session |
-| A3: P11 regression -- phantom NPC guard | UNVERIFIED | Needs live RPG session with Deepseek DM |
-| Entity snapshot end-to-end (DB row populated) | UNVERIFIED | Needs a completed RPG session |
-
----
+| `tsc --noEmit` | PASSED | Zero errors after all fixes |
+| Dev build | PENDING | User requested after handoff |
+| Runtime smoke test | SKIPPED | No servers started this session |
 
 ## Next Steps
-
-1. [ ] **A2 visual test** -- start servers, run pure-AI session (3 AI companions, no human),
-       confirm: DM italic prose + amber border, companion character card headers,
-       distinct colors (violet/rose/sky/orange), NarrativeArcBar advances, observer status bar
-2. [ ] **A3 P11 regression** -- Deepseek as DM + 2 non-Groq companions, 6-8 rounds,
-       confirm no `[Name]: dialogue` pattern inside DM narration blocks
-3. [ ] **Entity snapshot quality check** -- after a session ends, run:
-       `SELECT match_id, generated_at, snapshot_json FROM entity_snapshots LIMIT 5`
-       Confirm non-empty snapshot with expected keys (npcs, locations, items, unresolved_threads, party_arcs)
-4. [ ] **Future:** Expose entity snapshot in `/rpg-context` endpoint and surface history arcs in WorldStatePanel UI
-
----
-
-## Key Files Modified This Session
-- `server/db.py` -- entity_snapshots table + save/get methods (lines 169-176, 1457-1485)
-- `server/summarizer_engine.py` -- generate_entity_snapshot() function (lines 93-148)
-- `server/rpg_engine.py` -- _save_entity_snapshot_bg(), session-end task, session-start injection (lines 57-68, 192-215, 480-488)
-- `.claude/launch.json` -- dev server configs (gitignored)
-- `CONTEXT.md` / `HANDOFF.md` -- updated this session
+1. [ ] Commit sessions 25-26 changes: `fix(ui): frontend audit -- 17 issues resolved`
+2. [ ] A2: Visual test -- run pure-AI RPG session; verify companion colors, DM prose
+3. [ ] A3: P11 regression -- Deepseek DM + non-Groq party, verify phantom NPC guard
+4. [ ] Entity snapshot quality check -- verify entity_snapshots populated after session end

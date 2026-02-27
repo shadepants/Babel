@@ -94,7 +94,7 @@ export function ConversationColumn({
       style={{ boxShadow: glowShadow, ...borderStyle }}
       data-agent-index={agentIndex}
     >
-      {/* Colored top bar — glow matches agent color */}
+      {/* Colored top bar -- glow matches agent color */}
       <div
         className="h-0.5 rounded-t-sm transition-all duration-500"
         style={{ background: topBarGradient }}
@@ -111,6 +111,7 @@ export function ConversationColumn({
                 <TurnBubble
                   turn={turn}
                   color={bubbleColor}
+                  accentColor={agentColor}
                   score={scores?.[turn.turn_id]}
                   isLatest={turn.turn_id === latestTurnId}
                   vocab={vocab}

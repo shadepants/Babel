@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
@@ -13,7 +13,7 @@ import { DiceOverlay } from './DiceOverlay'
 import { ProviderSigil } from '@/components/common/ProviderSigil'
 import type { TurnEvent, ActionMenuEvent, RpgContextResponse } from '@/api/types'
 
-// ── Color system ────────────────────────────────────────────────────────────
+// -- Color system ------------------------------------------------------------
 
 /** DM always amber, human player always emerald, companions get unique palette colors */
 const COMPANION_PALETTE = ['#A78BFA', '#F472B6', '#38BDF8', '#FB923C']
@@ -51,10 +51,10 @@ const ROLE_LABELS: Record<string, string> = {
   npc: 'NPC',
 }
 
-// ── Turn entry components ───────────────────────────────────────────────────
+// -- Turn entry components ---------------------------------------------------
 
 /**
- * DM turn — full-width narrative prose format.
+ * DM turn -- full-width narrative prose format.
  * Italic, wider left border, strip [CHECK: ...] tags (dice overlay handles those).
  */
 function DMTurnEntry({ turn, color }: { turn: TurnEvent; color: string }) {
@@ -97,7 +97,7 @@ function DMTurnEntry({ turn, color }: { turn: TurnEvent; color: string }) {
 }
 
 /**
- * Companion / player turn — character card format.
+ * Companion / player turn -- character card format.
  * Shows name + class + model sigil in header, content with colored left border.
  */
 function CompanionTurnEntry({
@@ -155,7 +155,7 @@ function CompanionTurnEntry({
   )
 }
 
-// ── Narrative arc bar ───────────────────────────────────────────────────────
+// -- Narrative arc bar -------------------------------------------------------
 
 const ARC_PHASES = [
   { label: 'Opening', from: 0 },
@@ -164,7 +164,7 @@ const ARC_PHASES = [
   { label: 'Resolution', from: 0.85 },
 ]
 
-/** Horizontal story arc indicator — shows current phase + round progress. */
+/** Horizontal story arc indicator -- shows current phase + round progress. */
 function NarrativeArcBar({ current, total }: { current: number; total: number }) {
   if (!total || total < 2) return null
 
@@ -201,7 +201,7 @@ function NarrativeArcBar({ current, total }: { current: number; total: number })
   )
 }
 
-// ── World state panel ───────────────────────────────────────────────────────
+// -- World state panel -------------------------------------------------------
 
 /**
  * World state sidebar panel.
@@ -304,7 +304,7 @@ function WorldStatePanel({ world }: { world: RpgContextResponse['world_state'] }
   )
 }
 
-// ── Story so far banner ─────────────────────────────────────────────────────
+// -- Story so far banner -----------------------------------------------------
 
 function StorySoFarBanner({ summary }: { summary: string }) {
   const [visible, setVisible] = useState(true)
@@ -334,10 +334,10 @@ function StorySoFarBanner({ summary }: { summary: string }) {
   )
 }
 
-// ── Main component ──────────────────────────────────────────────────────────
+// -- Main component ----------------------------------------------------------
 
 /**
- * RPGTheater — AI vs AI RPG session observatory.
+ * RPGTheater -- AI vs AI RPG session observatory.
  *
  * Pure observation mode: each participant gets a unique color, DM turns render
  * as narrative prose, companions as character cards. Narrative arc bar shows
@@ -371,6 +371,9 @@ export default function RPGTheater() {
     [participants]
   )
 
+  // BUG 7 fix: stable callback for DiceOverlay to avoid a new function on every render
+  const handleRollComplete = useCallback(() => setActiveRoll(null), [])
+
   // Load experiment metadata
   useEffect(() => {
     if (!matchId) return
@@ -378,6 +381,7 @@ export default function RPGTheater() {
       if (exp.participants_json) {
         try { setParticipants(JSON.parse(exp.participants_json)) } catch { /* ignore */ }
       }
+      // config_json is present at runtime but not in ExperimentRecord type -- added in a later migration
       if ((exp as Record<string, unknown>).config_json) {
         try {
           const cfg = JSON.parse((exp as Record<string, unknown>).config_json as string)
@@ -400,7 +404,7 @@ export default function RPGTheater() {
     }
   }, [lastEvent, participants])
 
-  // RPG context polling — every 2 turns
+  // RPG context polling -- every 2 turns
   useEffect(() => {
     if (!matchId || state.turns.length === 0) return
     if (state.turns.length % 2 !== 0) return
@@ -465,10 +469,21 @@ export default function RPGTheater() {
   }
   const canvasTint = toneToTint[rpgConfig?.tone?.toLowerCase() ?? ''] ?? '6,182,212'
 
-  return (
-    <div className="flex h-screen bg-bg-primary text-text-primary">
+  // BUG 6 fix: derive ThinkingIndicator color from the speaker's role.
+  // DM maps to 'model-a' (amber); all other speakers map to 'model-b'.
+  const thinkingColor: 'model-a' | 'model-b' =
+    participants?.find(
+      (p) => p.name.toLowerCase() === state.thinkingSpeaker?.toLowerCase()
+    )?.role.toLowerCase() === 'dm'
+      ? 'model-a'
+      : 'model-b'
 
-      {/* ── Left Sidebar: Party Roster + World State ── */}
+  return (
+    // BUG 5 fix: replaced h-screen with flex-1 overflow-hidden so the component
+    // fills the remaining space inside Layout without overflowing past the nav bar.
+    <div className="flex flex-1 overflow-hidden bg-bg-primary text-text-primary">
+
+      {/* -- Left Sidebar: Party Roster + World State -- */}
       <aside className="w-56 border-r border-border-custom/50 bg-bg-deep/40 p-4 flex flex-col gap-4 overflow-y-auto">
         <Link
           to="/"
@@ -624,7 +639,7 @@ export default function RPGTheater() {
         </div>
       </aside>
 
-      {/* ── Main: Story Feed + Status Bar ── */}
+      {/* -- Main: Story Feed + Status Bar -- */}
       <main className="flex-1 flex flex-col min-w-0 relative">
         <TheaterCanvas
           lastTurn={lastTurn}
@@ -674,7 +689,7 @@ export default function RPGTheater() {
 
             {state.thinkingSpeaker && (
               <div className="py-2">
-                <ThinkingIndicator speaker={state.thinkingSpeaker} color="model-a" />
+                <ThinkingIndicator speaker={state.thinkingSpeaker} color={thinkingColor} />
               </div>
             )}
 
@@ -692,7 +707,7 @@ export default function RPGTheater() {
           />
         )}
 
-        {/* Observer status bar — pure AI session */}
+        {/* Observer status bar -- pure AI session */}
         {!isDone && !hasHumanPlayer && (
           <div
             className="border-t flex items-center gap-3 px-4 py-2.5 relative z-10"
@@ -740,7 +755,7 @@ export default function RPGTheater() {
           }}
         />
 
-        <DiceOverlay roll={activeRoll} onComplete={() => setActiveRoll(null)} />
+        <DiceOverlay roll={activeRoll} onComplete={handleRollComplete} />
       </main>
     </div>
   )

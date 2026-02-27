@@ -166,10 +166,10 @@ export default function Campaign() {
         temperature_a: temperature,
         temperature_b: temperature,
         turn_delay_seconds: turnDelay,
-        seed: campaignHook.trim() || 'You are the Dungeon Master. Begin the adventure — set the scene for the party based on your campaign parameters.',
+        seed: campaignHook.trim() || 'You are the Dungeon Master. Begin the adventure \u2014 set the scene for the party based on your campaign parameters.',
 
         // preset must be a string ID (not the full object that's in location.state)
-        preset: campaignPreset?.id ?? null,
+        preset: campaignPreset?.id,
         // Explicit camelCase -> snake_case for Configure page settings (spread alone doesn't map these)
         system_prompt: configState?.systemPrompt,
         enable_scoring: configState?.enableScoring,

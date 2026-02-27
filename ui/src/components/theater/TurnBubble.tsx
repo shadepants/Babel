@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { TurnEvent, ScoreEvent, VocabEvent } from '@/api/types'
 import { cn } from '@/lib/utils'
@@ -7,8 +7,11 @@ import { TypewriterText } from './TypewriterText'
 interface TurnBubbleProps {
   turn: TurnEvent
   color: 'model-a' | 'model-b'
+  /** Optional hex color that overrides the 2-slot model-a/model-b palette.
+   *  Enables N-way agent coloring (agents 2+ get emerald, violet, etc.) */
+  accentColor?: string
   score?: ScoreEvent
-  /** True only for the single latest turn — enables typewriter reveal */
+  /** True only for the single latest turn -- enables typewriter reveal */
   isLatest?: boolean
   /** Vocab events for inline dictionary links (skipped on the latest turn) */
   vocab?: VocabEvent[]
@@ -16,25 +19,30 @@ interface TurnBubbleProps {
   experimentId?: string
 }
 
-/** Wrap vocab words in dictionary links. Only called on static (non-latest) turns. */
+/** Convert a 6-digit hex color to rgba(r, g, b, alpha). */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+/** Wrap vocab words in dictionary links. Only called on static (non-latest) turns.
+ *  Accepts a pre-built regex so the caller can memoize it. */
 function linkifyVocab(
   content: string,
   vocab: VocabEvent[],
   experimentId: string,
+  regex: RegExp,
 ): React.ReactNode {
   if (!vocab.length) return content
-
-  // Sort longest first to prevent shorter words shadowing compound matches
-  const sorted = [...vocab].sort((a, b) => b.word.length - a.word.length)
-  // Escape regex metacharacters via function replacer (avoids $& in replacement string)
-  const escaped = sorted.map((w) =>
-    w.word.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, (m) => '\\' + m),
-  )
-  const regex = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
 
   const parts: React.ReactNode[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
+
+  // Reset lastIndex before use (regex is reused across calls with /g flag)
+  regex.lastIndex = 0
 
   while ((match = regex.exec(content)) !== null) {
     if (match.index > lastIndex) {
@@ -63,17 +71,24 @@ function linkifyVocab(
 }
 
 /**
- * Single conversation turn — terminal log style.
+ * Single conversation turn -- terminal log style.
  * Left-stripe accent, scanline texture, typewriter reveal for latest turn.
  * Hover the latency badge to see the wall-clock timestamp.
  */
-export function TurnBubble({ turn, color, score, isLatest, vocab, experimentId }: TurnBubbleProps) {
+export function TurnBubble({ turn, color, accentColor, score, isLatest, vocab, experimentId }: TurnBubbleProps) {
   const [showTime, setShowTime] = useState(false)
 
-  const isA       = color === 'model-a'
-  const accent    = isA ? '#F59E0B' : '#06B6D4'
-  const dimAccent = isA ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)'
-  const borderTop = isA ? 'rgba(245,158,11,0.12)' : 'rgba(6,182,212,0.12)'
+  const isA = color === 'model-a'
+
+  // Base palette from the 2-slot color prop
+  const baseAccent    = isA ? '#F59E0B' : '#06B6D4'
+  const baseDimAccent = isA ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)'
+  const baseBorderTop = isA ? 'rgba(245,158,11,0.12)' : 'rgba(6,182,212,0.12)'
+
+  // When accentColor (hex) is provided, override all three derived values
+  const accent    = accentColor ?? baseAccent
+  const dimAccent = accentColor ? hexToRgba(accentColor, 0.18) : baseDimAccent
+  const borderTop = accentColor ? hexToRgba(accentColor, 0.12) : baseBorderTop
 
   const wallTime = turn.timestamp
     ? new Date(turn.timestamp * 1000).toLocaleTimeString(undefined, {
@@ -83,11 +98,23 @@ export function TurnBubble({ turn, color, score, isLatest, vocab, experimentId }
       })
     : null
 
+  // Memoize the vocab regex so it is not rebuilt on every render
+  const vocabRegex = useMemo(() => {
+    if (!vocab || vocab.length === 0) return null
+    // Sort longest first to prevent shorter words shadowing compound matches
+    const sorted = [...vocab].sort((a, b) => b.word.length - a.word.length)
+    // Escape regex metacharacters via function replacer (avoids $& in replacement string)
+    const escaped = sorted.map((w) =>
+      w.word.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, (m) => '\\' + m),
+    )
+    return new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  }, [vocab])
+
   // Static turns get vocab linking; latest turn uses TypewriterText
   const contentNode =
-    isLatest || !vocab?.length || !experimentId
+    isLatest || !vocab?.length || !experimentId || !vocabRegex
       ? <TypewriterText text={turn.content} active={!!isLatest} />
-      : <span className="whitespace-pre-wrap break-words">{linkifyVocab(turn.content, vocab, experimentId)}</span>
+      : <span className="whitespace-pre-wrap break-words">{linkifyVocab(turn.content, vocab, experimentId, vocabRegex)}</span>
 
   return (
     <div
@@ -124,7 +151,7 @@ export function TurnBubble({ turn, color, score, isLatest, vocab, experimentId }
         </span>
       </div>
 
-      {/* Content — JetBrains Mono */}
+      {/* Content -- JetBrains Mono */}
       <div className="font-mono text-sm text-text-primary leading-relaxed">
         {contentNode}
       </div>

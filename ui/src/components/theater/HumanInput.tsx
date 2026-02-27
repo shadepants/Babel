@@ -21,6 +21,8 @@ interface HumanInputProps {
 export function HumanInput({ matchId, isEnabled, speaker = 'Player', actionMenu }: HumanInputProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [hoveredAction, setHoveredAction] = useState<string | null>(null)
+  const [isImprovisHovered, setIsImprovisHovered] = useState(false)
 
   const handleSubmit = useCallback(async () => {
     const trimmed = text.trim()
@@ -69,54 +71,50 @@ export function HumanInput({ matchId, isEnabled, speaker = 'Player', actionMenu 
       {/* Action suggestion buttons */}
       {showActions && (
         <div className="flex flex-wrap gap-1.5 mb-2.5">
-          {actionMenu!.map((action) => (
-            <button
-              key={action}
-              onClick={() => handleActionClick(action)}
-              className="px-2.5 py-1 rounded text-xs font-mono transition-all duration-150"
-              style={{
-                border: text === action
-                  ? '1px solid rgba(16,185,129,0.7)'
-                  : '1px solid rgba(16,185,129,0.25)',
-                color: text === action ? 'rgba(52,211,153,1)' : 'rgba(110,231,183,0.7)',
-                background: text === action ? 'rgba(16,185,129,0.12)' : 'transparent',
-              }}
-              onMouseEnter={(e) => {
-                if (text !== action) {
-                  e.currentTarget.style.borderColor = 'rgba(16,185,129,0.5)'
-                  e.currentTarget.style.color = 'rgba(110,231,183,1)'
-                  e.currentTarget.style.background = 'rgba(16,185,129,0.06)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (text !== action) {
-                  e.currentTarget.style.borderColor = 'rgba(16,185,129,0.25)'
-                  e.currentTarget.style.color = 'rgba(110,231,183,0.7)'
-                  e.currentTarget.style.background = 'transparent'
-                }
-              }}
-            >
-              {action}
-            </button>
-          ))}
+          {actionMenu!.map((action) => {
+            const isSelected = text === action
+            const isHovered = hoveredAction === action
+            return (
+              <button
+                key={action}
+                onClick={() => handleActionClick(action)}
+                className="px-2.5 py-1 rounded text-xs font-mono transition-all duration-150"
+                style={{
+                  border: isSelected
+                    ? '1px solid rgba(16,185,129,0.7)'
+                    : isHovered
+                      ? '1px solid rgba(16,185,129,0.5)'
+                      : '1px solid rgba(16,185,129,0.25)',
+                  color: isSelected
+                    ? 'rgba(52,211,153,1)'
+                    : isHovered
+                      ? 'rgba(110,231,183,1)'
+                      : 'rgba(110,231,183,0.7)',
+                  background: isSelected
+                    ? 'rgba(16,185,129,0.12)'
+                    : isHovered
+                      ? 'rgba(16,185,129,0.06)'
+                      : 'transparent',
+                }}
+                onMouseEnter={() => { if (!isSelected) setHoveredAction(action) }}
+                onMouseLeave={() => setHoveredAction(null)}
+              >
+                {action}
+              </button>
+            )
+          })}
           <button
             onClick={() => setText('')}
             className="px-2.5 py-1 rounded text-xs font-mono transition-all duration-150"
             style={{
-              border: '1px solid rgba(100,116,139,0.3)',
-              color: 'rgba(148,163,184,0.6)',
-              background: 'transparent',
+              border: isImprovisHovered
+                ? '1px solid rgba(100,116,139,0.5)'
+                : '1px solid rgba(100,116,139,0.3)',
+              color: isImprovisHovered ? 'rgba(148,163,184,0.9)' : 'rgba(148,163,184,0.6)',
+              background: isImprovisHovered ? 'rgba(100,116,139,0.08)' : 'transparent',
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(100,116,139,0.5)'
-              e.currentTarget.style.color = 'rgba(148,163,184,0.9)'
-              e.currentTarget.style.background = 'rgba(100,116,139,0.08)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(100,116,139,0.3)'
-              e.currentTarget.style.color = 'rgba(148,163,184,0.6)'
-              e.currentTarget.style.background = 'transparent'
-            }}
+            onMouseEnter={() => setIsImprovisHovered(true)}
+            onMouseLeave={() => setIsImprovisHovered(false)}
           >
             Improvise...
           </button>

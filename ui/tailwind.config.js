@@ -23,7 +23,7 @@ export default {
         'text-primary':  '#e2e8f0',
         'text-dim':      '#64748b',
 
-        // Model identity — A: amber/gold, B: cyan/teal
+        // Model identity -- A: amber/gold, B: cyan/teal
         'model-a':       '#F59E0B',
         'model-a-dim':   '#D97706',
         'model-b':       '#06B6D4',

@@ -1,19 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { ExperimentRecord } from '@/api/types'
 import { ScrambleText } from '@/components/common/ScrambleText'
-import { formatDuration } from '@/lib/format'
+import { formatDuration, modelDisplayName } from '@/lib/format'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { getPresetGlow } from '@/lib/presetColors'
 import { ProviderSigil } from '@/components/common/ProviderSigil'
-
-/** Extract a short display name from a litellm model string like "anthropic/claude-sonnet-4-..." */
-function modelDisplayName(model: string): string {
-  const after = model.split('/').pop() ?? model
-  return after.replace(/-\d{8}$/, '')
-}
 
 /** Format ISO date string to compact form */
 function formatDate(iso: string): string {
@@ -42,8 +36,8 @@ function dotStatusClass(status: string) {
 /** Derive sprite outcome states from experiment winner field */
 function spriteStatuses(exp: ExperimentRecord): { a: SpriteStatus; b: SpriteStatus } {
   if (exp.status === 'failed') return { a: 'error', b: 'error' }
-  if (exp.winner === 'model_a') return { a: 'winner', b: 'loser' }
-  if (exp.winner === 'model_b') return { a: 'loser', b: 'winner' }
+  if (exp.winner === 'model_a' || exp.winner === 'agent_0') return { a: 'winner', b: 'loser' }
+  if (exp.winner === 'model_b' || exp.winner === 'agent_1') return { a: 'loser', b: 'winner' }
   if (exp.winner === 'tie') return { a: 'idle', b: 'idle' }
   return { a: 'idle', b: 'idle' }
 }
@@ -69,7 +63,7 @@ export default function Gallery() {
   const [page, setPage] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const fetchExperiments = () => {
+  const fetchExperiments = useCallback(() => {
     setLoading(true)
     const params: { limit: number; offset: number; status?: string } = {
       limit: PAGE_SIZE,
@@ -80,11 +74,11 @@ export default function Gallery() {
       .then((res) => setExperiments(res.experiments))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load experiments'))
       .finally(() => setLoading(false))
-  }
+  }, [page, statusFilter])
 
   useEffect(() => {
     fetchExperiments()
-  }, [page, statusFilter])
+  }, [fetchExperiments])
 
   // Auto-poll if there are running experiments
   useEffect(() => {
@@ -92,7 +86,7 @@ export default function Gallery() {
     if (!hasRunning) return
     const interval = setInterval(fetchExperiments, 15_000)
     return () => clearInterval(interval)
-  }, [experiments])
+  }, [experiments, fetchExperiments])
 
   return (
     <div className="flex-1 p-6 max-w-4xl mx-auto space-y-8">
@@ -173,6 +167,9 @@ export default function Gallery() {
                 className={rowStatusClass(exp.status)}
                 style={presetBorderStyle(exp.preset)}
                 onClick={() => navigate(`/analytics/${exp.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/analytics/${exp.id}`) } }}
               >
                 <div className="px-4 py-3 flex items-center gap-4">
                   {/* Status dot */}

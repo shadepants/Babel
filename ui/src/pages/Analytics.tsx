@@ -9,7 +9,7 @@ import { LatencyChart } from '@/components/analytics/LatencyChart'
 import { TokenChart } from '@/components/analytics/TokenChart'
 import { RadarChart } from '@/components/analytics/RadarChart'
 import { RoundScoreChart } from '@/components/analytics/RoundScoreChart'
-import { formatDuration } from '@/lib/format'
+import { formatDuration, modelDisplayName } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
 import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
@@ -17,12 +17,6 @@ import { ProviderSigil } from '@/components/common/ProviderSigil'
 
 const MODEL_A_COLOR = '#F59E0B'
 const MODEL_B_COLOR = '#06B6D4'
-
-/** Extract short name from litellm model string */
-function modelDisplayName(model: string): string {
-  const after = model.split('/').pop() ?? model
-  return after.replace(/-\d{8}$/, '')
-}
 
 function StatusBadge({ status }: { status: string }) {
   const styles =
@@ -128,7 +122,7 @@ export default function Analytics() {
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      // silently fail — user can retry
+      // silently fail &#x2014; user can retry
     } finally {
       setExporting(false)
     }
@@ -160,7 +154,7 @@ export default function Analytics() {
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      // silently fail — user can retry
+      // silently fail &#x2014; user can retry
     } finally {
       setExporting(false)
     }
@@ -179,7 +173,7 @@ export default function Analytics() {
       const lines = [
         `# Babel Experiment: ${modelDisplayName(exp.model_a)} vs ${modelDisplayName(exp.model_b)}`,
         '',
-        `**Status:** ${exp.status} | **Rounds:** ${exp.rounds_completed}/${exp.rounds_planned} | **Elapsed:** ${exp.elapsed_seconds ? formatDuration(exp.elapsed_seconds) : '—'}`,
+        `**Status:** ${exp.status} | **Rounds:** ${exp.rounds_completed}/${exp.rounds_planned} | **Elapsed:** ${exp.elapsed_seconds ? formatDuration(exp.elapsed_seconds) : '\u2014'}`,
         '',
         '## Conversation',
         '',
@@ -248,7 +242,7 @@ export default function Analytics() {
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <p className="text-danger">{error ?? 'Experiment not found'}</p>
         <Link to="/gallery" className="text-accent hover:underline text-sm">
-          ← Back to Gallery
+          &larr; Back to Gallery
         </Link>
       </div>
     )
@@ -258,12 +252,12 @@ export default function Analytics() {
   const modelB = modelDisplayName(experiment.model_b)
 
   // Sprite outcome states from winner field
-  const spriteA: SpriteStatus = experiment.winner === 'model_a' ? 'winner'
-    : experiment.winner === 'model_b' ? 'loser'
+  const spriteA: SpriteStatus = experiment.winner === 'model_a' || experiment.winner === 'agent_0' ? 'winner'
+    : experiment.winner === 'model_b' || experiment.winner === 'agent_1' ? 'loser'
     : experiment.status === 'failed' ? 'error'
     : 'idle'
-  const spriteB: SpriteStatus = experiment.winner === 'model_b' ? 'winner'
-    : experiment.winner === 'model_a' ? 'loser'
+  const spriteB: SpriteStatus = experiment.winner === 'model_b' || experiment.winner === 'agent_1' ? 'winner'
+    : experiment.winner === 'model_a' || experiment.winner === 'agent_0' ? 'loser'
     : experiment.status === 'failed' ? 'error'
     : 'idle'
 
@@ -388,7 +382,7 @@ export default function Analytics() {
                 : copyStatus === 'success'
                   ? 'Copied!'
                   : copyStatus === 'error'
-                    ? 'Failed — try again'
+                    ? 'Failed \u2014 try again'
                     : 'Copy Markdown'}
             </Button>
           </div>
@@ -401,11 +395,11 @@ export default function Analytics() {
         <StatCard label="Tokens" value={stats.totals.total_tokens.toLocaleString()} />
         <StatCard
           label={`Avg Latency (${modelA})`}
-          value={stats.totals.avg_latency_a != null ? `${stats.totals.avg_latency_a}s` : '—'}
+          value={stats.totals.avg_latency_a != null ? `${stats.totals.avg_latency_a}s` : '\u2014'}
         />
         <StatCard
           label={`Avg Latency (${modelB})`}
-          value={stats.totals.avg_latency_b != null ? `${stats.totals.avg_latency_b}s` : '—'}
+          value={stats.totals.avg_latency_b != null ? `${stats.totals.avg_latency_b}s` : '\u2014'}
         />
         <StatCard label="Words Coined" value={String(stats.totals.vocab_count)} />
         {experiment.temperature_a != null && (

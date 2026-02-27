@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0',  // bind to all interfaces: IPv4 (preview tool) + IPv6 (browser localhost)
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:8000',

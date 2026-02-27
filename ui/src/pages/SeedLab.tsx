@@ -98,8 +98,9 @@ export default function SeedLab() {
               whileTap={{ scale: 0.98 }}
             >
               <HudBrackets />
-              <div
-                className="neural-card h-full cursor-pointer group"
+              <button
+                type="button"
+                className="neural-card h-full w-full text-left group"
                 onClick={() => navigate(`/configure/${preset.id}`)}
               >
                 {/* Top accent bar */}
@@ -133,7 +134,7 @@ export default function SeedLab() {
                     </p>
                   </div>
 
-                  {/* Metadata — terminal data row */}
+                  {/* Metadata &mdash; terminal data row */}
                   <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-3 pt-1 border-t border-border-custom/40">
                     <span><span className="text-accent/50">RND</span> {String(preset.defaults.rounds).padStart(2, '0')}</span>
                     <span className="text-accent/25">&middot;</span>
@@ -144,7 +145,7 @@ export default function SeedLab() {
                     </span>
                   </div>
                 </div>
-              </div>
+              </button>
             </motion.div>
           ))}
 
@@ -156,8 +157,9 @@ export default function SeedLab() {
             whileTap={{ scale: 0.98 }}
           >
             <HudBrackets />
-            <div
-              className="neural-card neural-card--custom h-full cursor-pointer group"
+            <button
+              type="button"
+              className="neural-card neural-card--custom h-full w-full text-left group"
               onClick={() => navigate('/configure/custom')}
             >
               <div className="neural-card-bar neural-card-bar--dim" />
@@ -172,7 +174,7 @@ export default function SeedLab() {
                   </p>
                 </div>
               </div>
-            </div>
+            </button>
           </motion.div>
         </motion.div>
       )}

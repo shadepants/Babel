@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import { useSSE } from '@/api/sse'
@@ -89,6 +89,9 @@ export default function Theater() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
+
+  // BUG 7 FIX: stable callback for DiceOverlay onComplete (was inline arrow, reset animation each render)
+  const handleRollComplete = useCallback(() => setActiveRoll(null), [])
 
   useEffect(() => {
     if (!matchId) return
@@ -263,6 +266,13 @@ export default function Theater() {
     }
   }, [])
 
+  // BUG 1 FIX: moved above the early return guard (was after it, violating Rules of Hooks)
+  useEffect(() => {
+    if (experiment.status === 'completed' || experiment.status === 'stopped') {
+      setIsModalOpen(true)
+    }
+  }, [experiment.status])
+
   if (!matchId) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -273,12 +283,6 @@ export default function Theater() {
       </div>
     )
   }
-
-  useEffect(() => {
-    if (experiment.status === 'completed' || experiment.status === 'stopped') {
-      setIsModalOpen(true)
-    }
-  }, [experiment.status])
 
   return (
     <div className="flex-1 flex flex-col">
@@ -495,7 +499,7 @@ export default function Theater() {
 
       <DiceOverlay
         roll={activeRoll}
-        onComplete={() => setActiveRoll(null)}
+        onComplete={handleRollComplete}
       />
     </div>
   )

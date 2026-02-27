@@ -28,7 +28,7 @@ const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
 export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
-  const isCustom = presetId === 'custom' || !!(presetId?.startsWith('preset-'))
+  const isCustom = presetId === 'custom'
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
@@ -478,7 +478,7 @@ export default function Configure() {
                             next[idx] = e.target.value || null
                             return next
                           })}
-                          className="w-full bg-surface-1 border border-white/10 focus:border-accent/40 rounded px-2 py-1 font-mono text-[10px] text-text-primary outline-none transition-colors"
+                          className="w-full bg-zinc-900 border border-white/10 focus:border-accent/40 rounded px-2 py-1 font-mono text-[10px] text-text-primary outline-none transition-colors"
                         >
                           <option value="">(none)</option>
                           {personas.map((p) => (

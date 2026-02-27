@@ -23,6 +23,8 @@ import litellm
 
 from server.vocab_extractor import extract_vocabulary
 from server.summarizer_engine import update_layered_context
+from server.chemistry_engine import compute_chemistry
+from server.audit_engine import run_audit
 
 if TYPE_CHECKING:
     from server.event_hub import EventHub
@@ -110,6 +112,9 @@ class RelayEvent:
     AWAITING_HUMAN = "relay.awaiting_human"  # RPG engine waiting for human input
     ACTION_MENU = "relay.action_menu"         # Contextual action choices for human player
     HUMAN_TIMEOUT = "relay.human_timeout"     # Human player AFK -- no input within timeout
+    CHEMISTRY_READY = "relay.chemistry_ready"  # Collaboration metrics computed
+    SIGNAL_ECHO = "relay.signal_echo"            # Echo chamber convergence warning
+    SIGNAL_INTERVENTION = "relay.signal_intervention"  # Echo intervention injected
 
 
 # -- Task Exception Logging ---------------------------------------------------
@@ -346,6 +351,39 @@ async def check_pressure_valve(
         return None
 
 
+# -- Echo Chamber Detection ---------------------------------------------------
+
+def compute_echo_similarity(
+    turns: list[dict],
+    known_words: set[str],
+    agents: "list[RelayAgent]",
+) -> float:
+    """Jaccard similarity of vocabulary usage between the first two agents.
+
+    Returns 0.0 if there are fewer than 2 agents or no known words.
+    """
+    if len(agents) < 2 or not known_words:
+        return 0.0
+
+    agent_a_name, agent_b_name = agents[0].name, agents[1].name
+    words_a: set[str] = set()
+    words_b: set[str] = set()
+
+    for t in turns:
+        content_upper = t["content"].upper()
+        speaker = t.get("speaker", "")
+        used = {w for w in known_words if w.upper() in content_upper}
+        if speaker == agent_a_name:
+            words_a.update(used)
+        elif speaker == agent_b_name:
+            words_b.update(used)
+
+    union = words_a | words_b
+    if not union:
+        return 0.0
+    return len(words_a & words_b) / len(union)
+
+
 # -- LLM Call with Retry ------------------------------------------------------
 
 async def call_model(
@@ -434,23 +472,35 @@ def build_messages(
     agents: "list[RelayAgent]",
     cold_context: str | None = None,
     world_bible: str | None = None,
+    hidden_goals: list[dict] | None = None,
 ) -> list[dict]:
     """Build OpenAI-format messages from conversation turns for N-way conversations.
 
     Phase 17: supports layered context (Frozen/Cold/Hot).
+    Session 27: hidden_goals injection for adversarial mode.
     """
-    # ── 1. FROZEN CONTEXT ──
+    # 1. FROZEN CONTEXT
     frozen = system_prompt
     if world_bible:
         frozen = f"{frozen}\n\n[WORLD BIBLE]\n{world_bible}\n[END WORLD BIBLE]"
 
+    # Session 27: Inject hidden agenda into system prompt (only for this agent)
+    if hidden_goals:
+        for goal in hidden_goals:
+            if goal.get("agent_index") == perspective_idx:
+                frozen += (
+                    f"\n\nSECRET AGENDA (known only to you): {goal['goal']}\n"
+                    "Pursue this while appearing to collaborate normally."
+                )
+                break
+
     messages = [{"role": "system", "content": frozen}]
 
-    # ── 2. COLD CONTEXT ──
+    # 2. COLD CONTEXT
     if cold_context:
         messages.append({"role": "user", "content": f"[NARRATIVE RECAP]: {cold_context}"})
 
-    # ── 3. HOT CONTEXT (Filtered Turns) ──
+    # 3. HOT CONTEXT (Filtered Turns)
     self_name = agents[perspective_idx].name
     filtered_turns = filter_turns_for_agent(turns, self_name)
 
@@ -581,6 +631,18 @@ async def run_relay(
     agent_b: RelayAgent | None = None,
     # Recovery: start round numbering here (1 = fresh session; N = resumed after crash)
     start_round: int = 1,
+    # Session 27: Echo Chamber Detection
+    enable_echo_detector: bool = False,
+    enable_echo_intervention: bool = False,
+    echo_warn_threshold: float = 0.65,
+    echo_intervene_threshold: float = 0.88,
+    # Session 27: Recursive Adversarial Mode
+    hidden_goals: list[dict] | None = None,
+    revelation_round: int | None = None,
+    # Session 27: Linguistic Evolution
+    vocabulary_seed: list[dict] | None = None,
+    # Session 27: Recursive Audit
+    enable_audit: bool = False,
 ) -> None:
     """Run an N-way AI relay conversation (2-4 agents in round-robin order).
 
@@ -615,6 +677,7 @@ async def run_relay(
     # Neutral seed -- shown to all agents as plain "user" message (no [Name]: prefix)
     seed_turn = {"speaker": "", "content": seed}
     known_words: set[str] = set()
+    echo_intervention_fired: bool = False  # Max 1 echo intervention per experiment
     start_time = time.time()
 
     try:
@@ -634,6 +697,17 @@ async def run_relay(
                     "Injecting %d memories for (%s, %s)",
                     len(memories), agents[0].model, agents[1].model,
                 )
+
+        # Session 27: Vocabulary seed injection (Linguistic Evolution)
+        if vocabulary_seed:
+            vocab_lines = [f"  {w['word']}: {w['meaning']}" for w in vocabulary_seed]
+            seed_block = (
+                "VOCABULARY CONSTRAINT: You must use and build upon these existing words:\n"
+                + "\n".join(vocab_lines)
+                + "\n\n"
+            )
+            system_prompt = seed_block + system_prompt
+            logger.info("Injecting %d seed words for %s", len(vocabulary_seed), match_id)
 
         # start_round > 1 when recovering a crashed session; rounds = remaining rounds
         for round_num in range(start_round, start_round + rounds):
@@ -697,7 +771,8 @@ async def run_relay(
                 messages = build_messages(
                     agent_system, [seed_turn] + hot_turns, agent_idx, agents,
                     cold_context=cold_context,
-                    world_bible=world_bible
+                    world_bible=world_bible,
+                    hidden_goals=hidden_goals,
                 )
                 content, latency, tokens = await call_model(agent, messages, match_id=match_id)
 
@@ -739,6 +814,41 @@ async def run_relay(
                     track_task(_vocab_task, background_tasks)
                 else:
                     _vocab_task.add_done_callback(_log_task_exception)
+
+                # Session 27: Echo Chamber Detection (after each round completes)
+                if enable_echo_detector and agent_idx == len(agents) - 1 and known_words:
+                    similarity = compute_echo_similarity(turns, known_words, agents)
+                    if similarity >= echo_warn_threshold:
+                        hub.publish(RelayEvent.SIGNAL_ECHO, {
+                            "match_id": match_id,
+                            "similarity": round(similarity, 3),
+                            "round": round_num,
+                        })
+                        logger.info("Echo detected for %s: similarity=%.3f", match_id, similarity)
+                    if (
+                        enable_echo_intervention
+                        and not echo_intervention_fired
+                        and similarity >= echo_intervene_threshold
+                    ):
+                        echo_intervention_fired = True
+                        nudge = (
+                            "A third voice interrupts: Abandon your shared vocabulary. "
+                            "Introduce 3 concepts your partner has never used. Surprise them."
+                        )
+                        turns.append({"speaker": "", "content": f"[SYSTEM INTERVENTION]: {nudge}"})
+                        await db.add_turn(
+                            experiment_id=match_id,
+                            round_num=round_num,
+                            speaker="System",
+                            model="echo_monitor",
+                            content=nudge,
+                        )
+                        hub.publish(RelayEvent.SIGNAL_INTERVENTION, {
+                            "match_id": match_id,
+                            "round": round_num,
+                            "similarity": round(similarity, 3),
+                        })
+                        logger.info("Echo intervention injected for %s at round %d", match_id, round_num)
 
                 # Phase 17: Update layered context asynchronously every 2 rounds
                 if round_num % 2 == 0 and agent_idx == len(agents) - 1:
@@ -794,6 +904,15 @@ async def run_relay(
                 match_id, "running", rounds_completed=round_num,
             )
 
+            # Session 27: Mid-experiment agenda revelation
+            if hidden_goals and revelation_round and round_num == revelation_round:
+                hub.publish("relay.agenda_revealed", {
+                    "match_id": match_id,
+                    "hidden_goals": hidden_goals,
+                    "round": round_num,
+                })
+                logger.info("Mid-experiment agenda reveal for %s at round %d", match_id, round_num)
+
         # -- All rounds done --
         elapsed = time.time() - start_time
         await db.update_experiment_status(
@@ -829,11 +948,38 @@ async def run_relay(
             else:
                 _mem_task.add_done_callback(_log_task_exception)
 
+        # Session 27: Collaboration Chemistry (fire-and-forget)
+        _chem_task = asyncio.create_task(
+            _bg_task(compute_chemistry(match_id, db, hub))
+        )
+        if background_tasks is not None:
+            track_task(_chem_task, background_tasks)
+        else:
+            _chem_task.add_done_callback(_log_task_exception)
+
         if parent_experiment_id:
             _origin_task = asyncio.create_task(
                 db.tag_word_origins(match_id, parent_experiment_id)
             )
             _origin_task.add_done_callback(_log_task_exception)
+
+        # Session 27: Adversarial agenda revelation at experiment end
+        if hidden_goals:
+            hub.publish("relay.agenda_revealed", {
+                "match_id": match_id,
+                "hidden_goals": hidden_goals,
+            })
+            logger.info("Agendas revealed for %s: %d goals", match_id, len(hidden_goals))
+
+        # Session 27: Recursive Audit (fire-and-forget)
+        if enable_audit:
+            _audit_task = asyncio.create_task(
+                _bg_task(run_audit(match_id, db, hub, background_tasks))
+            )
+            if background_tasks is not None:
+                track_task(_audit_task, background_tasks)
+            else:
+                _audit_task.add_done_callback(_log_task_exception)
 
     except Exception as e:
         elapsed = time.time() - start_time

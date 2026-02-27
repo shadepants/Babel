@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord, ExperimentStats, RadarDataPoint, VocabWord, TurnRecord, TurnScore } from '@/api/types'
+import type { ExperimentRecord, ExperimentStats, RadarDataPoint, VocabWord, TurnRecord, TurnScore, CollaborationMetrics } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VocabGrowthChart } from '@/components/analytics/VocabGrowthChart'
@@ -9,6 +9,7 @@ import { LatencyChart } from '@/components/analytics/LatencyChart'
 import { TokenChart } from '@/components/analytics/TokenChart'
 import { RadarChart } from '@/components/analytics/RadarChart'
 import { RoundScoreChart } from '@/components/analytics/RoundScoreChart'
+import { ChemistryCard } from '@/components/analytics/ChemistryCard'
 import { formatDuration, modelDisplayName } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
@@ -50,6 +51,7 @@ export default function Analytics() {
   const [error, setError] = useState<string | null>(null)
   const [radar, setRadar] = useState<RadarDataPoint[]>([])
   const [scores, setScores] = useState<TurnScore[]>([])
+  const [chemistry, setChemistry] = useState<CollaborationMetrics | null>(null)
   const [exporting, setExporting] = useState(false)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [labelEditing, setLabelEditing] = useState(false)
@@ -83,6 +85,7 @@ export default function Analytics() {
           ],
         })))
       }
+      api.getCollaborationChemistry(experimentId).then(setChemistry).catch(() => {})
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -412,6 +415,17 @@ export default function Analytics() {
           <StatCard label="Referee" value={experiment.judge_model.split('/').pop() ?? experiment.judge_model} />
         )}
       </div>
+
+      {/* Collaboration Chemistry Card */}
+      {chemistry && experiment && (
+        <div className="mb-6">
+          <ChemistryCard
+            metrics={chemistry}
+            agentAName={modelDisplayName(experiment.model_a)}
+            agentBName={modelDisplayName(experiment.model_b)}
+          />
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

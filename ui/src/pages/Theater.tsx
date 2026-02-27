@@ -13,6 +13,8 @@ import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { TypewriterText } from '@/components/theater/TypewriterText'
 import { EndSessionModal } from '@/components/theater/EndSessionModal'
 import { DiceOverlay } from '@/components/theater/DiceOverlay'
+import { EchoChamberWarning } from '@/components/theater/EchoChamberWarning'
+import { AgendaRevealOverlay } from '@/components/theater/AgendaRevealOverlay'
 import type { AgentConfig, ExperimentRecord, TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
 
 const COLOR_DEFAULT = '#8b5cf6'
@@ -89,9 +91,14 @@ export default function Theater() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
+  const [echoDismissed, setEchoDismissed] = useState(false)
+  const [agendaDismissed, setAgendaDismissed] = useState(false)
+  const [hasHiddenGoals, setHasHiddenGoals] = useState(false)
 
   // BUG 7 FIX: stable callback for DiceOverlay onComplete (was inline arrow, reset animation each render)
   const handleRollComplete = useCallback(() => setActiveRoll(null), [])
+  const handleEchoDismiss = useCallback(() => setEchoDismissed(true), [])
+  const handleAgendaDismiss = useCallback(() => setAgendaDismissed(true), [])
 
   useEffect(() => {
     if (!matchId) return
@@ -101,6 +108,7 @@ export default function Theater() {
         setAgentSlots(slots)
         setPreset(exp.preset ?? null)
         setParentId(exp.parent_experiment_id ?? null)
+        setHasHiddenGoals(!!exp.hidden_goals_json)
 
         if (exp.status === 'completed' || exp.status === 'stopped' || exp.status === 'error') {
           api.getExperimentTurns(matchId)
@@ -293,6 +301,27 @@ export default function Theater() {
         connected={connected}
       />
 
+      {/* Adversarial mode banner */}
+      {hasHiddenGoals && (
+        <div className="px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-center">
+          <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-amber-400">
+            &#9888; Adversarial Mode &mdash; Hidden agendas active
+          </span>
+        </div>
+      )}
+
+      {/* Audit started banner */}
+      {experiment.auditExperimentId && (
+        <div className="px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-center">
+          <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-amber-400">
+            Audit experiment running &mdash;{' '}
+            <Link to={`/theater/${experiment.auditExperimentId}`} className="underline hover:text-amber-300">
+              View Audit
+            </Link>
+          </span>
+        </div>
+      )}
+
       {sseError && (
         <div className="px-4 py-2 bg-warning/10 text-warning text-sm text-center">
           {sseError}
@@ -316,6 +345,14 @@ export default function Theater() {
         className="flex-1 relative grid gap-3 p-3 min-h-0"
         style={{ gridTemplateColumns: `repeat(${agentSlots.length}, 1fr)` }}
       >
+        {/* Echo Chamber Warning overlay */}
+        {experiment.echoSimilarity != null && experiment.echoSimilarity >= 0.65 && !echoDismissed && (
+          <EchoChamberWarning
+            similarity={experiment.echoSimilarity}
+            interventionFired={experiment.interventionFired}
+            onDismiss={handleEchoDismiss}
+          />
+        )}
         <TheaterCanvas
           lastTurn={lastTurn}
           lastVocab={lastVocab}
@@ -390,9 +427,10 @@ export default function Theater() {
           {experiment.status === 'paused' && (
             <div className="flex gap-2 items-end">
               <textarea
+                aria-label="Human turn injection"
                 className="flex-1 font-mono text-xs bg-bg-card border border-accent/30 rounded p-2 text-text-primary resize-none focus:outline-none focus:border-accent/60"
                 rows={2}
-                placeholder="Type a message to inject as a human turn..."
+                placeholder="Type a message to inject as a human turn&#x2026;"
                 value={injectText}
                 onChange={(e) => setInjectText(e.target.value)}
               />
@@ -500,6 +538,12 @@ export default function Theater() {
       <DiceOverlay
         roll={activeRoll}
         onComplete={handleRollComplete}
+      />
+
+      <AgendaRevealOverlay
+        goals={!agendaDismissed ? experiment.revealedGoals : null}
+        agentNames={agentSlots.map(s => s.name)}
+        onDismiss={handleAgendaDismiss}
       />
     </div>
   )

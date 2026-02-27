@@ -202,6 +202,43 @@ export interface ActionMenuEvent extends BaseSSEEvent {
   actions: string[];
 }
 
+/** relay.chemistry_ready -- collaboration metrics computed */
+export interface ChemistryReadyEvent extends BaseSSEEvent {
+  type: 'relay.chemistry_ready';
+  initiative_a: number;
+  initiative_b: number;
+  influence_a_on_b: number;
+  influence_b_on_a: number;
+  convergence_rate: number;
+  surprise_index: number;
+}
+
+/** Session 27: Echo Chamber events */
+export interface EchoSignalEvent extends BaseSSEEvent {
+  type: 'relay.signal_echo';
+  similarity: number;
+  round: number;
+}
+
+export interface EchoInterventionEvent extends BaseSSEEvent {
+  type: 'relay.signal_intervention';
+  round: number;
+  similarity: number;
+}
+
+/** Session 27: Adversarial agenda reveal */
+export interface AgendaRevealedEvent extends BaseSSEEvent {
+  type: 'relay.agenda_revealed';
+  hidden_goals: Array<{ agent_index: number; goal: string }>;
+  round?: number;
+}
+
+/** Session 27: Audit started */
+export interface AuditStartedEvent extends BaseSSEEvent {
+  type: 'relay.audit_started';
+  audit_experiment_id: string;
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
@@ -216,7 +253,12 @@ export type RelaySSEEvent =
   | ResumedEvent
   | ObserverEvent
   | AwaitingHumanEvent
-  | ActionMenuEvent;
+  | ActionMenuEvent
+  | ChemistryReadyEvent
+  | EchoSignalEvent
+  | EchoInterventionEvent
+  | AgendaRevealedEvent
+  | AuditStartedEvent;
 
 // ── RPG Context Types ────────────────────────────────────────────
 
@@ -252,6 +294,20 @@ export interface RpgContextResponse {
   match_id: string;
   cold_summary: string | null;
   world_state: WorldState;
+}
+
+// -- Session 27: Collaboration Chemistry ----------------------------
+
+/** GET /api/experiments/:id/chemistry response */
+export interface CollaborationMetrics {
+  experiment_id: string;
+  initiative_a: number;
+  initiative_b: number;
+  influence_a_on_b: number;
+  influence_b_on_a: number;
+  convergence_rate: number;
+  surprise_index: number;
+  computed_at: string;
 }
 
 // ── Preset Types ─────────────────────────────────────────────
@@ -355,6 +411,11 @@ export interface ExperimentRecord {
   agents_config_json?: string | null;
   // Phase 16: AI documentary cache
   documentary?: string | null;
+  // Session 27: new backend columns
+  hidden_goals_json?: string | null;
+  vocabulary_seed_id?: string | null;
+  audit_experiment_id?: string | null;
+  revelation_round?: number | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */
@@ -611,4 +672,20 @@ export interface TreeNode {
   created_at: string;
   preset: string | null;
   children: TreeNode[];
+}
+
+/** Session 27: Model Pairing Oracle */
+export interface PairingOracleResult {
+  model_a: string;
+  model_b: string;
+  preset: string | null;
+  experiment_count: number;
+  avg_chemistry: {
+    initiative_a: number;
+    initiative_b: number;
+    influence_a_on_b: number;
+    influence_b_on_a: number;
+    convergence_rate: number;
+    surprise_index: number;
+  };
 }

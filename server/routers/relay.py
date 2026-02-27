@@ -89,6 +89,18 @@ class RelayStartRequest(BaseModel):
     persona_ids: list[str | None] | None = Field(default=None, description="Optional persona ID per agent slot")
     # Campaign config for RPG mode (tone, setting, difficulty, hook)
     rpg_config: dict | None = Field(default=None, description="RPG campaign parameters")
+    # Session 27: Echo Chamber Detection
+    enable_echo_detector: bool = Field(default=False, description="Real-time vocabulary convergence monitoring")
+    enable_echo_intervention: bool = Field(default=False, description="Auto-inject destabilizing nudge at critical convergence")
+    echo_warn_threshold: float = Field(default=0.65, ge=0.0, le=1.0, description="Jaccard similarity threshold for warning")
+    echo_intervene_threshold: float = Field(default=0.88, ge=0.0, le=1.0, description="Jaccard similarity threshold for intervention")
+    # Session 27: Recursive Adversarial Mode
+    hidden_goals: list[dict] | None = Field(default=None, description="Per-agent hidden agendas [{agent_index, goal}]")
+    revelation_round: int | None = Field(default=None, description="Round at which to reveal agendas (None = reveal at end only)")
+    # Session 27: Linguistic Evolution
+    vocabulary_seed_id: str | None = Field(default=None, description="Experiment ID to inherit vocabulary from")
+    # Session 27: Recursive Audit
+    enable_audit: bool = Field(default=False, description="Auto-launch audit experiment on completion")
 
 
 class RelayStartResponse(BaseModel):
@@ -138,10 +150,6 @@ async def start_relay(body: RelayStartRequest, request: Request):
                 raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
         resolved_agents = None  # signals "use legacy model_a/model_b path"
 
-    # Validate model strings against the registry (legacy path guard kept above)
-    if resolved_agents is None:
-        pass  # already validated above
-
     # Resolve judge model — use request value if provided, else fall back to server default
     resolved_judge = body.judge_model or JUDGE_MODEL
     if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
@@ -165,7 +173,6 @@ async def start_relay(body: RelayStartRequest, request: Request):
         system_prompt = DEFAULT_RPG_SYSTEM_PROMPT
 
     # Create experiment record
-    import json as _json
     config = {
         "temperature_a": body.temperature_a,
         "temperature_b": body.temperature_b,
@@ -191,7 +198,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
             "rpg_config": body.rpg_config,
         },
     }
-    participants_json = _json.dumps(body.participants) if body.participants else None
+    participants_json = json.dumps(body.participants) if body.participants else None
     # Serialise agents list for create_experiment (it handles model_a/model_b population)
     agents_dicts = (
         [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
@@ -312,6 +319,12 @@ async def start_relay(body: RelayStartRequest, request: Request):
                         backstory=p_data["backstory"],
                     )
 
+    # Session 27: Fetch vocabulary seed if specified
+    vocab_seed_data = None
+    if body.vocabulary_seed_id:
+        raw_vocab = await db.get_vocabulary(body.vocabulary_seed_id)
+        vocab_seed_data = [{"word": w["word"], "meaning": w.get("meaning", "")} for w in raw_vocab]
+
     # Launch relay as background task (doesn't block the response)
     resume_event = asyncio.Event()
     resume_event.set()  # Initially running (not paused)
@@ -337,6 +350,14 @@ async def start_relay(body: RelayStartRequest, request: Request):
             initial_history=body.initial_history,
             parent_experiment_id=body.parent_experiment_id,
             background_tasks=request.app.state.background_tasks,
+            enable_echo_detector=body.enable_echo_detector,
+            enable_echo_intervention=body.enable_echo_intervention,
+            echo_warn_threshold=body.echo_warn_threshold,
+            echo_intervene_threshold=body.echo_intervene_threshold,
+            hidden_goals=body.hidden_goals,
+            revelation_round=body.revelation_round,
+            vocabulary_seed=vocab_seed_data,
+            enable_audit=body.enable_audit,
         )
     )
     _running_relays[match_id] = (task, cancel_event, resume_event)
@@ -728,14 +749,12 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
     """On startup: resume or mark-failed any sessions stuck in 'running' from a prior crash.
 
     Standard (non-RPG) sessions are fully recoverable: agents are reconstructed
-    from config_json.recovery, completed turns are replayed as initial_history,
+    from configjson.recovery, completed turns are replayed as initial_history,
     and the relay resumes from rounds_completed + 1.
 
     RPG sessions are too stateful to recover cleanly -- they are marked 'failed'.
     Returns the number of sessions successfully resumed.
     """
-    import json as _json
-
     stale = await db.get_stale_running_sessions(min_age_minutes=min_age_minutes)
     if not stale:
         return 0
@@ -746,7 +765,7 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
     for session in stale:
         match_id = session["id"]
         try:
-            config = _json.loads(session.get("config_json") or "{}")
+            config = json.loads(session.get("config_json") or "{}")
             recovery = config.get("recovery", {})
 
             # -- 1. RPG SESSION RECOVERY --

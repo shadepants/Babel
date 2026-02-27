@@ -20,6 +20,8 @@ import type {
   EnvStatusResponse,
   TreeNode,
   RpgContextResponse,
+  CollaborationMetrics,
+  PairingOracleResult,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -255,6 +257,37 @@ export const api = {
     const params = new URLSearchParams({ model_a: modelA, model_b: modelB });
     return fetchJson<{ deleted: number }>(`/api/experiments/memories?${params.toString()}`, { method: 'DELETE' });
   },
+
+  // -- Session 27: Collaboration Chemistry --------------------------
+
+  /** Get collaboration chemistry metrics for an experiment */
+  getCollaborationChemistry: (experimentId: string) =>
+    fetchJson<CollaborationMetrics>(`/api/experiments/${experimentId}/chemistry`),
+
+  // -- Session 27: Model Pairing Oracle -----------------------------
+
+  /** Get ranked model pairings based on aggregated chemistry data */
+  getPairingOracle: (preset?: string, minExperiments?: number) => {
+    const params = new URLSearchParams();
+    if (preset) params.set('preset', preset);
+    if (minExperiments !== undefined) params.set('min_experiments', String(minExperiments));
+    const qs = params.toString();
+    return fetchJson<PairingOracleResult[]>(`/api/experiments/pairing-oracle${qs ? `?${qs}` : ''}`);
+  },
+
+  // -- Session 27: Echo Chamber / Adversarial / Audit ---------------
+
+  /** Get hidden adversarial agendas for an experiment */
+  getExperimentAgendas: (experimentId: string) =>
+    fetchJson<{ hidden_goals: Array<{ agent_index: number; goal: string }> }>(`/api/experiments/${experimentId}/agendas`),
+
+  /** Get vocabulary evolution tree for an experiment */
+  getEvolutionTree: (experimentId: string) =>
+    fetchJson<{ tree: Array<{ id: string; label: string; preset: string | null; vocab_count: number; seed_id: string | null }>; depth: number }>(`/api/experiments/${experimentId}/evolution-tree`),
+
+  /** Get or trigger audit experiment for an experiment */
+  getExperimentAudit: (experimentId: string) =>
+    fetchJson<{ audit_experiment_id: string }>(`/api/experiments/${experimentId}/audit`),
 };
 
 export { ApiError };

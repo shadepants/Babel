@@ -18,7 +18,7 @@ from server.config import get_display_name
 
 DB_PATH = Path(__file__).resolve().parent.parent / ".babel_data" / "babel.db"
 
-# ── Schema ──────────────────────────────────────────────────────────────
+# -- Schema ----------------------------------------------------------------------
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS experiments (
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS entity_snapshots (
 """
 
 
-# ── Database Manager ────────────────────────────────────────────────────
+# -- Database Manager ------------------------------------------------------------
 
 class Database:
     """Async SQLite database with WAL mode and foreign key enforcement."""
@@ -207,7 +207,7 @@ class Database:
         await self._db.executescript(_SCHEMA)
         await self._db.commit()
 
-        # ── Migrations (idempotent ALTER TABLE additions) ──
+        # -- Migrations (idempotent ALTER TABLE additions) --
         # SQLite ignores IF NOT EXISTS on columns, so we catch the error instead.
         try:
             await self._db.execute(
@@ -322,6 +322,56 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Session 27: Collaboration Chemistry metrics
+        try:
+            await self._db.execute("""
+                CREATE TABLE IF NOT EXISTS collaboration_metrics (
+                    experiment_id TEXT PRIMARY KEY
+                        REFERENCES experiments(id) ON DELETE CASCADE,
+                    initiative_a REAL,
+                    initiative_b REAL,
+                    influence_a_on_b REAL,
+                    influence_b_on_a REAL,
+                    convergence_rate REAL,
+                    surprise_index REAL,
+                    computed_at TEXT
+                )
+            """)
+            await self._db.commit()
+        except Exception:
+            pass  # table already exists
+
+        # Session 27: Recursive Adversarial Mode columns
+        for col, ddl in [
+            ("hidden_goals_json", "TEXT"),
+            ("revelation_round", "INTEGER"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} {ddl}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
+        # Session 27: Linguistic Evolution vocabulary_seed_id
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN vocabulary_seed_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Session 27: Audit experiment back-reference
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN audit_experiment_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -366,7 +416,7 @@ class Database:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self._db
 
-    # ── Experiments ──────────────────────────────────────────────────
+    # -- Experiments ----------------------------------------------------------
 
     async def create_experiment(
         self,
@@ -393,7 +443,7 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         config_json = json.dumps(config) if config else None
 
-        # Phase 15-A: N-way agents — populate legacy columns from first two agents
+        # Phase 15-A: N-way agents -- populate legacy columns from first two agents
         agents_config_json: str | None = None
         if agents and len(agents) >= 2:
             agents_config_json = json.dumps(agents)
@@ -510,7 +560,7 @@ class Database:
             (label, experiment_id),
         )
 
-    # ── Turns ────────────────────────────────────────────────────────
+    # -- Turns ----------------------------------------------------------------
 
     async def add_turn(
         self,
@@ -589,7 +639,7 @@ class Database:
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    # ── Vocabulary ───────────────────────────────────────────────────
+    # -- Vocabulary -----------------------------------------------------------
 
     async def upsert_word(
         self,
@@ -604,7 +654,7 @@ class Database:
     ) -> None:
         """Insert a vocabulary word or bump usage_count if it already exists.
 
-        Uses SQLite's ON CONFLICT upsert for atomicity — a single query
+        Uses SQLite's ON CONFLICT upsert for atomicity -- a single query
         handles both creation and re-encounter counting.
         On re-encounter, updates meaning if the new one is longer/richer.
         """
@@ -714,7 +764,7 @@ class Database:
 
         return root
 
-    # ── Analytics ─────────────────────────────────────────────────────
+    # -- Analytics ------------------------------------------------------------
 
     async def get_experiment_stats(self, experiment_id: str) -> dict:
         """Pre-aggregated analytics for one experiment.
@@ -805,7 +855,7 @@ class Database:
             },
         }
 
-    # ── Tournaments ───────────────────────────────────────────────────
+    # -- Tournaments ----------------------------------------------------------
 
     async def create_tournament(
         self,
@@ -1060,7 +1110,7 @@ class Database:
             max_val = max(values) if values else 1
             min_val = min(values) if values else 0
             if max_val == min_val:
-                # All models identical on this axis — assign uniform score
+                # All models identical on this axis -- assign uniform score
                 for e in entries:
                     e[axis] = 1.0
                     del e[raw_key]
@@ -1074,7 +1124,7 @@ class Database:
         entries.sort(key=lambda e: e["total_vocab_coined"], reverse=True)
         return entries
 
-    # ── Memory ───────────────────────────────────────────────────────────
+    # -- Memory ---------------------------------------------------------------
 
     async def create_memory(
         self, model_a: str, model_b: str, experiment_id: str, summary: str
@@ -1249,7 +1299,7 @@ class Database:
                     e[axis] = round((e[raw_key] - min_val) / span, 3)
                     del e[raw_key]
 
-    # ── Personas ─────────────────────────────────────────────────────────
+    # -- Personas -------------------------------------------------------------
 
     async def create_persona(
         self,
@@ -1305,7 +1355,7 @@ class Database:
             await self.db.execute("DELETE FROM personas WHERE id = ?", (persona_id,))
             await self.db.commit()
 
-    # ── Documentary ──────────────────────────────────────────────────────
+    # -- Documentary ----------------------------------------------------------
 
     async def save_documentary(self, experiment_id: str, text: str) -> None:
         """Cache the generated documentary text on the experiment row."""
@@ -1322,7 +1372,7 @@ class Database:
         row = await cursor.fetchone()
         return row["documentary"] if row else None
 
-    # ── RPG Memory ───────────────────────────────────────────────────────
+    # -- RPG Memory -----------------------------------------------------------
 
     async def generate_rpg_memory_summary(self, experiment_id: str) -> str:
         """Build a compact RPG campaign memory string (no LLM call).
@@ -1381,7 +1431,7 @@ class Database:
         summary = " ".join(parts)
         return summary[:500]
 
-    # ── Resiliency (Phase 17) ──────────────────────────────────────────
+    # -- Resiliency (Phase 17) ------------------------------------------------
 
     async def save_system_events(self, events: list[dict]) -> None:
         """Persist the EventHub buffer to disk."""
@@ -1434,7 +1484,7 @@ class Database:
         """Clean up RPG state after completion or stop."""
         await self._execute_queued("DELETE FROM rpg_state WHERE match_id = ?", (match_id,))
 
-    # ── Phase 17: Layered Context (Rolling Karp) ───────────────────────
+    # -- Phase 17: Layered Context (Rolling Karp) -----------------------------
 
     async def get_latest_cold_summary(self, match_id: str) -> str | None:
         """Fetch the most recent narrative recap for this match."""
@@ -1483,3 +1533,36 @@ class Database:
             (dm_model, preset_key, preset_key, limit),
         )
         return [dict(row) for row in await cursor.fetchall()]
+
+    # -- Collaboration Chemistry (Session 27) ---------------------------------
+
+    async def save_collaboration_metrics(self, metrics: dict) -> None:
+        """Persist collaboration chemistry metrics for an experiment."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._execute_queued(
+            """INSERT INTO collaboration_metrics
+                (experiment_id, initiative_a, initiative_b,
+                 influence_a_on_b, influence_b_on_a,
+                 convergence_rate, surprise_index, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(experiment_id) DO UPDATE SET
+                    initiative_a = excluded.initiative_a,
+                    initiative_b = excluded.initiative_b,
+                    influence_a_on_b = excluded.influence_a_on_b,
+                    influence_b_on_a = excluded.influence_b_on_a,
+                    convergence_rate = excluded.convergence_rate,
+                    surprise_index = excluded.surprise_index,
+                    computed_at = excluded.computed_at""",
+            (metrics["experiment_id"], metrics["initiative_a"], metrics["initiative_b"],
+             metrics["influence_a_on_b"], metrics["influence_b_on_a"],
+             metrics["convergence_rate"], metrics["surprise_index"], now),
+        )
+
+    async def get_collaboration_metrics(self, experiment_id: str) -> dict | None:
+        """Fetch collaboration chemistry metrics for an experiment."""
+        cursor = await self.db.execute(
+            "SELECT * FROM collaboration_metrics WHERE experiment_id = ?",
+            (experiment_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None

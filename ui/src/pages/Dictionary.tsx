@@ -10,8 +10,9 @@ import { buildParticipantColorMap } from '@/lib/participantColors'
 import { modelDisplayName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-type ViewMode = 'cards' | 'constellation' | 'timeline' | 'burst'
+type ViewMode = 'cards' | 'constellation' | 'timeline' | 'burst' | 'evolution'
 type SortBy = 'round' | 'usage' | 'alpha'
+interface EvolutionNode { id: string; label: string; preset: string | null; vocab_count: number; seed_id: string | null }
 
 export default function Dictionary() {
   const { experimentId } = useParams<{ experimentId: string }>()
@@ -28,6 +29,10 @@ export default function Dictionary() {
 
   // Shared selection across all three views
   const [selectedWord, setSelectedWord] = useState<VocabWord | null>(null)
+
+  // Evolution tree data
+  const [evolutionTree, setEvolutionTree] = useState<EvolutionNode[]>([])
+  const [evolutionLoading, setEvolutionLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!experimentId) return
@@ -53,6 +58,16 @@ export default function Dictionary() {
     const interval = setInterval(fetchData, 10_000)
     return () => clearInterval(interval)
   }, [experiment, fetchData])
+
+  // Fetch evolution tree lazily when tab is selected
+  useEffect(() => {
+    if (view !== 'evolution' || !experimentId) return
+    setEvolutionLoading(true)
+    api.getEvolutionTree(experimentId)
+      .then((res) => setEvolutionTree(res.tree ?? []))
+      .catch(() => setEvolutionTree([]))
+      .finally(() => setEvolutionLoading(false))
+  }, [view, experimentId])
 
   // ── Derived stats ───────────────────────────────────────────────────────────
   const byCoinedBy = useMemo(() => {
@@ -257,7 +272,7 @@ export default function Dictionary() {
 
         {/* ── View tabs ── */}
         <div className="flex gap-2 mt-3">
-          {(['cards', 'constellation', 'timeline', 'burst'] as ViewMode[]).map(v => (
+          {(['cards', 'constellation', 'timeline', 'burst', 'evolution'] as ViewMode[]).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -321,13 +336,66 @@ export default function Dictionary() {
             colorMap={colorMap}
             onSelectWord={setSelectedWord}
           />
-        ) : (
+        ) : view === 'burst' ? (
           <VocabBurstChart
             words={filteredWords}
             colorMap={colorMap}
             onSelectWord={setSelectedWord}
           />
-        )}
+        ) : view === 'evolution' ? (
+          <div className="space-y-3">
+            {evolutionLoading ? (
+              <p className="text-text-dim text-sm animate-pulse-slow text-center py-8">Loading evolution tree...</p>
+            ) : evolutionTree.length <= 1 ? (
+              <div className="text-center text-text-dim py-12 space-y-2">
+                <p className="text-lg">No vocabulary lineage</p>
+                <p className="text-sm">Seed a new experiment from this one to start tracking linguistic evolution</p>
+              </div>
+            ) : (
+              <div className="max-w-lg mx-auto space-y-0">
+                {evolutionTree.map((node, i) => {
+                  const isCurrent = node.id === experimentId
+                  return (
+                    <div key={node.id}>
+                      <Link
+                        to={isCurrent ? '#' : `/dictionary/${node.id}`}
+                        className={cn(
+                          'block border rounded-lg px-4 py-3 transition-colors',
+                          isCurrent
+                            ? 'border-accent/60 bg-accent/10'
+                            : 'border-border-custom hover:border-accent/30 hover:bg-accent/5',
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-mono text-[9px] tracking-wider text-text-dim/50 uppercase">
+                              gen {i + 1}
+                            </span>
+                            <div className="font-display text-sm font-bold text-text-primary">
+                              {node.label}
+                            </div>
+                            {node.preset && (
+                              <span className="font-mono text-[9px] text-accent/50">{node.preset}</span>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span className="font-mono text-lg font-bold text-accent">{node.vocab_count}</span>
+                            <div className="font-mono text-[9px] text-text-dim/50">words</div>
+                          </div>
+                        </div>
+                      </Link>
+                      {i < evolutionTree.length - 1 && (
+                        <div className="flex justify-center py-1">
+                          <div className="w-px h-6 bg-accent/30" />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* ── Selected word panel (shared across all views) ── */}
         {selectedWord && (

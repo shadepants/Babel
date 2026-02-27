@@ -23,6 +23,10 @@ export interface ExperimentState {
   elapsed: number | null;
   errorMessage: string | null;
   isAwaitingHuman: boolean;
+  echoSimilarity: number | null;
+  interventionFired: boolean;
+  revealedGoals: Array<{ agent_index: number; goal: string }> | null;
+  auditExperimentId: string | null;
 }
 
 export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
@@ -41,6 +45,10 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
       errorMessage: null,
       observers: [],
       isAwaitingHuman: false,
+      echoSimilarity: null,
+      interventionFired: false,
+      revealedGoals: null,
+      auditExperimentId: null,
     };
 
     for (const event of events) {
@@ -98,6 +106,18 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
         case 'relay.awaiting_human':
           state.isAwaitingHuman = true;
           state.thinkingSpeaker = null;
+          break;
+        case 'relay.signal_echo':
+          state.echoSimilarity = event.similarity;
+          break;
+        case 'relay.signal_intervention':
+          state.interventionFired = true;
+          break;
+        case 'relay.agenda_revealed':
+          state.revealedGoals = event.hidden_goals;
+          break;
+        case 'relay.audit_started':
+          state.auditExperimentId = event.audit_experiment_id;
           break;
       }
     }

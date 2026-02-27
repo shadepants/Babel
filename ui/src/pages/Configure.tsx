@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { PairingOracle } from '@/components/configure/PairingOracle'
 
 import { getSymbol } from '@/lib/symbols'
 import { getPrefs } from '@/lib/prefs'
@@ -81,6 +82,20 @@ export default function Configure() {
   const [presetDefaults, setPresetDefaults] = useState<{ rounds: number; temperature: number; maxTokens: number } | null>(null)
   // Suggested model strings from preset (for C3 indicator)
   const [suggestedModels, setSuggestedModels] = useState<[string, string]>(['', ''])
+
+  // -- Oracle panel --
+  const [oracleOpen, setOracleOpen] = useState(false)
+
+  // -- Session 27: Echo Chamber Detection --
+  const [enableEchoDetector, setEnableEchoDetector] = useState(false)
+  const [enableEchoIntervention, setEnableEchoIntervention] = useState(false)
+
+  // -- Session 27: Adversarial Mode --
+  const [hiddenGoals, setHiddenGoals] = useState<[string, string]>(['', ''])
+  const [revelationRound, setRevelationRound] = useState<number | null>(null)
+
+  // -- Session 27: Audit --
+  const [enableAudit, setEnableAudit] = useState(false)
 
   // Load models + preset data
   useEffect(() => {
@@ -222,6 +237,13 @@ export default function Configure() {
     })
   }
 
+  // Oracle apply handler -- updates model A and model B slots
+  const handleOracleApply = (modelA: string, modelB: string) => {
+    setAgents(prev => prev.map((a, i) =>
+      i === 0 ? { ...a, model: modelA } : i === 1 ? { ...a, model: modelB } : a
+    ))
+  }
+
   async function handleLaunch() {
     const activeModel = agents[0]?.model
     if (!activeModel || agents.some(a => !a.model)) {
@@ -277,6 +299,28 @@ export default function Configure() {
       const activePersonaIds = agentPersonaIds.slice(0, agents.length)
       if (activePersonaIds.some(Boolean)) {
         request.persona_ids = activePersonaIds
+      }
+      // Session 27: Echo Chamber Detection
+      if (enableEchoDetector) {
+        (request as Record<string, unknown>).enable_echo_detector = true
+        if (enableEchoIntervention) {
+          (request as Record<string, unknown>).enable_echo_intervention = true
+        }
+      }
+      // Session 27: Adversarial hidden goals
+      const activeGoals = hiddenGoals.filter(g => g.trim())
+      if (activeGoals.length === 2) {
+        (request as Record<string, unknown>).hidden_goals = [
+          { agent_index: 0, goal: hiddenGoals[0].trim() },
+          { agent_index: 1, goal: hiddenGoals[1].trim() },
+        ]
+        if (revelationRound) {
+          (request as Record<string, unknown>).revelation_round = revelationRound
+        }
+      }
+      // Session 27: Audit
+      if (enableAudit) {
+        (request as Record<string, unknown>).enable_audit = true
       }
 
       const res = await api.startRelay(request)
@@ -492,6 +536,34 @@ export default function Configure() {
               })}
             </div>
           </div>
+
+          {/* Oracle Suggestions -- only shown when exactly 2 agents */}
+          {agents.length === 2 && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setOracleOpen(prev => !prev)}
+                className="neural-section-label flex items-center justify-between w-full text-left hover:text-accent/80 transition-colors"
+              >
+                <span>// oracle_suggestions</span>
+                <span className="font-mono text-[9px] text-accent/40 tracking-wider">
+                  {oracleOpen ? '&#9650; hide' : '&#9660; show'}
+                </span>
+              </button>
+
+              {oracleOpen && (
+                <div className="space-y-2">
+                  <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+                    // ranked pairings from past chemistry data &mdash; click Apply to load
+                  </p>
+                  <PairingOracle
+                    preset={preset?.id ?? null}
+                    onApply={handleOracleApply}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* RPG Participants */}
           {/* Parameters */}
@@ -722,6 +794,113 @@ export default function Configure() {
 
             <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
               // a silent third model injects commentary every N turns without participating
+            </p>
+          </div>
+
+          {/* Echo Chamber Detection */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// echo_detection</div>
+
+            <button
+              type="button"
+              onClick={() => setEnableEchoDetector(!enableEchoDetector)}
+              className="flex items-center gap-3 group w-full text-left"
+            >
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${enableEchoDetector ? 'bg-amber-500/70' : 'bg-border-custom'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableEchoDetector ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                Convergence monitor
+              </span>
+            </button>
+
+            {enableEchoDetector && (
+              <div className="space-y-3 pl-4 border-l border-amber-500/20">
+                <button
+                  type="button"
+                  onClick={() => setEnableEchoIntervention(!enableEchoIntervention)}
+                  className="flex items-center gap-3 group w-full text-left"
+                >
+                  <div className={`relative w-8 h-4 rounded-full transition-colors ${enableEchoIntervention ? 'bg-amber-500/70' : 'bg-border-custom'}`}>
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableEchoIntervention ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                  </div>
+                  <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                    Auto-intervene at critical convergence
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // real-time Jaccard similarity monitoring &mdash; warns when models converge too much
+            </p>
+          </div>
+
+          {/* Adversarial Mode */}
+          {agents.length === 2 && (
+            <div className="space-y-3">
+              <div className="neural-section-label">// adversarial_mode</div>
+
+              {[0, 1].map((idx) => (
+                <div key={idx} className="space-y-1.5">
+                  <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                    Hidden Agenda &mdash; Agent {idx + 1}
+                  </label>
+                  <Textarea
+                    value={hiddenGoals[idx]}
+                    onChange={(e) => {
+                      const next = [...hiddenGoals] as [string, string]
+                      next[idx] = e.target.value
+                      setHiddenGoals(next)
+                    }}
+                    placeholder={`Secret goal only Agent ${idx + 1} will see...`}
+                    className="font-mono text-xs min-h-[60px]"
+                  />
+                </div>
+              ))}
+
+              {hiddenGoals.some(g => g.trim()) && (
+                <div className="space-y-1.5 pl-4 border-l border-violet-500/20">
+                  <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
+                    Revelation round (blank = reveal at end)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={rounds}
+                    value={revelationRound ?? ''}
+                    onChange={(e) => setRevelationRound(e.target.value ? Number(e.target.value) : null)}
+                    className="font-mono text-xs bg-bg-deep border border-border-custom rounded px-2 py-1 w-20"
+                    placeholder="End"
+                  />
+                </div>
+              )}
+
+              <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+                // each agent gets a secret goal &mdash; agendas revealed at end for dramatic re-reading
+              </p>
+            </div>
+          )}
+
+          {/* Audit */}
+          <div className="space-y-3">
+            <div className="neural-section-label">// audit</div>
+
+            <button
+              type="button"
+              onClick={() => setEnableAudit(!enableAudit)}
+              className="flex items-center gap-3 group w-full text-left"
+            >
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${enableAudit ? 'bg-violet-500/70' : 'bg-border-custom'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-transform bg-white/90 ${enableAudit ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="font-mono text-[10px] text-text-dim tracking-wider uppercase group-hover:text-text-primary transition-colors">
+                Recursive audit
+              </span>
+            </button>
+
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // two AI analysts automatically review this experiment when it ends &mdash; the audit is itself an experiment
             </p>
           </div>
 

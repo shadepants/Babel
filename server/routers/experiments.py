@@ -1,4 +1,4 @@
-"""Experiments router — read-only endpoints for experiment data, vocabulary, and analytics.
+"""Experiments router -- read-only endpoints for experiment data, vocabulary, and analytics.
 
 Separate from the relay router which handles lifecycle (start/stream).
 """
@@ -39,6 +39,76 @@ async def list_experiments(
         )
     db = _get_db(request)
     return {"experiments": await db.list_experiments(limit=limit, offset=offset, status=status)}
+
+
+@router.get("/pairing-oracle")
+async def get_pairing_oracle(
+    request: Request,
+    preset: str | None = Query(default=None, description="Filter by preset name, or omit for all presets"),
+    min_experiments: int = Query(default=3, ge=1, description="Minimum experiment count for a pair to be included"),
+):
+    """Aggregate collaboration chemistry across model pairs.
+
+    Groups completed experiments by canonical (sorted) model pair, filters to
+    pairs with at least min_experiments runs, and returns averaged chemistry
+    metrics sorted by surprise_index descending.
+    """
+    db = _get_db(request)
+
+    params: list = ["completed"]
+    preset_clause = ""
+    if preset is not None:
+        preset_clause = "AND e.preset = ?"
+        params.append(preset)
+
+    sql = f"""
+        SELECT
+            MIN(e.model_a, e.model_b) AS model_a,
+            MAX(e.model_a, e.model_b) AS model_b,
+            e.preset,
+            COUNT(*) AS experiment_count,
+            AVG(cm.initiative_a) AS avg_initiative_a,
+            AVG(cm.initiative_b) AS avg_initiative_b,
+            AVG(cm.influence_a_on_b) AS avg_influence_a_on_b,
+            AVG(cm.influence_b_on_a) AS avg_influence_b_on_a,
+            AVG(cm.convergence_rate) AS avg_convergence_rate,
+            AVG(cm.surprise_index) AS avg_surprise_index
+        FROM experiments e
+        JOIN collaboration_metrics cm ON e.id = cm.experiment_id
+        WHERE e.status = ?
+        {preset_clause}
+        GROUP BY
+            MIN(e.model_a, e.model_b),
+            MAX(e.model_a, e.model_b),
+            e.preset
+        HAVING COUNT(*) >= ?
+        ORDER BY avg_surprise_index DESC
+    """
+    params.append(min_experiments)
+
+    cursor = await db.db.execute(sql, params)
+    rows = await cursor.fetchall()
+
+    results = []
+    for row in rows:
+        results.append(
+            {
+                "model_a": row[0],
+                "model_b": row[1],
+                "preset": row[2],
+                "experiment_count": row[3],
+                "avg_chemistry": {
+                    "initiative_a": row[4],
+                    "initiative_b": row[5],
+                    "influence_a_on_b": row[6],
+                    "influence_b_on_a": row[7],
+                    "convergence_rate": row[8],
+                    "surprise_index": row[9],
+                },
+            }
+        )
+
+    return results
 
 
 @router.get("/memories")
@@ -236,7 +306,7 @@ async def generate_documentary(experiment_id: str, request: Request):
             f"PARTICIPANTS: {participants_str}\n\n"
             f"CONVERSATION TRANSCRIPT (excerpted):\n{turns_text}\n\n"
             f"VOCABULARY COINED: {vocab_text}\n\n"
-            f"FINAL VERDICT: {winner or 'undecided'} — {verdict}\n\n"
+            f"FINAL VERDICT: {winner or 'undecided'} -- {verdict}\n\n"
             f"Write a compelling documentary narrative in 4 sections:\n"
             f"// THE EXPERIMENT\n// KEY MOMENTS\n// INVENTED VOCABULARY\n// THE VERDICT\n\n"
             f"Keep it under 600 words. Make it engaging and scientifically grounded."
@@ -253,6 +323,81 @@ async def generate_documentary(experiment_id: str, request: Request):
 
     await db.save_documentary(experiment_id, text)
     return {"documentary": text}
+
+
+@router.get("/{experiment_id}/chemistry")
+async def get_chemistry(experiment_id: str, request: Request):
+    """Get collaboration chemistry metrics for an experiment."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    metrics = await db.get_collaboration_metrics(experiment_id)
+    if metrics is None:
+        raise HTTPException(404, "Chemistry metrics not yet computed for this experiment")
+    return metrics
+
+
+@router.get("/{experiment_id}/agendas")
+async def get_agendas(experiment_id: str, request: Request):
+    """Get hidden agendas for an adversarial experiment. Only available when completed or revealed."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    goals_raw = experiment.get("hidden_goals_json")
+    if not goals_raw:
+        raise HTTPException(404, "No hidden goals configured for this experiment")
+    import json as _json
+    goals = _json.loads(goals_raw)
+    # Only reveal if experiment is completed or revelation_round has passed
+    if experiment["status"] == "running":
+        rev_round = experiment.get("revelation_round")
+        completed_rounds = experiment.get("rounds_completed", 0)
+        if rev_round is None or completed_rounds < rev_round:
+            raise HTTPException(403, "Agendas not yet revealed")
+    return {"hidden_goals": goals}
+
+
+@router.get("/{experiment_id}/evolution-tree")
+async def get_evolution_tree(experiment_id: str, request: Request):
+    """Walk the vocabulary_seed_id chain to build a linguistic evolution tree."""
+    db = _get_db(request)
+    visited = set()
+    tree_nodes = []
+    current_id = experiment_id
+
+    while current_id and current_id not in visited:
+        visited.add(current_id)
+        exp = await db.get_experiment(current_id)
+        if exp is None:
+            break
+        vocab = await db.get_vocabulary(current_id)
+        tree_nodes.append({
+            "id": current_id,
+            "label": exp.get("label") or current_id[:8],
+            "preset": exp.get("preset"),
+            "vocab_count": len(vocab),
+            "seed_id": exp.get("vocabulary_seed_id"),
+        })
+        current_id = exp.get("vocabulary_seed_id")
+
+    # Reverse so root is first
+    tree_nodes.reverse()
+    return {"tree": tree_nodes, "depth": len(tree_nodes)}
+
+
+@router.get("/{experiment_id}/audit")
+async def get_audit(experiment_id: str, request: Request):
+    """Get the audit experiment ID for a source experiment, if one exists."""
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    audit_id = experiment.get("audit_experiment_id")
+    if not audit_id:
+        raise HTTPException(404, "No audit experiment exists for this experiment")
+    return {"audit_experiment_id": audit_id}
 
 
 @router.delete("/{experiment_id}")

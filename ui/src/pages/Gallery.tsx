@@ -201,6 +201,26 @@ export default function Gallery() {
                           // judged
                         </span>
                       )}
+                      {exp.mode === 'audit' && (
+                        <span className="font-mono text-[9px] tracking-wider text-violet-400/80 border border-violet-500/30 px-1.5 py-0.5 rounded-sm uppercase">
+                          audit
+                        </span>
+                      )}
+                      {exp.mode === 'rpg' && (
+                        <span className="font-mono text-[9px] tracking-wider text-emerald-400/80 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm uppercase">
+                          rpg
+                        </span>
+                      )}
+                      {exp.vocabulary_seed_id && (
+                        <span className="font-mono text-[9px] tracking-wider text-cyan-400/70 border border-cyan-500/25 px-1.5 py-0.5 rounded-sm uppercase">
+                          inherited
+                        </span>
+                      )}
+                      {exp.hidden_goals_json && (
+                        <span className="font-mono text-[9px] tracking-wider text-amber-400/70 border border-amber-500/25 px-1.5 py-0.5 rounded-sm uppercase">
+                          adversarial
+                        </span>
+                      )}
                     </div>
                     <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span>{formatDate(exp.created_at)}</span>

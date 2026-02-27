@@ -181,7 +181,7 @@ html[data-active-model="b"] nav {
   color: rgba(139,92,246,0.7);
   background: transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
   text-transform: uppercase;
 }
 .neural-btn:hover {
@@ -324,3 +324,14 @@ html[data-active-model="b"] nav {
 .sprite-fragment--1 { animation-delay: 0.10s; }
 .sprite-fragment--2 { animation-delay: 0.22s; }
 .sprite-fragment--3 { animation-delay: 0.00s; }
+
+/* ─── Respect user motion preferences ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

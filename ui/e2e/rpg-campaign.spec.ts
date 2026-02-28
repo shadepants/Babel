@@ -9,6 +9,12 @@
  *   Frontend: (in ui/) npm run dev
  *
  * Run: npm run test:e2e -- rpg-campaign
+ *
+ * Selector notes (RPGTheater.tsx):
+ *   DMTurnEntry:        <div className="animate-fade-in py-5">
+ *   CompanionTurnEntry: <div className="animate-fade-in py-3">
+ *   ThinkingIndicator:  <div className="... p-4 animate-fade-in"> -- no py-3/py-5
+ *   Combined turn selector: '.animate-fade-in.py-5, .animate-fade-in.py-3'
  */
 
 import { test, expect } from '@playwright/test'
@@ -72,10 +78,10 @@ test('RPG Campaign: 4-round all-AI session runs to completion', async ({ page, r
   await expect(page.locator('text=Party')).toBeVisible()
 
   // -- 4. Wait for all 8 turns to appear --
-  // RPGTurnEntry renders:     <div class="animate-fade-in py-2">
-  // ThinkingIndicator renders: <div class="... p-4 animate-fade-in"> (no py-2)
-  // So .animate-fade-in.py-2 is a clean selector for completed turns only.
-  const turnEntries = page.locator('.animate-fade-in.py-2')
+  // DMTurnEntry:        <div className="animate-fade-in py-5">  (4 DM turns)
+  // CompanionTurnEntry: <div className="animate-fade-in py-3">  (4 Aria turns)
+  // ThinkingIndicator uses p-4 (no py-3/py-5) -- excluded by this combined selector.
+  const turnEntries = page.locator('.animate-fade-in.py-5, .animate-fade-in.py-3')
   await expect(turnEntries).toHaveCount(8, { timeout: 150_000 })
   console.log('All 8 turns received.')
 

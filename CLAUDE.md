@@ -1,4 +1,4 @@
-# Babel — Claude Code Instructions
+﻿# Babel — Claude Code Instructions
 
 @import CONTEXT.md
 
@@ -6,8 +6,9 @@
 - **Backend:** `.venv\Scripts\python.exe -m uvicorn server.app:app --reload --port 8000`
 - **Frontend:** `cd ui && .\run_npm.cmd dev` (Vite on port 5173, proxies /api to 8000)
 - **Both must be running** for any end-to-end work
+- **Uvicorn hot-reload caveat:** `--reload` via preview_start does NOT always pick up Python changes. If behavior does not change after edits, run preview_stop + preview_start.
 - **Python:** Always use `.venv\Scripts\python.exe` (project venv), not system Python
-- **Tests:** `.venv\Scripts\python.exe -m pytest tests/ -v` (backend); `cd ui && npx vitest` (frontend)
+- **Tests:** `.venv\Scripts\python.exe -m pytest tests/ -v` (backend only; no frontend unit tests -- E2E via Playwright: `cd ui && npx playwright test`)
 - **Type check:** `cd ui && npx tsc --noEmit` — run after any frontend changes
 
 ## Key Architecture Decisions
@@ -31,6 +32,8 @@
 - **Orbitron font:** Has NO glyphs for Unicode geometric symbols — always use `font-symbol` class on symbol spans.
 - **StarField:** Pure canvas — not tsParticles. `tintColor` prop accepts "R,G,B" string. AppInner reads route and passes tint.
 - **Serena regex DOTALL:** `.*` in replace_content (DOTALL mode) matches newlines — can consume entire file. Use literal mode or specific anchors.
+- **Playwright + SSE:** Never use `waitForLoadState('networkidle')` on Theater pages — the SSE connection keeps the network open forever. Use `'load'` instead.
+- **agents_config_json:** Must be populated for ALL experiment paths (including standard 2-agent, not just N-way). If NULL, Theater shows 0 turns — parseAgents() falls back to model.split('/').pop() which does not match get_display_name() strings.
 
 ## Reference Docs
 - `docs/CHANGELOG.md` — completed phases 1-16 history

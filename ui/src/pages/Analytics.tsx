@@ -71,7 +71,7 @@ export default function Analytics() {
       setLabelValue(exp.label ?? '')
       setStats(st)
       if (scoresRes) setScores(scoresRes.scores)
-      if (radarRes && radarRes.models.length > 0) {
+      if (radarRes && radarRes.models && radarRes.models.length > 0) {
         setRadar(radarRes.models.map((m, i) => ({
           model: m.model,
           display_name: m.display_name,

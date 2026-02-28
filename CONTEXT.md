@@ -1,6 +1,6 @@
-&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
+# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-27 (session 28 &mdash; six-feature expansion)
+**Last Updated:** 2026-02-27 (session 29 &mdash; E2E testing + bug fix)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -12,7 +12,7 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - **Real-time:** Server-Sent Events (SSE) with persistence via `system_events`
 - **Frontend:** React 19 + Vite 7 + Tailwind 3.4
 - **Database:** SQLite (WAL mode) with async background writer queue
-- **Testing:** Playwright E2E (rpg-campaign.spec.ts, smoke.spec.ts) &mdash; local only
+- **Testing:** Playwright E2E (smoke.spec.ts, smoke-live.spec.ts, features-1-6.spec.ts, rpg-campaign.spec.ts) &mdash; local only
 
 ## 3. Current State
 
@@ -24,19 +24,26 @@ See `docs/CHANGELOG.md` &mdash; RPG Hub, visual assets, AI vs AI Observatory, ca
 
 ### Sessions 27-28 - Six-Feature Expansion (SHIPPED `97f5c8c`)
 - [x] **Feature 4: Collaboration Chemistry Card** &mdash; `chemistry_engine.py` computes initiative balance, influence flow, convergence rate, surprise index; POST-completion bg task; `GET /api/experiments/{id}/chemistry`; `ChemistryCard.tsx` in Analytics
-- [x] **Feature 5: Model Pairing Oracle** &mdash; `GET /api/pairing-oracle?preset=` aggregates chemistry per sorted model pair; `PairingOracle.tsx` in Configure with Apply button
+- [x] **Feature 5: Model Pairing Oracle** &mdash; `GET /api/experiments/pairing-oracle?preset=` aggregates chemistry per sorted model pair; `PairingOracle.tsx` in Configure with Apply button
 - [x] **Feature 3: Echo Chamber Detector** &mdash; per-turn Jaccard similarity in relay_engine; `relay.signal_echo` + `relay.signal_intervention` SSE events; `EchoChamberWarning.tsx` amber HUD; auto-intervention system message injection
 - [x] **Feature 6: Recursive Adversarial Mode** &mdash; hidden goal injection per agent in `build_messages()`; `relay.agenda_revealed` SSE at revelation round; `AgendaRevealOverlay.tsx` full-screen card-flip reveal; adversarial verdict (3-dimension scoring)
 - [x] **Feature 2: Linguistic Evolution Tree** &mdash; `vocabulary_seed_id` in RelayStartRequest; seed words injected into system prompt; `GET /api/experiments/{id}/evolution-tree`; Dictionary 5th tab 'evolution' renders chain
 - [x] **Feature 1: Recursive Audit Loop** &mdash; `audit_engine.py` fetches transcript, launches `start_relay(mode='audit')`; `enable_audit` flag; `relay.audit_started` SSE; `GET /api/experiments/{id}/audit`; Theater audit banner
 - [x] **Multi-skill accessibility + pattern audit** &mdash; AgendaRevealOverlay focus trap + Esc; EchoChamberWarning keyboard dismiss; Theater textarea aria-label; `transition: all` anti-pattern fix; `prefers-reduced-motion` block; relay.py dead code cleanup
 
+### Session 29 - E2E Testing (SHIPPED, uncommitted)
+- [x] **Bug fix:** `Analytics.tsx:74` &mdash; `radarRes.models` null-deref crash for RPG experiments (radar endpoint returns `{"models": null}` for multi-participant sessions); added null guard
+- [x] **E2E spec:** `ui/e2e/features-1-6.spec.ts` &mdash; 12 tests covering all 6 session 27-28 features; 16/18 passing (2 skipped need live verdict/running data)
+- [x] **Double-fetch investigated** &mdash; `/api/presets` fetched twice on home page; confirmed React Strict Mode dev behavior (dev-only, not a production bug)
+- [x] **E2E spec:** `ui/e2e/smoke-live.spec.ts` &mdash; 2 self-provisioning tests (verdict panel + SSE reconnect); replace the 2 previously-skipped smoke tests; run with `npm run test:e2e -- smoke-live`
+
 ### Next
+- [ ] **Commit session 29** &mdash; `Analytics.tsx` fix + `features-1-6.spec.ts` + `smoke-live.spec.ts`
+- [ ] Gallery CHM chip &mdash; aggregate chemistry score `(initiative_balance + surprise_index) / 2` shown as `CHM 0.72` chip on completed experiment rows (noted in plan, not yet implemented)
 - [ ] A2: Visual test &mdash; run pure-AI RPG session; verify companion colors, DM prose, companion cards
 - [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard
 - [ ] Entity snapshot quality check &mdash; after session completes, verify `entity_snapshots` table populated
-- [ ] End-to-end test of Features 1-6 with live backend (need to run server and test each feature)
-- [ ] Gallery CHM chip &mdash; aggregate chemistry score `(initiative_balance + surprise_index) / 2` shown as `CHM 0.72` chip on completed experiment rows (noted in plan, not yet implemented)
+- [ ] Live E2E of Features 1-6 &mdash; start both servers, run experiment with `enable_audit=True`, `enable_echo_detector=True`, verify SSE events fire
 
 ## 4. Architecture (v28.0)
 ```
@@ -75,6 +82,11 @@ Babel/
       Dictionary.tsx      5th evolution tab with seed chain visualization [session 28]
       Configure.tsx       adversarial + echo + vocabulary seed + oracle sections [session 28]
       Analytics.tsx       Chemistry section + adversarial verdict display [session 28]
+  ui/e2e/
+    smoke.spec.ts         6 smoke checks (sprites, border, glitch); 2 skipped (need live data)
+    smoke-live.spec.ts    2 self-provisioning tests: verdict panel + SSE reconnect [session 29]
+    features-1-6.spec.ts  12 tests for session 27-28 features [session 29]
+    rpg-campaign.spec.ts  Full 4-round RPG campaign E2E (needs live LLM, run manually)
   .claude/launch.json     preview_start configs: backend (:8000) + frontend (:5173)
   .github/workflows/ci.yml  Backend + frontend CI (push/PR to master)
 ```
@@ -82,7 +94,7 @@ Babel/
 ## 5. Don't Forget
 - **File encoding:** NEVER use PowerShell to read/rewrite UTF-8 files. Use `win_write` MCP tool. Use HTML entities in JSX.
 - **Tailwind dynamic classes:** NEVER `text-${color}` &mdash; purged in prod. Use explicit conditionals or `style={}`.
-- **FastAPI route order:** catch-all `/{id}` routes AFTER specific routes.
+- **FastAPI route order:** catch-all `/{id}` routes AFTER specific routes. `/pairing-oracle` is BEFORE `/{experiment_id}`.
 - **asyncio blocking in async def:** use `asyncio.to_thread()` for SQLite/file I/O in async endpoints.
 - **DB writer queue:** all writes go through `_execute_queued`; calling after `db.close()` hangs.
 - **`start-run.cmd`:** no hot-reload; use for long RPG campaigns to avoid WatchFiles reload killing sessions.
@@ -90,7 +102,7 @@ Babel/
 - **RPG entry point:** /rpg-hub only. SeedLab no longer has an RPG card.
 - **React hook order:** ALL hooks BEFORE any conditional early return (Rules of Hooks).
 - **TurnBubble accentColor:** pass hex string for agents 2+ (emerald `#10B981`, violet `#8B5CF6`).
-- **Vite host binding:** `vite.config.ts` `host: '0.0.0.0'` &mdash; preview tool connects via 127.0.0.1 (IPv4).
-- **Tailwind + preview_start CWD:** `postcss.config.js` must pass absolute tailwind config path via `import.meta.url`.
+- **Playwright `text=// label`:** Playwright treats `//` as regex delimiters &mdash; use `.neural-section-label:has-text("label")` instead.
+- **React Strict Mode double-fetch:** `/api/presets` (and all useEffect fetches) fire twice in dev &mdash; Strict Mode dev-only behavior, not a bug.
 - **Chemistry + Oracle dependency:** Oracle requires chemistry data; run Feature 4 first (already shipped together).
 - **Adversarial mode:** hidden goals ONLY injected for the correct `agent_index`; other agents never see them.

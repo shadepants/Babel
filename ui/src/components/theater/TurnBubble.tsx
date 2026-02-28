@@ -119,6 +119,7 @@ export function TurnBubble({ turn, color, accentColor, score, isLatest, vocab, e
   return (
     <div
       className="animate-fade-in"
+      data-testid="turn-bubble"
       style={{
         borderLeft: `3px solid ${accent}`,
         borderTop: `1px solid ${borderTop}`,

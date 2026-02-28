@@ -87,7 +87,7 @@ test('Theater: verdict panel rendered for self-provisioned experiment', async ({
 
   // -- 4. Navigate to Theater and verify verdict panel --
   await page.goto(`/theater/${matchId}`)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('load')
 
   // Use :has-text() -- avoids Playwright's // regex interpretation bug
   await expect(
@@ -131,7 +131,7 @@ test('SSE reconnect: history replayed after connection drop (self-provisioned)',
       model_a: model,
       model_b: model,
       rounds: 6,
-      max_tokens: 60,
+      max_tokens: 100,
       temperature_a: 0.7,
       temperature_b: 0.7,
       turn_delay_seconds: 2,
@@ -147,8 +147,8 @@ test('SSE reconnect: history replayed after connection drop (self-provisioned)',
   await page.goto(`/theater/${matchId}`)
 
   // -- 4. Wait for first turn bubble to confirm SSE is delivering events --
-  // ConversationColumn wraps turns in aria-live="polite"; TurnBubble uses animate-fade-in.
-  const turnBubbles = page.locator('[aria-live="polite"] .animate-fade-in')
+  // data-testid="turn-bubble" on TurnBubble root -- more reliable than aria-live nesting.
+  const turnBubbles = page.locator('[data-testid="turn-bubble"]')
   await expect(turnBubbles.first()).toBeVisible({ timeout: 30_000 })
   const countBefore = await turnBubbles.count()
   console.log(`  Turns before drop: ${countBefore}`)

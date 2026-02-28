@@ -184,8 +184,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
                 [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
                  for ac in resolved_agents]
                 if resolved_agents else
-                [{"model": body.model_a, "temperature": body.temperature_a, "name": None},
-                 {"model": body.model_b, "temperature": body.temperature_b, "name": None}]
+                [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+                 {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
             ),
             "turn_delay_seconds": body.turn_delay_seconds,
             "preset": body.preset,
@@ -203,7 +203,9 @@ async def start_relay(body: RelayStartRequest, request: Request):
     agents_dicts = (
         [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
          for ac in resolved_agents]
-        if resolved_agents else None
+        if resolved_agents else
+        [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+         {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
     )
     match_id = await db.create_experiment(
         model_a=body.model_a,

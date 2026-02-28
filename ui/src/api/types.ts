@@ -416,6 +416,8 @@ export interface ExperimentRecord {
   vocabulary_seed_id?: string | null;
   audit_experiment_id?: string | null;
   revelation_round?: number | null;
+  // Session 29: gallery chemistry score (initiative_balance + surprise_index) / 2
+  chm_score?: number | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

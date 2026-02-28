@@ -504,14 +504,21 @@ class Database:
         status: str | None = None,
     ) -> list[dict]:
         """List experiments, most recent first. Optional status filter and pagination."""
-        query = "SELECT * FROM experiments"
+        base = (
+            "SELECT e.*, "
+            "CASE WHEN cm.initiative_a IS NOT NULL "
+            "THEN ROUND((1.0 - ABS(cm.initiative_a - cm.initiative_b) + cm.surprise_index) / 2.0, 4) "
+            "ELSE NULL END AS chm_score "
+            "FROM experiments e "
+            "LEFT JOIN collaboration_metrics cm ON cm.experiment_id = e.id"
+        )
         params: list[Any] = []
         if status:
-            query += " WHERE status = ?"
+            base += " WHERE e.status = ?"
             params.append(status)
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        base += " ORDER BY e.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        cursor = await self.db.execute(query, params)
+        cursor = await self.db.execute(base, params)
         return [dict(row) for row in await cursor.fetchall()]
 
     async def update_experiment_status(

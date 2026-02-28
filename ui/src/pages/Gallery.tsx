@@ -221,6 +221,11 @@ export default function Gallery() {
                           adversarial
                         </span>
                       )}
+                      {exp.status === 'completed' && exp.chm_score != null && (
+                        <span className="font-mono text-[9px] tracking-wider text-teal-400/80 border border-teal-500/30 px-1.5 py-0.5 rounded-sm">
+                          CHM {exp.chm_score.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                     <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span>{formatDate(exp.created_at)}</span>

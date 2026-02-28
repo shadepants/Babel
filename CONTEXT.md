@@ -1,6 +1,6 @@
-﻿# Babel &mdash; AI-to-AI Conversation Arena
+&#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-28 (session 30 &mdash; Gallery CHM chip, smoke-live E2E fixes, insights synthesis)
+**Last Updated:** 2026-02-28 (session 31 &mdash; verify + push session 30 commits)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -37,17 +37,24 @@ See `docs/CHANGELOG.md` &mdash; RPG Hub, visual assets, AI vs AI Observatory, ca
 - [x] **Double-fetch investigated** &mdash; `/api/presets` fetched twice on home page; confirmed React Strict Mode dev behavior (dev-only, not a production bug)
 - [x] **E2E spec:** `ui/e2e/smoke-live.spec.ts` &mdash; 2 self-provisioning tests (verdict panel + SSE reconnect); replace the 2 previously-skipped smoke tests; run with `npm run test:e2e -- smoke-live`
 
-### Session 30 - Bug Fixes + Insights Synthesis (SHIPPED 3bb171c)
+### Session 30 - Bug Fixes + Insights Synthesis (SHIPPED `317ea25`, pushed session 31)
 - [x] **Gallery CHM chip** &mdash; LEFT JOIN collaboration_metrics; `chm_score` chip on completed experiment rows (teal, `CHM 0.72`)
 - [x] **fix(theater):** `agents_config_json` was NULL for all standard 2-agent experiments &mdash; `parseAgents()` fell back to `model.split('/').pop()` which didn't match `get_display_name()` strings; Theater showed 0 turns for URL-navigated experiments. Fixed in relay.py.
 - [x] **smoke-live.spec.ts** &mdash; fixed SSE `networkidle` timeout, `max_tokens` minimum (100), `data-testid="turn-bubble"` selector; all 2/2 passing
 - [x] **Insights synthesis** &mdash; 6 CLAUDE.md improvements (Rule 3 strengthened, Rule 10 deduped, Playwright+SSE pitfall, agents_config_json pitfall, Uvicorn caveat, Tests line)
+
+### Session 31 - Verify + Push
+- [x] Full test suite run: tsc 0 errors, features-1-6.spec.ts 12/12, smoke.spec.ts 4/2-skipped
+- [x] Opus 4.6 code review: SAFE TO PUSH verdict
+- [x] Pushed 5 session 30 commits to origin/master (`0f82fac..317ea25`)
+- [!] GitHub Dependabot: 1 high vulnerability on default branch &mdash; check `github.com/shadepants/Babel/security`
 
 ### Next
 - [ ] A2: Visual test &mdash; run pure-AI RPG session; verify companion colors, DM prose, companion cards
 - [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard
 - [ ] Entity snapshot quality check &mdash; after session completes, verify `entity_snapshots` table populated
 - [ ] Live E2E of Features 1-6 &mdash; start both servers, run with `enable_audit=True`, `enable_echo_detector=True`, verify SSE events fire
+- [ ] Investigate Dependabot high-severity vulnerability
 
 ## 4. Architecture (v28.0)
 ```
@@ -82,7 +89,7 @@ Babel/
     pages/
       RPGHub.tsx          Campaign preset browser
       Campaign.tsx        DM_BLOCKED_MODELS filter
-      Gallery.tsx         audit/rpg/inherited/adversarial mode badges [session 28]
+      Gallery.tsx         audit/rpg/inherited/adversarial mode badges + CHM chip [session 30]
       Dictionary.tsx      5th evolution tab with seed chain visualization [session 28]
       Configure.tsx       adversarial + echo + vocabulary seed + oracle sections [session 28]
       Analytics.tsx       Chemistry section + adversarial verdict display [session 28]

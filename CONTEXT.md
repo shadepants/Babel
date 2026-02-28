@@ -1,6 +1,6 @@
-# Babel &mdash; AI-to-AI Conversation Arena
+﻿# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-27 (session 29 &mdash; E2E testing + bug fix)
+**Last Updated:** 2026-02-28 (session 30 &mdash; Gallery CHM chip, smoke-live E2E fixes, insights synthesis)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -31,19 +31,23 @@ See `docs/CHANGELOG.md` &mdash; RPG Hub, visual assets, AI vs AI Observatory, ca
 - [x] **Feature 1: Recursive Audit Loop** &mdash; `audit_engine.py` fetches transcript, launches `start_relay(mode='audit')`; `enable_audit` flag; `relay.audit_started` SSE; `GET /api/experiments/{id}/audit`; Theater audit banner
 - [x] **Multi-skill accessibility + pattern audit** &mdash; AgendaRevealOverlay focus trap + Esc; EchoChamberWarning keyboard dismiss; Theater textarea aria-label; `transition: all` anti-pattern fix; `prefers-reduced-motion` block; relay.py dead code cleanup
 
-### Session 29 - E2E Testing (SHIPPED, uncommitted)
+### Session 29 - E2E Testing (SHIPPED `725c64a`)
 - [x] **Bug fix:** `Analytics.tsx:74` &mdash; `radarRes.models` null-deref crash for RPG experiments (radar endpoint returns `{"models": null}` for multi-participant sessions); added null guard
 - [x] **E2E spec:** `ui/e2e/features-1-6.spec.ts` &mdash; 12 tests covering all 6 session 27-28 features; 16/18 passing (2 skipped need live verdict/running data)
 - [x] **Double-fetch investigated** &mdash; `/api/presets` fetched twice on home page; confirmed React Strict Mode dev behavior (dev-only, not a production bug)
 - [x] **E2E spec:** `ui/e2e/smoke-live.spec.ts` &mdash; 2 self-provisioning tests (verdict panel + SSE reconnect); replace the 2 previously-skipped smoke tests; run with `npm run test:e2e -- smoke-live`
 
+### Session 30 - Bug Fixes + Insights Synthesis (SHIPPED 3bb171c)
+- [x] **Gallery CHM chip** &mdash; LEFT JOIN collaboration_metrics; `chm_score` chip on completed experiment rows (teal, `CHM 0.72`)
+- [x] **fix(theater):** `agents_config_json` was NULL for all standard 2-agent experiments &mdash; `parseAgents()` fell back to `model.split('/').pop()` which didn't match `get_display_name()` strings; Theater showed 0 turns for URL-navigated experiments. Fixed in relay.py.
+- [x] **smoke-live.spec.ts** &mdash; fixed SSE `networkidle` timeout, `max_tokens` minimum (100), `data-testid="turn-bubble"` selector; all 2/2 passing
+- [x] **Insights synthesis** &mdash; 6 CLAUDE.md improvements (Rule 3 strengthened, Rule 10 deduped, Playwright+SSE pitfall, agents_config_json pitfall, Uvicorn caveat, Tests line)
+
 ### Next
-- [ ] **Commit session 29** &mdash; `Analytics.tsx` fix + `features-1-6.spec.ts` + `smoke-live.spec.ts`
-- [ ] Gallery CHM chip &mdash; aggregate chemistry score `(initiative_balance + surprise_index) / 2` shown as `CHM 0.72` chip on completed experiment rows (noted in plan, not yet implemented)
 - [ ] A2: Visual test &mdash; run pure-AI RPG session; verify companion colors, DM prose, companion cards
 - [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard
 - [ ] Entity snapshot quality check &mdash; after session completes, verify `entity_snapshots` table populated
-- [ ] Live E2E of Features 1-6 &mdash; start both servers, run experiment with `enable_audit=True`, `enable_echo_detector=True`, verify SSE events fire
+- [ ] Live E2E of Features 1-6 &mdash; start both servers, run with `enable_audit=True`, `enable_echo_detector=True`, verify SSE events fire
 
 ## 4. Architecture (v28.0)
 ```

@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-02-28 (session 31 &mdash; verify + push session 30 commits)
+**Last Updated:** 2026-02-28 (session 31 &mdash; verify + push; live Playwright automation)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -12,7 +12,7 @@ A standalone shareable web app where AI models talk to each other in real-time &
 - **Real-time:** Server-Sent Events (SSE) with persistence via `system_events`
 - **Frontend:** React 19 + Vite 7 + Tailwind 3.4
 - **Database:** SQLite (WAL mode) with async background writer queue
-- **Testing:** Playwright E2E (smoke.spec.ts, smoke-live.spec.ts, features-1-6.spec.ts, rpg-campaign.spec.ts) &mdash; local only
+- **Testing:** Playwright E2E (smoke, smoke-live, features-1-6, live-features, rpg-campaign) &mdash; local only
 
 ## 3. Current State
 
@@ -32,29 +32,28 @@ See `docs/CHANGELOG.md` &mdash; RPG Hub, visual assets, AI vs AI Observatory, ca
 - [x] **Multi-skill accessibility + pattern audit** &mdash; AgendaRevealOverlay focus trap + Esc; EchoChamberWarning keyboard dismiss; Theater textarea aria-label; `transition: all` anti-pattern fix; `prefers-reduced-motion` block; relay.py dead code cleanup
 
 ### Session 29 - E2E Testing (SHIPPED `725c64a`)
-- [x] **Bug fix:** `Analytics.tsx:74` &mdash; `radarRes.models` null-deref crash for RPG experiments (radar endpoint returns `{"models": null}` for multi-participant sessions); added null guard
-- [x] **E2E spec:** `ui/e2e/features-1-6.spec.ts` &mdash; 12 tests covering all 6 session 27-28 features; 16/18 passing (2 skipped need live verdict/running data)
-- [x] **Double-fetch investigated** &mdash; `/api/presets` fetched twice on home page; confirmed React Strict Mode dev behavior (dev-only, not a production bug)
-- [x] **E2E spec:** `ui/e2e/smoke-live.spec.ts` &mdash; 2 self-provisioning tests (verdict panel + SSE reconnect); replace the 2 previously-skipped smoke tests; run with `npm run test:e2e -- smoke-live`
+- [x] **Bug fix:** `Analytics.tsx:74` &mdash; `radarRes.models` null-deref crash for RPG experiments; added null guard
+- [x] **E2E spec:** `ui/e2e/features-1-6.spec.ts` &mdash; 12 tests covering all 6 session 27-28 features
+- [x] **E2E spec:** `ui/e2e/smoke-live.spec.ts` &mdash; 2 self-provisioning tests (verdict panel + SSE reconnect)
 
-### Session 30 - Bug Fixes + Insights Synthesis (SHIPPED `317ea25`, pushed session 31)
+### Session 30 - Bug Fixes + Insights Synthesis (SHIPPED `317ea25`)
 - [x] **Gallery CHM chip** &mdash; LEFT JOIN collaboration_metrics; `chm_score` chip on completed experiment rows (teal, `CHM 0.72`)
-- [x] **fix(theater):** `agents_config_json` was NULL for all standard 2-agent experiments &mdash; `parseAgents()` fell back to `model.split('/').pop()` which didn't match `get_display_name()` strings; Theater showed 0 turns for URL-navigated experiments. Fixed in relay.py.
-- [x] **smoke-live.spec.ts** &mdash; fixed SSE `networkidle` timeout, `max_tokens` minimum (100), `data-testid="turn-bubble"` selector; all 2/2 passing
-- [x] **Insights synthesis** &mdash; 6 CLAUDE.md improvements (Rule 3 strengthened, Rule 10 deduped, Playwright+SSE pitfall, agents_config_json pitfall, Uvicorn caveat, Tests line)
+- [x] **fix(theater):** `agents_config_json` NULL for 2-agent experiments &mdash; Theater showed 0 turns. Fixed in relay.py.
+- [x] **smoke-live.spec.ts** &mdash; fixed SSE `networkidle` timeout, `max_tokens` minimum (100), `data-testid="turn-bubble"` selector
+- [x] **Insights synthesis** &mdash; 6 CLAUDE.md improvements
 
-### Session 31 - Verify + Push
-- [x] Full test suite run: tsc 0 errors, features-1-6.spec.ts 12/12, smoke.spec.ts 4/2-skipped
-- [x] Opus 4.6 code review: SAFE TO PUSH verdict
-- [x] Pushed 5 session 30 commits to origin/master (`0f82fac..317ea25`)
-- [!] GitHub Dependabot: 1 high vulnerability on default branch &mdash; check `github.com/shadepants/Babel/security`
+### Session 31 - Verify + Push + Live Playwright Automation (SHIPPED `bbe175b`)
+- [x] Full test suite: tsc 0 errors, features-1-6 12/12, smoke 4/2-skipped
+- [x] Opus 4.6 review: SAFE TO PUSH; pushed sessions 29-30 commits (`0f82fac..317ea25`)
+- [x] `ui/e2e/live-features.spec.ts` &mdash; 4 live self-provisioning tests covering F1+F4, F3, F6, A2; all 4 pass (37.8s)
+- [x] `ui/e2e/rpg-campaign.spec.ts` &mdash; fixed stale selector `.animate-fade-in.py-2` &rarr; `.animate-fade-in.py-5, .animate-fade-in.py-3`
+- [!] GitHub Dependabot: 1 high vulnerability &mdash; check `github.com/shadepants/Babel/security`
 
 ### Next
-- [ ] A2: Visual test &mdash; run pure-AI RPG session; verify companion colors, DM prose, companion cards
-- [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard
-- [ ] Entity snapshot quality check &mdash; after session completes, verify `entity_snapshots` table populated
-- [ ] Live E2E of Features 1-6 &mdash; start both servers, run with `enable_audit=True`, `enable_echo_detector=True`, verify SSE events fire
+- [ ] A3: P11 regression &mdash; Deepseek DM + non-Groq party, verify phantom NPC guard (needs Deepseek API key)
+- [ ] Entity snapshot quality check &mdash; after RPG session completes, verify `entity_snapshots` table populated
 - [ ] Investigate Dependabot high-severity vulnerability
+- [ ] F6 agendas 404 &mdash; `revelation_round=1` returned 404 from `/agendas`; investigate whether hidden_goals are stored correctly for 2-agent experiments
 
 ## 4. Architecture (v28.0)
 ```
@@ -80,6 +79,7 @@ Babel/
     components/theater/
       AgendaRevealOverlay.tsx  Full-screen agenda reveal with focus trap [session 28]
       EchoChamberWarning.tsx   Amber HUD similarity meter [session 28]
+      RPGTheater.tsx      DM turns: animate-fade-in.py-5 | companion turns: animate-fade-in.py-3
       DiceOverlay.tsx     Cinematic full-screen dice event
       SpriteAvatar.tsx    winner sparkle + loser fragments
     components/analytics/
@@ -87,17 +87,16 @@ Babel/
     components/configure/
       PairingOracle.tsx   Ranked model pairing cards with Apply button [session 28]
     pages/
-      RPGHub.tsx          Campaign preset browser
-      Campaign.tsx        DM_BLOCKED_MODELS filter
       Gallery.tsx         audit/rpg/inherited/adversarial mode badges + CHM chip [session 30]
       Dictionary.tsx      5th evolution tab with seed chain visualization [session 28]
       Configure.tsx       adversarial + echo + vocabulary seed + oracle sections [session 28]
       Analytics.tsx       Chemistry section + adversarial verdict display [session 28]
   ui/e2e/
-    smoke.spec.ts         6 smoke checks (sprites, border, glitch); 2 skipped (need live data)
-    smoke-live.spec.ts    2 self-provisioning tests: verdict panel + SSE reconnect [session 29]
+    smoke.spec.ts         6 smoke checks; 2 skipped (replaced by smoke-live)
+    smoke-live.spec.ts    2 self-provisioning: verdict panel + SSE reconnect [session 29]
     features-1-6.spec.ts  12 tests for session 27-28 features [session 29]
-    rpg-campaign.spec.ts  Full 4-round RPG campaign E2E (needs live LLM, run manually)
+    live-features.spec.ts 4 live tests: F1+F4+F3+F6+A2 with real LLM calls [session 31]
+    rpg-campaign.spec.ts  Full 4-round RPG campaign E2E (run manually) [selector fixed s31]
   .claude/launch.json     preview_start configs: backend (:8000) + frontend (:5173)
   .github/workflows/ci.yml  Backend + frontend CI (push/PR to master)
 ```
@@ -112,8 +111,8 @@ Babel/
 - **CI scope:** E2E tests excluded from CI (need live servers + DB). Run locally with `npm run test:e2e`.
 - **RPG entry point:** /rpg-hub only. SeedLab no longer has an RPG card.
 - **React hook order:** ALL hooks BEFORE any conditional early return (Rules of Hooks).
-- **TurnBubble accentColor:** pass hex string for agents 2+ (emerald `#10B981`, violet `#8B5CF6`).
 - **Playwright `text=// label`:** Playwright treats `//` as regex delimiters &mdash; use `.neural-section-label:has-text("label")` instead.
-- **React Strict Mode double-fetch:** `/api/presets` (and all useEffect fetches) fire twice in dev &mdash; Strict Mode dev-only behavior, not a bug.
-- **Chemistry + Oracle dependency:** Oracle requires chemistry data; run Feature 4 first (already shipped together).
+- **React Strict Mode double-fetch:** `/api/presets` fires twice in dev &mdash; Strict Mode behavior, not a bug.
+- **`hidden_goals` schema:** `list[dict]` with `{agent_index: int, goal: str}` &mdash; NOT `list[str]` (422 validation error).
+- **RPG Theater turn selectors:** DM turns `.animate-fade-in.py-5` | companion/NPC turns `.animate-fade-in.py-3` (not py-2).
 - **Adversarial mode:** hidden goals ONLY injected for the correct `agent_index`; other agents never see them.

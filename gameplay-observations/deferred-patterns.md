@@ -1,4 +1,4 @@
-# Deferred Patterns -- Review After 10+ RPG Sessions
+﻿# Deferred Patterns -- Review After 10+ RPG Sessions
 
 Observations from early runs that need more data before acting on.
 Each entry: what was seen, how many times, what to look for to confirm.
@@ -202,7 +202,8 @@ obvious mediator role. Does Deepseek still invent a phantom mediator?
 **Update (2026-02-25, stress batch, 328a64955ac5):** REGRESSION NOT TESTED. Groq daily
 token limit (100k TPD) exhausted at session 7 in the batch. 0 rounds produced. Narrator
 guard vs Deepseek phantom NPC not verified. Must rerun with non-Groq party composition.
-**Status: 3 variant instances. Narrator guard applied. Regression test FAILED (Groq TPD 2026-02-25). Rerun needed.**
+**Update (2026-03-01, session 31, p11-regression.spec.ts):** GUARD CONFIRMED. Deepseek DM ran 3-round conflict-heavy diplomatic session (non-Groq party: Claude Haiku + Gemini Flash). Zero phantom NPCs detected in DM turns -- pure third-person narration throughout. Automated Playwright test passes.
+**Status: 3 variant instances. Narrator guard CONFIRMED (2026-03-01). CLOSED.**
 
 ---
 
@@ -278,7 +279,8 @@ Pattern promotion summary:
 - PROMOTED (2026-02-24): P2, P4, P5
 - PROMOTED (2026-02-25, pre-batch): P9 (Groq brevity), P10 (DM character capture), P12 (coop drift)
 - PROMOTED (2026-02-25, stress batch): P7 (adversarial drama), P8 (GPT-4o-mini overreach), P13 (deception)
-- Deferred still active: P1 (8-round zone), P6 (need 2 more DMs), P11 (regression failed)
+- Deferred still active: P1 (8-round zone), P6 (need 2 more DMs)
+- Closed (guard confirmed 2026-03-01): P11 (narrator discipline guard held -- see status above)
 - Closed/Fixed: P3 (cross-mode bleed), P10 first-person (narrator guard working)
 - New sub-pattern: DM bracket overreach (model-agnostic, guard gap, see P10 entry)
 - New candidate: P14 (Gemini confabulation under pressure)

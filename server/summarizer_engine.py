@@ -137,10 +137,16 @@ async def generate_entity_snapshot(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_tokens=800,
+            max_tokens=2000,
             temperature=0.3,
         )
-        raw = res.choices[0].message.content
+        choice = res.choices[0]
+        if choice.finish_reason == "length":
+            logger.warning(
+                "Entity snapshot truncated by max_tokens for %s — increase limit or shorten prompt",
+                match_id,
+            )
+        raw = choice.message.content
         return json.loads(raw)
 
     except Exception as exc:

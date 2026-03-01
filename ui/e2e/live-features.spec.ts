@@ -1,4 +1,4 @@
-/**
+﻿/**
  * live-features.spec.ts -- Live automation for Next-session items (session 31)
  *
  * Self-provisioning tests that cover the remaining manual "Next" checklist:
@@ -194,11 +194,11 @@ test('F6: adversarial /agendas endpoint returns data after revelation_round', as
   await waitForCompletion(request, match_id, 80_000)
   console.log('Adversarial experiment completed.')
 
-  // /agendas: 200 = revealed, 403 = pre-revelation, 404 = not adversarial
-  // Never 500.
+  // Experiment is completed -- hidden_goals_json must be stored, so /agendas must return 200
   const agendasRes = await request.get(`${API}/experiments/${match_id}/agendas`)
-  expect([200, 403, 404]).toContain(agendasRes.status())
-  expect(agendasRes.status()).not.toBe(500)
+  expect(agendasRes.status()).toBe(200)
+
+
 
   if (agendasRes.ok()) {
     const { hidden_goals } = await agendasRes.json()

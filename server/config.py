@@ -1,8 +1,13 @@
 """Babel configuration -- settings, defaults, and model registry."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    import asyncio
 
 # Load .env from project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -96,6 +101,94 @@ DEFAULT_MAX_TOKENS = 1500
 JUDGE_MODEL = "gemini/gemini-2.5-flash"
 DEFAULT_SCORING_ENABLED = False
 DEFAULT_VERDICT_ENABLED = False
+
+
+# -- RelayConfig -------------------------------------------------------------
+# Consolidates the optional feature-flag parameters for run_relay().
+# Pass an instance to run_relay() instead of 20+ individual keyword args.
+# All fields mirror the existing run_relay() keyword arguments exactly so
+# callers can construct this from request body fields without logic changes.
+
+@dataclass
+class RelayConfig:
+    """Optional feature flags and settings for a relay session.
+
+    Required operational params (match_id, agents, hub, db, seed,
+    system_prompt, rounds) remain as direct run_relay() parameters.
+    Everything else lives here.
+    """
+    # Timing
+    turn_delay_seconds: float = 2.0
+
+    # Recovery / resume
+    start_round: int = 1
+    initial_history: list[dict] = field(default_factory=list)
+
+    # Experiment metadata
+    preset: str | None = None
+    parent_experiment_id: str | None = None
+
+    # Pause / cancel (passed as events, not serializable -- set at call time)
+    cancel_event: object = None   # asyncio.Event | None
+    resume_event: object = None   # asyncio.Event | None
+
+    # Background task tracking
+    background_tasks: object = None  # set[asyncio.Task] | None
+
+    # Judge / scoring
+    judge_model: str = JUDGE_MODEL
+    enable_scoring: bool = False
+    enable_verdict: bool = False
+
+    # Memory
+    enable_memory: bool = False
+
+    # Echo chamber detection
+    enable_echo_detector: bool = False
+    enable_echo_intervention: bool = False
+    echo_warn_threshold: float = 0.65
+    echo_intervene_threshold: float = 0.88
+
+    # Adversarial mode (Feature 6)
+    hidden_goals: list[dict] = field(default_factory=list)
+    revelation_round: int | None = None
+
+    # Linguistic evolution (Feature 2)
+    vocabulary_seed: list[dict] = field(default_factory=list)
+
+    # Recursive audit (Feature 1)
+    enable_audit: bool = False
+
+    # Observer (future use)
+    observer_model: str | None = None
+    observer_interval: int = 3
+
+
+
+@dataclass
+class RPGConfig:
+    """Run parameters for an RPG session.
+
+    Infrastructure params (hub, db, cancel_event, human_event, background_tasks)
+    remain as direct run_rpg_match() arguments since they are not serialisable.
+    Everything else lives here so the call site stays clean.
+    """
+    # Required run parameters
+    participants: list[dict] = field(default_factory=list)
+    seed: str = ""
+    system_prompt: str = ""
+    rounds: int = 5
+
+    # Campaign identity
+    preset: str | None = None
+    participant_persona_ids: list[str | None] | None = None
+
+    # Campaign settings (tone, setting, difficulty, hook from RPG config panel)
+    campaign_config: dict | None = None
+
+    # Recovery: resume from mid-session (used by recover_stale_sessions)
+    start_round: int = 1
+    start_index: int = 0
 
 
 # -- Model Registry ----------------------------------------------------------

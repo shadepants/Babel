@@ -21,6 +21,7 @@ from server.config import (
     CLASS_ACTION_TEMPLATES,
     COMPANION_SYSTEM_PROMPT,
     DEFAULT_RPG_SYSTEM_PROMPT,
+    RPGConfig,
 )
 from server.db import Database
 from server.event_hub import EventHub
@@ -125,23 +126,28 @@ async def _generate_action_menu(
 
 async def run_rpg_match(
     match_id: str,
-    participants: list[dict],
-    seed: str,
-    system_prompt: str,
-    rounds: int,
+    config: RPGConfig,
     hub: EventHub,
     db: Database,
     human_event: asyncio.Event,
     cancel_event: asyncio.Event | None = None,
-    preset: str | None = None,
-    participant_persona_ids: list[str | None] | None = None,
-    rpg_config: dict | None = None,
-    # Recovery: start parameters
-    start_round: int = 1,
-    start_index: int = 0,
     background_tasks: set[asyncio.Task] | None = None,
 ) -> None:
-    """Run an RPG session with human-in-the-loop yielding."""
+    """Run an RPG session with human-in-the-loop yielding.
+
+    Infrastructure params (hub, db, cancel_event, human_event, background_tasks)
+    are kept as direct args; all run configuration lives in ``config``.
+    """
+    # Unpack config fields into local names (keeps the rest of the function unchanged)
+    participants = config.participants
+    seed = config.seed
+    system_prompt = config.system_prompt
+    rounds = config.rounds
+    preset = config.preset
+    participant_persona_ids = config.participant_persona_ids
+    rpg_config = config.campaign_config
+    start_round = config.start_round
+    start_index = config.start_index
     # Build RelayAgent list for build_messages
     relay_agents = [
         RelayAgent(name=p["name"], model=p["model"])

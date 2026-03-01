@@ -17,6 +17,9 @@ export interface AgentConfig {
   name?: string;
 }
 
+/** Configure form state: model + temperature per agent slot (no name needed pre-launch). */
+export interface AgentSlot { model: string; temperature: number }
+
 /** RPG campaign participant (extended with class + motivation) */
 export interface RPGParticipant {
   name: string;

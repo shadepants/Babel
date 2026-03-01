@@ -6,7 +6,10 @@ and itself auditable. Two analyst models discuss the original transcript.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -72,24 +75,12 @@ async def run_audit(
             "Be specific and cite examples from the transcript."
         )
 
-        # Import here to avoid circular imports
-        from server.relay_engine import RelayAgent, run_relay
-        import uuid
-        from datetime import datetime, timezone
+        # Import relay internals here to avoid circular imports at module load time
+        from server.relay_engine import (
+            RelayAgent, run_relay, _bg_task, track_task, _log_task_exception
+        )
 
         audit_match_id = str(uuid.uuid4())
-
-        # Create audit experiment in DB
-        await db.create_experiment(
-            model_a=DEFAULT_AUDIT_MODELS[0],
-            model_b=DEFAULT_AUDIT_MODELS[1],
-            seed=seed[:500],
-            system_prompt=system_prompt,
-            rounds_planned=AUDIT_ROUNDS,
-            preset="audit",
-        )
-        # The create_experiment generates its own ID; we need to use our own
-        # Actually, let's use the relay pattern which creates the experiment
 
         agents = [
             RelayAgent(
@@ -106,32 +97,27 @@ async def run_audit(
             ),
         ]
 
-        import asyncio
-        from server.relay_engine import _bg_task, track_task, _log_task_exception
-
         # Create the audit experiment record
-        from server.db import Database
-        audit_id = audit_match_id
         now = datetime.now(timezone.utc).isoformat()
         await db._execute_queued(
             """INSERT INTO experiments
                 (id, created_at, model_a, model_b, preset, seed, system_prompt,
                  rounds_planned, status, mode, parent_experiment_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 'audit', ?)""",
-            (audit_id, now, DEFAULT_AUDIT_MODELS[0], DEFAULT_AUDIT_MODELS[1],
+            (audit_match_id, now, DEFAULT_AUDIT_MODELS[0], DEFAULT_AUDIT_MODELS[1],
              "audit", seed[:500], system_prompt, AUDIT_ROUNDS, source_experiment_id),
         )
 
         # Update source experiment with back-reference
         await db._execute_queued(
             "UPDATE experiments SET audit_experiment_id = ? WHERE id = ?",
-            (audit_id, source_experiment_id),
+            (audit_match_id, source_experiment_id),
         )
 
         # Fire the relay
         _audit_task = asyncio.create_task(
             _bg_task(run_relay(
-                match_id=audit_id,
+                match_id=audit_match_id,
                 agents=agents,
                 seed=seed,
                 system_prompt=system_prompt,
@@ -153,10 +139,10 @@ async def run_audit(
 
         hub.publish("relay.audit_started", {
             "match_id": source_experiment_id,
-            "audit_experiment_id": audit_id,
+            "audit_experiment_id": audit_match_id,
         })
-        logger.info("Audit experiment %s launched for source %s", audit_id, source_experiment_id)
-        return audit_id
+        logger.info("Audit experiment %s launched for source %s", audit_match_id, source_experiment_id)
+        return audit_match_id
 
     except Exception as exc:
         logger.error("Audit launch failed for %s: %s", source_experiment_id, exc)

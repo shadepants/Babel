@@ -29,6 +29,7 @@ from server.config import (
     DEFAULT_VERDICT_ENABLED,
     JUDGE_MODEL,
     MODEL_REGISTRY,
+    RPGConfig,
     get_display_name,
 )
 
@@ -127,161 +128,116 @@ def _get_db(request: Request):
     return db
 
 
-# -- Endpoints ---------------------------------------------------------------
 
-@router.post("/start", response_model=RelayStartResponse)
-async def start_relay(body: RelayStartRequest, request: Request):
-    """Create a new experiment and launch the relay in the background."""
-    db = _get_db(request)
-    hub = _get_hub(request)
+def _validate_and_resolve_agents(
+    body: "RelayStartRequest",
+) -> tuple[list | None, str]:
+    """Validate model references and resolve the agent list.
 
-    # -- Resolve agents list (N-way preferred; fall back to legacy model_a/model_b) --
+    Returns ``(resolved_agents, resolved_judge)``.
+    ``resolved_agents`` is ``None`` for the legacy 2-agent path
+    (caller should read ``body.model_a`` / ``body.model_b`` instead).
+    """
     if body.agents and len(body.agents) >= 2:
         if len(body.agents) > 4:
             raise HTTPException(400, "Maximum 4 agents supported")
         for ac in body.agents:
             if ac.model not in _ALLOWED_MODELS:
                 raise HTTPException(400, f"Model '{ac.model}' is not in the allowed registry")
-        resolved_agents = body.agents
+        resolved_agents: list | None = body.agents
     else:
-        # Legacy 2-agent path â€” validate model_a / model_b
+        # Legacy 2-agent path -- validate model_a / model_b
         for model in (body.model_a, body.model_b):
             if model not in _ALLOWED_MODELS:
                 raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
         resolved_agents = None  # signals "use legacy model_a/model_b path"
 
-    # Resolve judge model â€” use request value if provided, else fall back to server default
     resolved_judge = body.judge_model or JUDGE_MODEL
     if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
         raise HTTPException(400, f"Judge model '{resolved_judge}' is not in the allowed registry")
     if body.observer_model and body.observer_model not in _ALLOWED_MODELS:
         raise HTTPException(400, f"Observer model '{body.observer_model}' is not in the allowed registry")
 
-    # Resolve preset if specified (server is authoritative source of truth)
-    seed = body.seed
-    system_prompt = body.system_prompt
-    if body.preset:
-        presets = getattr(request.app.state, "presets", {})
-        preset_data = presets.get(body.preset)
-        if preset_data:
-            seed = preset_data.get("seed", seed)
-            system_prompt = preset_data.get("system_prompt", system_prompt)
+    return resolved_agents, resolved_judge
 
-    # RPG mode: swap out the conlang default for an RPG-appropriate system prompt
-    # (only when the caller hasn't provided a custom prompt)
-    if body.mode == "rpg" and system_prompt == DEFAULT_SYSTEM_PROMPT:
-        system_prompt = DEFAULT_RPG_SYSTEM_PROMPT
 
-    # Create experiment record
-    config = {
-        "temperature_a": body.temperature_a,
-        "temperature_b": body.temperature_b,
-        "max_tokens": body.max_tokens,
-        # Full recovery config -- used by recover_stale_sessions() on server restart
-        "recovery": {
-            "mode": body.mode,
-            "agents": (
-                [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
-                 for ac in resolved_agents]
-                if resolved_agents else
-                [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
-                 {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
-            ),
-            "turn_delay_seconds": body.turn_delay_seconds,
-            "preset": body.preset,
-            "enable_scoring": body.enable_scoring,
-            "enable_verdict": body.enable_verdict,
-            "enable_memory": body.enable_memory,
-            "observer_model": body.observer_model,
-            "observer_interval": body.observer_interval,
-            "participants": body.participants,
-            "rpg_config": body.rpg_config,
-        },
-    }
-    participants_json = json.dumps(body.participants) if body.participants else None
-    # Serialise agents list for create_experiment (it handles model_a/model_b population)
-    agents_dicts = (
-        [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
-         for ac in resolved_agents]
-        if resolved_agents else
-        [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
-         {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
-    )
-    match_id = await db.create_experiment(
-        model_a=body.model_a,
-        model_b=body.model_b,
+async def _start_rpg_relay(
+    match_id: str,
+    body: "RelayStartRequest",
+    request: Request,
+    db,
+    hub,
+    cancel_event: asyncio.Event,
+    seed: str,
+    system_prompt: str,
+) -> "RelayStartResponse":
+    """Validate RPG participants, launch rpg_engine, and return the response."""
+    # Validate participant models against the registry (skip "human" slots)
+    for p in body.participants:
+        p_model = p.get("model") if isinstance(p, dict) else getattr(p, "model", None)
+        if p_model and p_model != "human" and p_model not in _ALLOWED_MODELS:
+            raise HTTPException(400, f"Participant model '{p_model}' is not in the allowed registry")
+
+    human_event = asyncio.Event()
+    request.app.state.human_events[match_id] = human_event
+
+    from server.rpg_engine import run_rpg_match
+    rpg_cfg = RPGConfig(
+        participants=body.participants,
         seed=seed,
         system_prompt=system_prompt,
-        rounds_planned=body.rounds,
+        rounds=body.rounds,
         preset=body.preset,
-        config=config,
-        temperature_a=body.temperature_a,
-        temperature_b=body.temperature_b,
-        judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
-        enable_scoring=body.enable_scoring,
-        enable_verdict=body.enable_verdict,
-        mode=body.mode,
-        participants_json=participants_json,
-        parent_experiment_id=body.parent_experiment_id,
-        fork_at_round=body.fork_at_round,
-        agents=agents_dicts,
-        hidden_goals=body.hidden_goals,
+        participant_persona_ids=body.persona_ids,
+        campaign_config=body.rpg_config,
+    )
+    task = asyncio.create_task(run_rpg_match(
+        match_id=match_id,
+        config=rpg_cfg,
+        hub=hub,
+        db=db,
+        human_event=human_event,
+        cancel_event=cancel_event,
+        background_tasks=request.app.state.background_tasks,
+    ))
+
+    resume_event = asyncio.Event()
+    resume_event.set()
+    _running_relays[match_id] = (task, cancel_event, resume_event)
+
+    def _cleanup_rpg(t: asyncio.Task) -> None:
+        _running_relays.pop(match_id, None)
+        request.app.state.human_events.pop(match_id, None)
+
+    task.add_done_callback(_cleanup_rpg)
+
+    logger.info(
+        "RPG started: %s -- %d participants, %d rounds",
+        match_id, len(body.participants), body.rounds,
     )
 
-    cancel_event = asyncio.Event()
+    return RelayStartResponse(
+        match_id=match_id,
+        model_a=body.model_a,
+        model_b=body.model_b,
+        rounds=body.rounds,
+        status="running",
+    )
 
-    # -- RPG mode: launch rpg_engine instead of relay --
-    if body.mode == "rpg" and body.participants:
-        # Validate participant models against the registry (skip "human" slots)
-        for p in body.participants:
-            p_model = p.get("model") if isinstance(p, dict) else getattr(p, "model", None)
-            if p_model and p_model != "human" and p_model not in _ALLOWED_MODELS:
-                raise HTTPException(400, f"Participant model '{p_model}' is not in the allowed registry")
 
-        human_event = asyncio.Event()
-        request.app.state.human_events[match_id] = human_event
-
-        from server.rpg_engine import run_rpg_match
-        task = asyncio.create_task(run_rpg_match(
-            match_id=match_id,
-            participants=body.participants,
-            seed=seed,
-            system_prompt=system_prompt,
-            rounds=body.rounds,
-            hub=hub,
-            db=db,
-            human_event=human_event,
-            cancel_event=cancel_event,
-            preset=body.preset,
-            participant_persona_ids=body.persona_ids,
-                        rpg_config=body.rpg_config,
-                        background_tasks=request.app.state.background_tasks,
-                    )
-                )
-            
-        resume_event = asyncio.Event()
-        resume_event.set()
-        _running_relays[match_id] = (task, cancel_event, resume_event)
-
-        def _cleanup_rpg(t: asyncio.Task):
-            _running_relays.pop(match_id, None)
-            request.app.state.human_events.pop(match_id, None)
-        task.add_done_callback(_cleanup_rpg)
-
-        logger.info(
-            "RPG started: %s -- %d participants, %d rounds",
-            match_id, len(body.participants), body.rounds,
-        )
-
-        return RelayStartResponse(
-            match_id=match_id,
-            model_a=body.model_a,
-            model_b=body.model_b,
-            rounds=body.rounds,
-            status="running",
-        )
-
-    # -- Standard relay mode --
+async def _start_standard_relay(
+    match_id: str,
+    body: "RelayStartRequest",
+    request: Request,
+    db,
+    hub,
+    cancel_event: asyncio.Event,
+    seed: str,
+    system_prompt: str,
+    resolved_agents: list | None,
+    resolved_judge: str,
+) -> "RelayStartResponse":
+    """Build the RelayAgent list, attach personas/vocab, launch run_relay, and return the response."""
     # Build RelayAgent list: N-way if agents provided, else legacy 2-agent
     if resolved_agents:
         relay_agents = [
@@ -365,8 +321,9 @@ async def start_relay(body: RelayStartRequest, request: Request):
     )
     _running_relays[match_id] = (task, cancel_event, resume_event)
 
-    def _cleanup_task(t: asyncio.Task):
+    def _cleanup_task(t: asyncio.Task) -> None:
         _running_relays.pop(match_id, None)
+
     task.add_done_callback(_cleanup_task)
 
     agent_names = " / ".join(a.name for a in relay_agents)
@@ -384,6 +341,98 @@ async def start_relay(body: RelayStartRequest, request: Request):
     )
 
 
+# -- Endpoints ---------------------------------------------------------------
+
+@router.post("/start", response_model=RelayStartResponse)
+async def start_relay(body: RelayStartRequest, request: Request):
+    """Create a new experiment and launch the relay in the background."""
+    db = _get_db(request)
+    hub = _get_hub(request)
+
+    # -- Validate model references and resolve agent list --
+    resolved_agents, resolved_judge = _validate_and_resolve_agents(body)
+
+    # -- Resolve preset if specified (server is authoritative source of truth) --
+    seed = body.seed
+    system_prompt = body.system_prompt
+    if body.preset:
+        presets = getattr(request.app.state, "presets", {})
+        preset_data = presets.get(body.preset)
+        if preset_data:
+            seed = preset_data.get("seed", seed)
+            system_prompt = preset_data.get("system_prompt", system_prompt)
+
+    # RPG mode: swap out the conlang default for an RPG-appropriate system prompt
+    # (only when the caller hasn't provided a custom prompt)
+    if body.mode == "rpg" and system_prompt == DEFAULT_SYSTEM_PROMPT:
+        system_prompt = DEFAULT_RPG_SYSTEM_PROMPT
+
+    # -- Create experiment record --
+    config = {
+        "temperature_a": body.temperature_a,
+        "temperature_b": body.temperature_b,
+        "max_tokens": body.max_tokens,
+        # Full recovery config -- used by recover_stale_sessions() on server restart
+        "recovery": {
+            "mode": body.mode,
+            "agents": (
+                [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+                 for ac in resolved_agents]
+                if resolved_agents else
+                [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+                 {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
+            ),
+            "turn_delay_seconds": body.turn_delay_seconds,
+            "preset": body.preset,
+            "enable_scoring": body.enable_scoring,
+            "enable_verdict": body.enable_verdict,
+            "enable_memory": body.enable_memory,
+            "observer_model": body.observer_model,
+            "observer_interval": body.observer_interval,
+            "participants": body.participants,
+            "rpg_config": body.rpg_config,
+        },
+    }
+    # Serialise agents list for create_experiment (it handles model_a/model_b population)
+    agents_dicts = (
+        [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+         for ac in resolved_agents]
+        if resolved_agents else
+        [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+         {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
+    )
+    match_id = await db.create_experiment(
+        model_a=body.model_a,
+        model_b=body.model_b,
+        seed=seed,
+        system_prompt=system_prompt,
+        rounds_planned=body.rounds,
+        preset=body.preset,
+        config=config,
+        temperature_a=body.temperature_a,
+        temperature_b=body.temperature_b,
+        judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+        enable_scoring=body.enable_scoring,
+        enable_verdict=body.enable_verdict,
+        mode=body.mode,
+        participants_json=json.dumps(body.participants) if body.participants else None,
+        parent_experiment_id=body.parent_experiment_id,
+        fork_at_round=body.fork_at_round,
+        agents=agents_dicts,
+        hidden_goals=body.hidden_goals,
+    )
+
+    cancel_event = asyncio.Event()
+
+    # -- Dispatch to the appropriate launch helper --
+    if body.mode == "rpg" and body.participants:
+        return await _start_rpg_relay(
+            match_id, body, request, db, hub, cancel_event, seed, system_prompt
+        )
+    return await _start_standard_relay(
+        match_id, body, request, db, hub, cancel_event, seed, system_prompt,
+        resolved_agents, resolved_judge,
+    )
 @router.post("/{match_id}/stop")
 async def stop_relay(match_id: str, request: Request):
     """Stop a running experiment. Sets cancel flag checked between rounds."""
@@ -788,28 +837,31 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
                     human_event.set()
 
                 from server.rpg_engine import run_rpg_match
-                
+
                 turns_done = session.get("rounds_completed") or 0
                 rounds_total = session.get("rounds_planned") or 5
-                # rounds parameter in run_rpg_match is 'total rounds to run', 
+                # rounds parameter in run_rpg_match is 'total rounds to run',
                 # but engines treat it as 'remaining rounds' from start_round.
                 # Here we calculate rounds remaining to match the planned total.
                 rounds_remaining = rounds_total - (rpg_state["current_round"] - 1)
 
-                task = asyncio.create_task(run_rpg_match(
-                    match_id=match_id,
+                rpg_cfg = RPGConfig(
                     participants=recovery.get("participants", []),
                     seed=session["seed"],
                     system_prompt=session["system_prompt"],
                     rounds=rounds_remaining,
+                    preset=recovery.get("preset"),
+                    campaign_config=recovery.get("rpg_config"),
+                    start_round=rpg_state["current_round"],
+                    start_index=rpg_state["current_speaker_idx"],
+                )
+                task = asyncio.create_task(run_rpg_match(
+                    match_id=match_id,
+                    config=rpg_cfg,
                     hub=hub,
                     db=db,
                     human_event=human_event,
                     cancel_event=cancel_event,
-                    preset=recovery.get("preset"),
-                    rpg_config=recovery.get("rpg_config"),
-                    start_round=rpg_state["current_round"],
-                    start_index=rpg_state["current_speaker_idx"],
                     background_tasks=background_tasks,
                 ))
                 

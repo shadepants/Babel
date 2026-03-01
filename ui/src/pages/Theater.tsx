@@ -15,38 +15,10 @@ import { EndSessionModal } from '@/components/theater/EndSessionModal'
 import { DiceOverlay } from '@/components/theater/DiceOverlay'
 import { EchoChamberWarning } from '@/components/theater/EchoChamberWarning'
 import { AgendaRevealOverlay } from '@/components/theater/AgendaRevealOverlay'
-import type { AgentConfig, ExperimentRecord, TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
+import type { ObserverEvent } from '@/api/types'
 import { resolveWinnerIndex } from '@/lib/spriteStatus'
-
-const COLOR_DEFAULT = '#8b5cf6'
-
-// ── helpers ─────────────────────────────────────────────────────
-
-interface AgentSlot { name: string; model: string }
-
-/** Parse agent display slots from an experiment record.
- *  Prefers agents_config_json; falls back to legacy model_a/model_b columns.
- *  locationNames: [nameA, nameB] from router state (accurate display names for legacy experiments). */
-function parseAgents(exp: ExperimentRecord, locationNames: [string, string]): AgentSlot[] {
-  if (exp.agents_config_json) {
-    try {
-      const parsed = JSON.parse(exp.agents_config_json) as AgentConfig[]
-      if (Array.isArray(parsed) && parsed.length >= 2) {
-        return parsed.map((a) => ({
-          model: a.model,
-          name: a.name || a.model.split('/').pop() || a.model,
-        }))
-      }
-    } catch { /* fall through */ }
-  }
-  // Legacy 2-agent: prefer location.state display names, fall back to split heuristic
-  const nameA = locationNames[0] || exp.model_a.split('/').pop() || exp.model_a
-  const nameB = locationNames[1] || exp.model_b.split('/').pop() || exp.model_b
-  return [
-    { model: exp.model_a, name: nameA },
-    { model: exp.model_b, name: nameB },
-  ]
-}
+import { useTheaterData } from '@/hooks/useTheaterData'
+import { useColorBleed } from '@/hooks/useColorBleed'
 
 // ── component ───────────────────────────────────────────────────
 
@@ -59,19 +31,17 @@ export default function Theater() {
   const locNameA = (location.state as { modelAName?: string })?.modelAName ?? ''
   const locNameB = (location.state as { modelBName?: string })?.modelBName ?? ''
 
-  // Agent slots: source of truth for display names + models
-  const [agentSlots, setAgentSlots] = useState<AgentSlot[]>([
-    { name: locNameA, model: '' },
-    { name: locNameB, model: '' },
-  ])
-  const [preset, setPreset] = useState<string | null>(null)
-  const [parentId, setParentId] = useState<string | null>(null)
-
-  // DB fallback: turns + scores + verdict loaded when SSE history is gone
-  const [dbTurns, setDbTurns]     = useState<TurnEvent[]>([])
-  const [dbScores, setDbScores]   = useState<Record<number, ScoreEvent>>({})
-  const [dbVerdict, setDbVerdict] = useState<{ winner: string; winner_model: string; reasoning: string } | null>(null)
-  const [dbVocab, setDbVocab] = useState<VocabEvent[]>([])
+  // Load all REST data (experiment record, turns, scores, vocab, verdict)
+  const {
+    agentSlots,
+    preset,
+    parentId,
+    hasHiddenGoals,
+    dbTurns,
+    dbScores,
+    dbVerdict,
+    dbVocab,
+  } = useTheaterData(matchId, locNameA, locNameB)
 
   // Human injection state
   const [injectText, setInjectText] = useState('')
@@ -83,84 +53,11 @@ export default function Theater() {
   const [activeRoll, setActiveRoll] = useState<{ skill: string; dc: number; result: number; success: boolean } | null>(null)
   const [echoDismissed, setEchoDismissed] = useState(false)
   const [agendaDismissed, setAgendaDismissed] = useState(false)
-  const [hasHiddenGoals, setHasHiddenGoals] = useState(false)
 
   // BUG 7 FIX: stable callback for DiceOverlay onComplete (was inline arrow, reset animation each render)
   const handleRollComplete = useCallback(() => setActiveRoll(null), [])
   const handleEchoDismiss = useCallback(() => setEchoDismissed(true), [])
   const handleAgendaDismiss = useCallback(() => setAgendaDismissed(true), [])
-
-  useEffect(() => {
-    if (!matchId) return
-    api.getExperiment(matchId)
-      .then((exp) => {
-        const slots = parseAgents(exp, [locNameA, locNameB])
-        setAgentSlots(slots)
-        setPreset(exp.preset ?? null)
-        setParentId(exp.parent_experiment_id ?? null)
-        setHasHiddenGoals(!!exp.hidden_goals_json)
-
-        if (exp.status === 'completed' || exp.status === 'stopped' || exp.status === 'error') {
-          api.getExperimentTurns(matchId)
-            .then(({ turns }) => {
-              setDbTurns(turns.map((r) => ({
-                type: 'relay.turn' as const,
-                turn_id: String(r.id),
-                round: r.round,
-                speaker: r.speaker,
-                model: r.model,
-                content: r.content,
-                latency_s: r.latency_seconds ?? 0,
-                timestamp: new Date(r.created_at).getTime() / 1000,
-                match_id: matchId,
-              })))
-            })
-            .catch(console.error)
-          api.getExperimentScores(matchId)
-            .then(({ scores }) => {
-              const map: Record<number, ScoreEvent> = {}
-              for (const s of scores) {
-                map[s.turn_id] = {
-                  type: 'relay.score',
-                  turn_id: s.turn_id,
-                  creativity: s.creativity,
-                  coherence: s.coherence,
-                  engagement: s.engagement,
-                  novelty: s.novelty,
-                  timestamp: new Date(s.scored_at).getTime() / 1000,
-                  match_id: matchId,
-                }
-              }
-              setDbScores(map)
-            })
-            .catch(console.error)
-          api.getVocabulary(matchId)
-            .then(({ words }) => {
-              setDbVocab(words.map((w) => ({
-                type: 'relay.vocab' as const,
-                word: w.word,
-                meaning: w.meaning ?? null,
-                coined_by: w.coined_by,
-                coined_round: w.coined_round,
-                category: w.category ?? null,
-                parent_words: w.parent_words ?? [],
-                timestamp: 0,
-                match_id: matchId,
-              })))
-            })
-            .catch(console.error)
-          if (exp.winner && exp.verdict_reasoning) {
-            const winnerIdx = resolveWinnerIndex(exp.winner)
-            setDbVerdict({
-              winner: exp.winner,
-              winner_model: winnerIdx != null ? (slots[winnerIdx]?.model ?? 'tie') : 'tie',
-              reasoning: exp.verdict_reasoning,
-            })
-          }
-        }
-      })
-      .catch(console.error)
-  }, [matchId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { events, connected, error: sseError } = useSSE(matchId ?? null)
   const experiment = useExperimentState(events)
@@ -183,14 +80,17 @@ export default function Theater() {
     ? experiment.vocab[experiment.vocab.length - 1]
     : null
 
-  // Typewriter sync
+  // Typewriter sync: fires once per new turn_id.
+  // lastTurn.content and lastTurn.speaker are intentionally read inside the effect
+  // without being listed as dependencies — this effect must run exactly once per
+  // new turn arrival (keyed on turn_id), not re-fire when content identity changes.
   useEffect(() => {
     if (!lastTurn) return
     setTalkingSpeaker(lastTurn.speaker)
     const durationMs = Math.min(8000, lastTurn.content.length * 10 + 300)
     const id = setTimeout(() => setTalkingSpeaker(null), durationMs)
     return () => clearTimeout(id)
-  }, [lastTurn?.turn_id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastTurn?.turn_id])
 
   // Latest turn id -- only live experiments get typewriter effect
   const latestTurnId = experiment.status === 'running' && lastTurn
@@ -209,11 +109,13 @@ export default function Theater() {
     }
   }, [lastTurn?.turn_id, experiment.status])
 
-  // BABEL glitch on turn arrival (live only)
+  // BABEL glitch on turn arrival (live only).
+  // experiment.status is read inside but not listed: the effect is intentionally
+  // keyed on turn_id so it fires once per new turn, not on every status transition.
   useEffect(() => {
     if (experiment.status !== 'running' || !lastTurn) return
     window.dispatchEvent(new CustomEvent('babel-glitch'))
-  }, [lastTurn?.turn_id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastTurn?.turn_id]) // intentionally keyed on turn_id — experiment.status is a guard, not a trigger
 
   // Tab title
   useEffect(() => {
@@ -224,7 +126,10 @@ export default function Theater() {
       document.title = `\u2713 Done | ${base}`
     }
     return () => { document.title = base }
-  }, [experiment.status, lastTurn?.round]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [experiment.status, lastTurn?.round])
+
+  // Color bleed: sets --color-active CSS variable + data-active-model attribute
+  useColorBleed(experiment.thinkingSpeaker, effectiveTurns, agentSlots)
 
   // Sprite statuses -- N-way: derive status for each agent slot
   const winnerIndex = effectiveVerdict ? resolveWinnerIndex(effectiveVerdict.winner) : null
@@ -238,31 +143,6 @@ export default function Theater() {
     if (talkingSpeaker === slot.name) return 'talking'
     return 'idle'
   })
-
-  // Color bleed -- keep for first two agents
-  useEffect(() => {
-    const root = document.documentElement
-    const speaking = experiment.thinkingSpeaker
-    const activeIdx = agentSlots.findIndex(s => s.name === speaking)
-    if (activeIdx >= 0) {
-      root.setAttribute('data-active-model', activeIdx === 0 ? 'a' : 'b')
-      root.style.setProperty('--color-active', AGENT_COLORS[activeIdx] ?? COLOR_DEFAULT)
-    } else if (effectiveTurns.length > 0) {
-      const last = effectiveTurns[effectiveTurns.length - 1]
-      const lastIdx = agentSlots.findIndex(s => s.name === last.speaker)
-      if (lastIdx >= 0) {
-        root.setAttribute('data-active-model', lastIdx === 0 ? 'a' : 'b')
-        root.style.setProperty('--color-active', AGENT_COLORS[lastIdx] ?? COLOR_DEFAULT)
-      }
-    }
-  }, [experiment.thinkingSpeaker, effectiveTurns, agentSlots])
-
-  useEffect(() => {
-    return () => {
-      document.documentElement.removeAttribute('data-active-model')
-      document.documentElement.style.setProperty('--color-active', COLOR_DEFAULT)
-    }
-  }, [])
 
   // BUG 1 FIX: moved above the early return guard (was after it, violating Rules of Hooks)
   useEffect(() => {

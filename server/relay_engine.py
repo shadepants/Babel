@@ -243,7 +243,7 @@ async def score_turn(
         request_timeout=20,
     )
     try:
-        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}])
         scores = _parse_score_json(raw)
         await db.insert_turn_score(turn_id=turn_id, **scores)
         hub.publish(RelayEvent.SCORE, {
@@ -291,7 +291,7 @@ async def final_verdict(
         request_timeout=30,
     )
     try:
-        raw, _, _ = await call_model(judge_agent, [{"role": "user", "content": prompt}], max_retries=1)
+        raw, _, _ = await call_model(judge_agent, [{"role": "user", "content": prompt}])
         result = _parse_verdict_json(raw, n_agents=len(agents))
         # Resolve winner agent model string for the event
         winner_model = "tie"
@@ -342,7 +342,7 @@ async def check_pressure_valve(
     )
     
     try:
-        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}], max_retries=1)
+        raw, _, _ = await call_model(agent, [{"role": "user", "content": prompt}])
         if "STABLE" in raw.upper():
             return None
         return raw.strip()

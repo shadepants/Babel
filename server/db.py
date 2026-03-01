@@ -1,4 +1,4 @@
-"""SQLite database for Babel experiments, turns, and vocabulary.
+﻿"""SQLite database for Babel experiments, turns, and vocabulary.
 
 Uses aiosqlite for async access with WAL mode for concurrent reads
 while the relay engine writes. All foreign keys are enforced.
@@ -437,6 +437,7 @@ class Database:
         parent_experiment_id: str | None = None,
         fork_at_round: int | None = None,
         agents: list[dict] | None = None,
+        hidden_goals: list[dict] | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -452,6 +453,8 @@ class Database:
             temperature_a = agents[0].get("temperature", 0.7)
             temperature_b = agents[1].get("temperature", 0.7)
 
+        hidden_goals_json: str | None = json.dumps(hidden_goals) if hidden_goals else None
+
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute(
                 """INSERT INTO experiments
@@ -460,14 +463,14 @@ class Database:
                     temperature_a, temperature_b,
                     judge_model, enable_scoring, enable_verdict,
                     mode, participants_json,
-                    parent_experiment_id, fork_at_round, agents_config_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
                  judge_model, int(enable_scoring), int(enable_verdict),
                  mode, participants_json,
-                 parent_experiment_id, fork_at_round, agents_config_json),
+                 parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json),
             )
             await self.db.commit()
         return experiment_id
@@ -1318,6 +1321,8 @@ class Database:
         """Create a new persona and return its ID."""
         persona_id = uuid.uuid4().hex[:12]
         now = datetime.now(timezone.utc).isoformat()
+        hidden_goals_json: str | None = json.dumps(hidden_goals) if hidden_goals else None
+
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute(
                 """INSERT INTO personas (id, name, personality, backstory, avatar_color, created_at)
@@ -1350,6 +1355,8 @@ class Database:
             return
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         values = list(fields.values()) + [persona_id]
+        hidden_goals_json: str | None = json.dumps(hidden_goals) if hidden_goals else None
+
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute(
                 f"UPDATE personas SET {set_clause} WHERE id = ?", values
@@ -1358,6 +1365,8 @@ class Database:
 
     async def delete_persona(self, persona_id: str) -> None:
         """Delete a persona by ID."""
+        hidden_goals_json: str | None = json.dumps(hidden_goals) if hidden_goals else None
+
         async with self._write_lock:  # type: ignore[union-attr]
             await self.db.execute("DELETE FROM personas WHERE id = ?", (persona_id,))
             await self.db.commit()

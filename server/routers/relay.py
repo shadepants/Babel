@@ -1,4 +1,4 @@
-"""Relay Router — start experiments and stream results via SSE.
+﻿"""Relay Router â€” start experiments and stream results via SSE.
 
 Endpoints:
     POST /api/relay/start   -> create experiment + launch relay background task
@@ -32,7 +32,7 @@ from server.config import (
     get_display_name,
 )
 
-# Allowed model strings — validated at request time
+# Allowed model strings â€” validated at request time
 _ALLOWED_MODELS: frozenset[str] = frozenset(MODEL_REGISTRY.values())
 from server.relay_engine import PersonaRecord, RelayAgent, run_relay
 
@@ -144,13 +144,13 @@ async def start_relay(body: RelayStartRequest, request: Request):
                 raise HTTPException(400, f"Model '{ac.model}' is not in the allowed registry")
         resolved_agents = body.agents
     else:
-        # Legacy 2-agent path — validate model_a / model_b
+        # Legacy 2-agent path â€” validate model_a / model_b
         for model in (body.model_a, body.model_b):
             if model not in _ALLOWED_MODELS:
                 raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
         resolved_agents = None  # signals "use legacy model_a/model_b path"
 
-    # Resolve judge model — use request value if provided, else fall back to server default
+    # Resolve judge model â€” use request value if provided, else fall back to server default
     resolved_judge = body.judge_model or JUDGE_MODEL
     if (body.enable_scoring or body.enable_verdict) and resolved_judge not in _ALLOWED_MODELS:
         raise HTTPException(400, f"Judge model '{resolved_judge}' is not in the allowed registry")
@@ -225,6 +225,7 @@ async def start_relay(body: RelayStartRequest, request: Request):
         parent_experiment_id=body.parent_experiment_id,
         fork_at_round=body.fork_at_round,
         agents=agents_dicts,
+        hidden_goals=body.hidden_goals,
     )
 
     cancel_event = asyncio.Event()

@@ -1,9 +1,19 @@
+import { fileURLToPath } from 'url'
+import path from 'path'
+import { createRequire } from 'module'
+
+// Same fix as postcss.config.js: when Vite launches from repo root,
+// process.cwd() is NOT ui/ -- content glob paths must be absolute.
+const require = createRequire(import.meta.url)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const dir = __dirname.replaceAll('\\', '/')
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
   content: [
-    './index.html',
-    './src/**/*.{js,ts,jsx,tsx}',
+    `${dir}/index.html`,
+    `${dir}/src/**/*.{js,ts,jsx,tsx}`,
   ],
   theme: {
     extend: {

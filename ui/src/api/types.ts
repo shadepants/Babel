@@ -1,4 +1,4 @@
-// ── API Request/Response Types ─────────────────────────────────
+﻿// ── API Request/Response Types ─────────────────────────────────
 
 /** Phase 16: named personality profile */
 export interface PersonaRecord {
@@ -169,6 +169,14 @@ export interface VerdictEvent extends BaseSSEEvent {
   reasoning: string;
 }
 
+
+/** relay.human_timeout -- RPG human player went AFK; session continuing without input */
+export interface HumanTimeoutEvent extends BaseSSEEvent {
+  type: 'relay.human_timeout';
+  speaker: string;
+  round: number;
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 /** relay.paused — relay is waiting at a checkpoint */
 export interface PausedEvent extends BaseSSEEvent {
@@ -242,6 +250,14 @@ export interface AuditStartedEvent extends BaseSSEEvent {
   audit_experiment_id: string;
 }
 
+
+/** relay.human_timeout -- RPG human player went AFK; session continuing without input */
+export interface HumanTimeoutEvent extends BaseSSEEvent {
+  type: 'relay.human_timeout';
+  speaker: string;
+  round: number;
+}
+
 /** Discriminated union — switch on `type` for type narrowing */
 export type RelaySSEEvent =
   | ThinkingEvent
@@ -261,7 +277,8 @@ export type RelaySSEEvent =
   | EchoSignalEvent
   | EchoInterventionEvent
   | AgendaRevealedEvent
-  | AuditStartedEvent;
+  | AuditStartedEvent
+  | HumanTimeoutEvent;
 
 // ── RPG Context Types ────────────────────────────────────────────
 

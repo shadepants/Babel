@@ -1,10 +1,9 @@
 /**
- * Derived experiment state from raw SSE events.
+ * useExperimentState — reduces a stream of RelaySSEEvents into a single
+ * ExperimentState snapshot. Pure function wrapped in useMemo so callers
+ * re-render only when the events array reference changes.
  *
- * Why event sourcing? The SSE events are the single source of truth.
- * UI state is always a pure function of those events — no sync bugs,
- * trivially debuggable, and replaying events for late joiners works
- * automatically (backend's include_history=true parameter).
+ * Add new fields here when a new SSE event type needs to surface state.
  */
 import { useMemo } from 'react';
 import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent } from './types';
@@ -23,6 +22,7 @@ export interface ExperimentState {
   elapsed: number | null;
   errorMessage: string | null;
   isAwaitingHuman: boolean;
+  humanTimedOut: boolean;
   echoSimilarity: number | null;
   interventionFired: boolean;
   revealedGoals: Array<{ agent_index: number; goal: string }> | null;
@@ -45,6 +45,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
       errorMessage: null,
       observers: [],
       isAwaitingHuman: false,
+      humanTimedOut: false,
       echoSimilarity: null,
       interventionFired: false,
       revealedGoals: null,
@@ -106,6 +107,17 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
         case 'relay.awaiting_human':
           state.isAwaitingHuman = true;
           state.thinkingSpeaker = null;
+          break;
+        case 'relay.human_timeout':
+          // Human player went AFK — session continues without their input
+          state.isAwaitingHuman = false;
+          state.humanTimedOut = true;
+          state.thinkingSpeaker = null;
+          break;
+        case 'relay.chemistry_ready':
+          // Chemistry metrics computed server-side and stored to DB.
+          // The ChemistryCard in Analytics loads them via REST after completion.
+          // No live state update needed here.
           break;
         case 'relay.signal_echo':
           state.echoSimilarity = event.similarity;

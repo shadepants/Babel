@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+&#xFEFF;import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { Slider } from '@/components/ui/slider'
@@ -235,7 +235,7 @@ export default function Settings() {
                 {isShowingInput && (
                   <div className="px-5 py-3 border-b border-white/[0.04] space-y-2">
                     <p className="font-mono text-[10px] text-text-dim/60 tracking-wider">
-                      // set <span className="text-accent/70">{envVar}</span> — saved to .env &amp; activated immediately
+                      // set <span className="text-accent/70">{envVar}</span> &mdash; saved to .env &amp; activated immediately
                     </p>
                     <div className="flex items-center gap-2">
                       <input
@@ -408,7 +408,7 @@ export default function Settings() {
             </p>
           )}
           {memories.map((row) => (
-            <div key={row.model_a + row.model_b} className="flex items-start gap-3 py-1 border-b border-white/[0.03] last:border-0">
+            <div key={`${row.model_a}||${row.model_b}||${row.created_at}`} className="flex items-start gap-3 py-1 border-b border-white/[0.03] last:border-0">
               <div className="flex-1 min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="font-mono text-[10px] text-text-primary">{row.model_a.split('/').pop()}</span>

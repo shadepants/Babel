@@ -704,6 +704,7 @@ export default function RPGTheater() {
             isEnabled={state.isAwaitingHuman}
             speaker={playerName}
             actionMenu={actionMenu}
+            humanTimedOut={state.humanTimedOut}
           />
         )}
 

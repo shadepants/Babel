@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { TurnEvent, ScoreEvent, VocabEvent } from '@/api/types'
 import { cn } from '@/lib/utils'
+import { hexToRgba } from '@/lib/color'
 import { TypewriterText } from './TypewriterText'
 
 interface TurnBubbleProps {
@@ -17,14 +18,6 @@ interface TurnBubbleProps {
   vocab?: VocabEvent[]
   /** Experiment ID for dictionary deep links */
   experimentId?: string
-}
-
-/** Convert a 6-digit hex color to rgba(r, g, b, alpha). */
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 /** Wrap vocab words in dictionary links. Only called on static (non-latest) turns.

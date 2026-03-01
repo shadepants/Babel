@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord, ExperimentStats, RadarDataPoint, VocabWord, TurnRecord, TurnScore, CollaborationMetrics } from '@/api/types'
+import type { ExperimentRecord, ExperimentStats, RadarDataPoint, TurnScore, CollaborationMetrics } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VocabGrowthChart } from '@/components/analytics/VocabGrowthChart'
@@ -13,8 +13,9 @@ import { ChemistryCard } from '@/components/analytics/ChemistryCard'
 import { formatDuration, modelDisplayName } from '@/lib/format'
 import { HudBrackets } from '@/components/common/HudBrackets'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
-import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { ProviderSigil } from '@/components/common/ProviderSigil'
+import { resolveSpritePair } from '@/lib/spriteStatus'
+import { downloadExperimentJson, downloadExperimentCsv, copyExperimentMarkdown } from '@/lib/exporters'
 
 const MODEL_A_COLOR = '#F59E0B'
 const MODEL_B_COLOR = '#06B6D4'
@@ -104,134 +105,6 @@ export default function Analytics() {
     return () => clearInterval(interval)
   }, [experiment, fetchData])
 
-  // ── Export: Download JSON ──
-  async function handleDownloadJson() {
-    if (!experimentId || exporting) return
-    setExporting(true)
-    try {
-      const [exp, turns, vocab] = await Promise.all([
-        api.getExperiment(experimentId),
-        api.getExperimentTurns(experimentId),
-        api.getVocabulary(experimentId),
-      ])
-      const blob = new Blob(
-        [JSON.stringify({ experiment: exp, turns: turns.turns, vocabulary: vocab.words }, null, 2)],
-        { type: 'application/json' },
-      )
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `babel-${experimentId}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      // silently fail &#x2014; user can retry
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  // ── Export: Download CSV ──
-  async function handleDownloadCsv() {
-    if (!experimentId || exporting) return
-    setExporting(true)
-    try {
-      const turnsRes = await api.getExperimentTurns(experimentId)
-      const rows = [
-        ['round', 'speaker', 'model', 'content', 'latency_seconds', 'token_count'],
-        ...(turnsRes.turns as TurnRecord[]).map((t) => [
-          String(t.round),
-          t.speaker,
-          t.model,
-          `"${t.content.replace(/"/g, '""')}"`,
-          t.latency_seconds != null ? String(t.latency_seconds) : '',
-          t.token_count != null ? String(t.token_count) : '',
-        ]),
-      ]
-      const csv = rows.map((r) => r.join(',')).join('\n')
-      const blob = new Blob([csv], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `babel-${experimentId}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      // silently fail &#x2014; user can retry
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  // ── Export: Copy Markdown ──
-  async function handleCopyMarkdown() {
-    if (!experimentId || exporting) return
-    setExporting(true)
-    try {
-      const [exp, turnsRes, vocabRes] = await Promise.all([
-        api.getExperiment(experimentId),
-        api.getExperimentTurns(experimentId),
-        api.getVocabulary(experimentId),
-      ])
-      const lines = [
-        `# Babel Experiment: ${modelDisplayName(exp.model_a)} vs ${modelDisplayName(exp.model_b)}`,
-        '',
-        `**Status:** ${exp.status} | **Rounds:** ${exp.rounds_completed}/${exp.rounds_planned} | **Elapsed:** ${exp.elapsed_seconds ? formatDuration(exp.elapsed_seconds) : '\u2014'}`,
-        '',
-        '## Conversation',
-        '',
-      ]
-      let currentRound = 0
-      for (const turn of turnsRes.turns as TurnRecord[]) {
-        if (turn.round !== currentRound) {
-          currentRound = turn.round
-          lines.push(`### Round ${currentRound}`, '')
-        }
-        lines.push(`**${turn.speaker}** (${turn.latency_seconds?.toFixed(1) ?? '?'}s):`, '', turn.content, '')
-      }
-      if (vocabRes.words.length > 0) {
-        lines.push('## Vocabulary', '')
-        for (const w of vocabRes.words as VocabWord[]) {
-          lines.push(`- **${w.word}**${w.meaning ? `: ${w.meaning}` : ''} _(coined by ${w.coined_by}, round ${w.coined_round})_`)
-        }
-      }
-
-      const text = lines.join('\n')
-      let copied = false
-
-      // Try modern Clipboard API first
-      if (navigator.clipboard) {
-        try {
-          await navigator.clipboard.writeText(text)
-          copied = true
-        } catch {
-          // fall through to execCommand fallback
-        }
-      }
-
-      // Fallback: create a temporary textarea and use execCommand
-      if (!copied) {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        ta.style.position = 'fixed'
-        ta.style.opacity = '0'
-        document.body.appendChild(ta)
-        ta.focus()
-        ta.select()
-        copied = document.execCommand('copy')
-        document.body.removeChild(ta)
-      }
-
-      setCopyStatus(copied ? 'success' : 'error')
-      setTimeout(() => setCopyStatus('idle'), 2000)
-    } catch {
-      setCopyStatus('error')
-      setTimeout(() => setCopyStatus('idle'), 2000)
-    } finally {
-      setExporting(false)
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -255,14 +128,9 @@ export default function Analytics() {
   const modelB = modelDisplayName(experiment.model_b)
 
   // Sprite outcome states from winner field
-  const spriteA: SpriteStatus = experiment.winner === 'model_a' || experiment.winner === 'agent_0' ? 'winner'
-    : experiment.winner === 'model_b' || experiment.winner === 'agent_1' ? 'loser'
-    : experiment.status === 'failed' ? 'error'
-    : 'idle'
-  const spriteB: SpriteStatus = experiment.winner === 'model_b' || experiment.winner === 'agent_1' ? 'winner'
-    : experiment.winner === 'model_a' || experiment.winner === 'agent_0' ? 'loser'
-    : experiment.status === 'failed' ? 'error'
-    : 'idle'
+  const spriteStatuses = resolveSpritePair(experiment.winner, experiment.status)
+  const spriteA = spriteStatuses.a
+  const spriteB = spriteStatuses.b
 
   return (
     <div className="flex-1 p-6 max-w-5xl mx-auto space-y-8">
@@ -359,7 +227,7 @@ export default function Analytics() {
               variant="outline"
               size="sm"
               className="border-border-custom text-text-dim"
-              onClick={handleDownloadJson}
+              onClick={() => experimentId && downloadExperimentJson(experimentId, () => setExporting(true), () => setExporting(false))}
               disabled={exporting}
             >
               {exporting ? '...' : 'Download JSON'}
@@ -368,7 +236,7 @@ export default function Analytics() {
               variant="outline"
               size="sm"
               className="border-border-custom text-text-dim"
-              onClick={handleDownloadCsv}
+              onClick={() => experimentId && downloadExperimentCsv(experimentId, () => setExporting(true), () => setExporting(false))}
               disabled={exporting}
             >
               {exporting ? '...' : 'Download CSV'}
@@ -377,7 +245,12 @@ export default function Analytics() {
               variant="outline"
               size="sm"
               className={`border-border-custom ${copyStatus === 'success' ? 'text-green-400' : copyStatus === 'error' ? 'text-red-400' : 'text-text-dim'}`}
-              onClick={handleCopyMarkdown}
+              onClick={async () => {
+                if (!experimentId) return
+                const result = await copyExperimentMarkdown(experimentId, () => setExporting(true), () => setExporting(false))
+                setCopyStatus(result)
+                setTimeout(() => setCopyStatus('idle'), 2000)
+              }}
               disabled={exporting}
             >
               {exporting

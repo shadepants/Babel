@@ -16,6 +16,7 @@ import { DiceOverlay } from '@/components/theater/DiceOverlay'
 import { EchoChamberWarning } from '@/components/theater/EchoChamberWarning'
 import { AgendaRevealOverlay } from '@/components/theater/AgendaRevealOverlay'
 import type { AgentConfig, ExperimentRecord, TurnEvent, ScoreEvent, VocabEvent, ObserverEvent } from '@/api/types'
+import { resolveWinnerIndex } from '@/lib/spriteStatus'
 
 const COLOR_DEFAULT = '#8b5cf6'
 
@@ -45,17 +46,6 @@ function parseAgents(exp: ExperimentRecord, locationNames: [string, string]): Ag
     { model: exp.model_a, name: nameA },
     { model: exp.model_b, name: nameB },
   ]
-}
-
-/** Resolve the winner agent index from a verdict winner string.
- *  Handles both new-style ("agent_0", "agent_1") and legacy ("model_a", "model_b"). */
-function resolveWinnerIndex(winner: string): number | null {
-  if (winner === 'tie') return null
-  const m = winner.match(/^agent_(\d+)$/)
-  if (m) return parseInt(m[1], 10)
-  if (winner === 'model_a') return 0
-  if (winner === 'model_b') return 1
-  return null
 }
 
 // ── component ───────────────────────────────────────────────────

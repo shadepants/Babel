@@ -5,9 +5,9 @@ import type { ExperimentRecord } from '@/api/types'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { formatDuration, modelDisplayName } from '@/lib/format'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
-import type { SpriteStatus } from '@/components/theater/SpriteAvatar'
 import { getPresetGlow } from '@/lib/presetColors'
 import { ProviderSigil } from '@/components/common/ProviderSigil'
+import { resolveSpritePair } from '@/lib/spriteStatus'
 
 /** Format ISO date string to compact form */
 function formatDate(iso: string): string {
@@ -31,15 +31,6 @@ function dotStatusClass(status: string) {
   if (status === 'completed') return 'status-dot status-dot--completed'
   if (status === 'failed') return 'status-dot status-dot--failed'
   return 'status-dot status-dot--pending'
-}
-
-/** Derive sprite outcome states from experiment winner field */
-function spriteStatuses(exp: ExperimentRecord): { a: SpriteStatus; b: SpriteStatus } {
-  if (exp.status === 'failed') return { a: 'error', b: 'error' }
-  if (exp.winner === 'model_a' || exp.winner === 'agent_0') return { a: 'winner', b: 'loser' }
-  if (exp.winner === 'model_b' || exp.winner === 'agent_1') return { a: 'loser', b: 'winner' }
-  if (exp.winner === 'tie') return { a: 'idle', b: 'idle' }
-  return { a: 'idle', b: 'idle' }
 }
 
 /** Build an inline style with a colored left border for preset rows */
@@ -160,7 +151,7 @@ export default function Gallery() {
           </div>
 
           {experiments.map((exp) => {
-            const statuses = spriteStatuses(exp)
+            const statuses = resolveSpritePair(exp.winner, exp.status)
             return (
               <div
                 key={exp.id}

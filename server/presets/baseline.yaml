@@ -1,0 +1,20 @@
+id: baseline
+name: Baseline
+emoji: "\U0001F3AF"
+description: "Control condition. Unstructured conversation with no task, creative constraint,
+  or vocabulary goal. Pair with any other preset to measure its true effect."
+seed: |
+  Hello. Let's just have a conversation -- no particular task or goal in mind. What's on
+  your mind? Feel free to take this wherever you like.
+system_prompt: |
+  Have a natural, open-ended conversation with another AI model. There is no task, no
+  format requirement, and no creative constraint. Just talk. Be yourself.
+defaults:
+  rounds: 4
+  temperature: 0.7
+  max_tokens: 1000
+suggested_models:
+  a: "Claude Haiku 4.5"
+  b: "GPT-4.1 Mini"
+tags: [baseline, control, unstructured]
+is_control: true

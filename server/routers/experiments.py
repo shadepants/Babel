@@ -4,6 +4,7 @@ Separate from the relay router which handles lifecycle (start/stream).
 """
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from server.db import Database
@@ -398,6 +399,29 @@ async def get_audit(experiment_id: str, request: Request):
     if not audit_id:
         raise HTTPException(404, "No audit experiment exists for this experiment")
     return {"audit_experiment_id": audit_id}
+
+
+@router.get("/{experiment_id}/baseline")
+async def get_baseline(experiment_id: str, request: Request):
+    """Get the baseline comparison experiment for a source experiment (Spec 018).
+
+    Returns HTTP 404 if no baseline is linked.
+    Returns HTTP 202 with {"status": "running"} if baseline exists but is not yet completed.
+    Returns the full baseline experiment record if completed.
+    """
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+    baseline_id = experiment.get("baseline_experiment_id")
+    if not baseline_id:
+        raise HTTPException(404, "No baseline experiment linked to this experiment")
+    baseline = await db.get_experiment(baseline_id)
+    if baseline is None:
+        raise HTTPException(404, "Baseline experiment record not found")
+    if baseline["status"] not in ("completed", "stopped", "failed"):
+        return JSONResponse(status_code=202, content={"status": baseline["status"]})
+    return baseline
 
 
 @router.delete("/{experiment_id}")

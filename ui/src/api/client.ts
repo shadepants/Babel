@@ -288,6 +288,12 @@ export const api = {
   /** Get or trigger audit experiment for an experiment */
   getExperimentAudit: (experimentId: string) =>
     fetchJson<{ audit_experiment_id: string }>(`/api/experiments/${experimentId}/audit`),
+
+  /** Get baseline comparison experiment for a source experiment (Spec 018).
+   *  Returns ExperimentRecord (200) when complete, or { status: string } (202) when running.
+   *  Throws ApiError 404 when no baseline is linked. */
+  getExperimentBaseline: (experimentId: string) =>
+    fetchJson<ExperimentRecord | { status: string }>(`/api/experiments/${experimentId}/baseline`),
 };
 
 export { ApiError };

@@ -54,6 +54,7 @@ export default function Gallery() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [showControls, setShowControls] = useState(false)  // Spec 018: baseline experiments hidden by default
 
   const fetchExperiments = useCallback(() => {
     setLoading(true)
@@ -99,8 +100,8 @@ export default function Gallery() {
           </button>
         </div>
 
-        {/* Status filter tabs */}
-        <div className="flex gap-1.5">
+        {/* Status filter tabs + controls toggle */}
+        <div className="flex gap-1.5 flex-wrap items-center">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter}
@@ -114,6 +115,16 @@ export default function Gallery() {
               {filter}
             </button>
           ))}
+          <span className="text-border-custom/40 mx-0.5">|</span>
+          {/* Spec 018: Show/hide baseline control experiments */}
+          <button
+            onClick={() => setShowControls((v) => !v)}
+            className={showControls
+              ? 'font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border bg-amber-500/15 border-amber-500/60 text-amber-400'
+              : 'font-mono text-[10px] tracking-widest uppercase px-2.5 py-1 rounded-sm border bg-transparent border-border-custom text-text-dim/50 hover:border-amber-500/35 hover:text-amber-400/70'}
+          >
+            controls
+          </button>
         </div>
       </div>
 
@@ -151,7 +162,8 @@ export default function Gallery() {
             <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-text-dim/50 w-32" />
           </div>
 
-          {experiments.map((exp) => {
+          {experiments.filter((exp) => showControls || exp.preset !== 'baseline').map((exp) => {
+            const isControl = exp.preset === 'baseline'
             const statuses = resolveSpritePair(exp.winner, exp.status)
             return (
               <div
@@ -217,6 +229,11 @@ export default function Gallery() {
                       {exp.hidden_goals_json && (
                         <span className="font-mono text-[9px] tracking-wider text-amber-400/70 border border-amber-500/25 px-1.5 py-0.5 rounded-sm uppercase">
                           adversarial
+                        </span>
+                      )}
+                      {isControl && (
+                        <span className="font-mono text-[9px] tracking-wider text-amber-400/90 border border-amber-500/50 px-1.5 py-0.5 rounded-sm uppercase font-bold">
+                          control
                         </span>
                       )}
                       {exp.status === 'completed' && exp.chm_score != null && (

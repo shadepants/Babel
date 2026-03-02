@@ -382,6 +382,15 @@ class Database:
             except Exception:
                 pass  # column already exists
 
+        # Spec 018: Baseline Control Preset
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN baseline_experiment_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -488,6 +497,13 @@ class Database:
             )
             await self.db.commit()
         return experiment_id
+
+    async def link_baseline(self, source_experiment_id: str, baseline_experiment_id: str) -> None:
+        """Set the baseline_experiment_id on the source experiment (Spec 018)."""
+        await self._execute_queued(
+            "UPDATE experiments SET baseline_experiment_id = ? WHERE id = ?",
+            (baseline_experiment_id, source_experiment_id),
+        )
 
     def get_agents_for_experiment(self, row: dict) -> list[dict]:
         """Parse agents from agents_config_json, or build 2-agent list from legacy fields.

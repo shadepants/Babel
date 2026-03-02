@@ -94,29 +94,44 @@ export default function SeedLab() {
               key={preset.id}
               variants={cardVariants}
               className="relative"
-              whileHover={{ scale: 1.025, boxShadow: '0 0 28px rgba(139,92,246,0.30)', transition: { duration: 0.2 } }}
+              whileHover={{
+                scale: 1.025,
+                boxShadow: preset.is_control
+                  ? '0 0 20px rgba(245,158,11,0.20)'
+                  : '0 0 28px rgba(139,92,246,0.30)',
+                transition: { duration: 0.2 },
+              }}
               whileTap={{ scale: 0.98 }}
             >
               <HudBrackets />
               <button
                 type="button"
-                className="neural-card h-full w-full text-left group"
+                className={preset.is_control
+                  ? 'neural-card h-full w-full text-left group opacity-75'
+                  : 'neural-card h-full w-full text-left group'}
+                style={preset.is_control ? { borderStyle: 'dashed' } : undefined}
                 onClick={() => navigate(`/configure/${preset.id}`)}
               >
                 {/* Top accent bar */}
-                <div className="neural-card-bar" />
+                <div className={preset.is_control ? 'neural-card-bar neural-card-bar--dim' : 'neural-card-bar'} />
 
                 <div className="p-5 space-y-3">
                   {/* Symbol + tags row */}
                   <div className="flex items-start justify-between">
                     <span
-                      className="font-mono text-xl leading-none text-accent/45 group-hover:text-accent/75 transition-colors select-none"
+                      className={preset.is_control
+                        ? 'font-mono text-xl leading-none text-amber-500/50 group-hover:text-amber-400/75 transition-colors select-none'
+                        : 'font-mono text-xl leading-none text-accent/45 group-hover:text-accent/75 transition-colors select-none'}
                       style={{ filter: 'drop-shadow(0 0 6px rgba(139,92,246,0.3))' }}
                     >
                       {getSymbol(preset.emoji, i)}
                     </span>
-                    <div className="flex gap-2">
-                      {preset.tags.slice(0, 2).map((tag) => (
+                    <div className="flex gap-2 items-center">
+                      {preset.is_control ? (
+                        <span className="font-mono text-[9px] tracking-widest text-amber-400/80 border border-amber-500/40 px-1.5 py-0.5 rounded-sm uppercase">
+                          Control
+                        </span>
+                      ) : preset.tags.slice(0, 2).map((tag) => (
                         <span key={tag} className="font-mono text-[10px] tracking-wider text-accent/70 border border-accent/25 px-1.5 py-0.5 rounded-sm">
                           {tag}
                         </span>
@@ -126,12 +141,19 @@ export default function SeedLab() {
 
                   {/* Title + description */}
                   <div>
-                    <h3 className="font-display text-sm font-bold tracking-wider text-text-primary uppercase group-hover:text-accent transition-colors">
+                    <h3 className={preset.is_control
+                      ? 'font-display text-sm font-bold tracking-wider text-text-dim uppercase group-hover:text-amber-400 transition-colors'
+                      : 'font-display text-sm font-bold tracking-wider text-text-primary uppercase group-hover:text-accent transition-colors'}>
                       {preset.name}
                     </h3>
                     <p className="text-xs text-text-dim mt-1.5 leading-relaxed line-clamp-2">
                       {preset.description}
                     </p>
+                    {preset.is_control && (
+                      <p className="text-[10px] text-amber-400/60 mt-1 font-mono">
+                        // Use this to measure the effect of other presets
+                      </p>
+                    )}
                   </div>
 
                   {/* Metadata &mdash; terminal data row */}

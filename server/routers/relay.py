@@ -103,6 +103,11 @@ class RelayStartRequest(BaseModel):
     vocabulary_seed_id: str | None = Field(default=None, description="Experiment ID to inherit vocabulary from")
     # Session 27: Recursive Audit
     enable_audit: bool = Field(default=False, description="Auto-launch audit experiment on completion")
+    # Spec 018: Baseline Control Preset
+    baseline_for_experiment_id: str | None = Field(
+        default=None,
+        description="If set, this experiment is a baseline comparison for the given experiment ID.",
+    )
 
 
 class RelayStartResponse(BaseModel):
@@ -353,6 +358,12 @@ async def start_relay(body: RelayStartRequest, request: Request):
     # -- Validate model references and resolve agent list --
     resolved_agents, resolved_judge = _validate_and_resolve_agents(body)
 
+    # Spec 018: pre-flight check -- source experiment must exist before creating baseline
+    if body.baseline_for_experiment_id:
+        source_exp = await db.get_experiment(body.baseline_for_experiment_id)
+        if source_exp is None:
+            raise HTTPException(404, f"Source experiment '{body.baseline_for_experiment_id}' not found")
+
     # -- Resolve preset if specified (server is authoritative source of truth) --
     seed = body.seed
     system_prompt = body.system_prompt
@@ -443,6 +454,10 @@ async def start_relay(body: RelayStartRequest, request: Request):
         model_a_version=model_a_version,
         model_b_version=model_b_version,
     )
+
+    # Spec 018: link this baseline experiment back to the source experiment
+    if body.baseline_for_experiment_id:
+        await db.link_baseline(body.baseline_for_experiment_id, match_id)
 
     cancel_event = asyncio.Event()
 

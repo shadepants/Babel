@@ -68,6 +68,8 @@ export interface RelayStartRequest {
   persona_ids?: (string | null)[];
   // Campaign page: RPG campaign settings
   rpg_config?: RPGConfig;
+  // Spec 018: baseline control preset
+  baseline_for_experiment_id?: string;
 }
 
 /** POST /api/relay/start response */
@@ -350,6 +352,7 @@ export interface Preset {
     b: string;
   };
   tags: string[];
+  is_control?: boolean;  // Spec 018: true for the baseline control preset
 }
 
 /** GET /api/presets response */
@@ -441,6 +444,8 @@ export interface ExperimentRecord {
   // Spec 019: model version snapshot (null for experiments created before this feature)
   model_a_version?: string | null;
   model_b_version?: string | null;
+  // Spec 018: baseline control preset
+  baseline_experiment_id?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

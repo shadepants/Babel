@@ -15,7 +15,7 @@ import { EndSessionModal } from '@/components/theater/EndSessionModal'
 import { DiceOverlay } from '@/components/theater/DiceOverlay'
 import { EchoChamberWarning } from '@/components/theater/EchoChamberWarning'
 import { AgendaRevealOverlay } from '@/components/theater/AgendaRevealOverlay'
-import type { ObserverEvent } from '@/api/types'
+import type { ObserverEvent, ExperimentRecord } from '@/api/types'
 import { resolveWinnerIndex } from '@/lib/spriteStatus'
 import { useTheaterData } from '@/hooks/useTheaterData'
 import { useColorBleed } from '@/hooks/useColorBleed'
@@ -55,10 +55,99 @@ export default function Theater() {
   const [echoDismissed, setEchoDismissed] = useState(false)
   const [agendaDismissed, setAgendaDismissed] = useState(false)
 
+  // Spec 018: Baseline Control state
+  const [baselinePolling, setBaselinePolling] = useState(false)
+  const [baselineRunning, setBaselineRunning] = useState(false)
+  const [baselineExp, setBaselineExp] = useState<ExperimentRecord | null>(null)
+  const [baselineVocabCount, setBaselineVocabCount] = useState<number | null>(null)
+  const [baselineAvgScore, setBaselineAvgScore] = useState<number | null>(null)
+  const [launchingBaseline, setLaunchingBaseline] = useState(false)
+  const [baselineToast, setBaselineToast] = useState<string | null>(null)
+
   // BUG 7 FIX: stable callback for DiceOverlay onComplete (was inline arrow, reset animation each render)
   const handleRollComplete = useCallback(() => setActiveRoll(null), [])
   const handleEchoDismiss = useCallback(() => setEchoDismissed(true), [])
   const handleAgendaDismiss = useCallback(() => setAgendaDismissed(true), [])
+
+  // Spec 018: start polling if dbExperiment already has a linked baseline
+  useEffect(() => {
+    if (dbExperiment?.baseline_experiment_id && !baselinePolling && !baselineExp) {
+      setBaselinePolling(true)
+    }
+  }, [dbExperiment?.baseline_experiment_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Spec 018: poll GET /api/experiments/:id/baseline every 15s while running
+  useEffect(() => {
+    if (!baselinePolling || !matchId || baselineExp) return
+    let cancelled = false
+
+    async function pollOnce() {
+      if (cancelled) return
+      try {
+        const result = await api.getExperimentBaseline(matchId!)
+        if (cancelled) return
+        if ('id' in result) {
+          const exp = result as ExperimentRecord
+          setBaselineExp(exp)
+          setBaselineRunning(false)
+          setBaselinePolling(false)
+          try {
+            const [vocabRes, scoresRes] = await Promise.all([
+              api.getVocabulary(exp.id),
+              api.getExperimentScores(exp.id),
+            ])
+            if (!cancelled) {
+              setBaselineVocabCount(vocabRes.words.length)
+              if (scoresRes.scores.length > 0) {
+                const avg = scoresRes.scores.reduce(
+                  (acc, s) => acc + (s.creativity + s.coherence + s.engagement + s.novelty) / 4, 0
+                ) / scoresRes.scores.length
+                setBaselineAvgScore(Math.round(avg * 10) / 10)
+              }
+            }
+          } catch { /* supplemental data unavailable */ }
+        } else {
+          setBaselineRunning(true)
+        }
+      } catch {
+        setBaselinePolling(false)  // 404 = not linked yet; stop
+      }
+    }
+
+    pollOnce()
+    const interval = setInterval(pollOnce, 15_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [baselinePolling, matchId, baselineExp])
+
+  // Spec 018: launch a baseline comparison run
+  async function handleRunBaseline() {
+    if (!dbExperiment || !matchId) return
+    setLaunchingBaseline(true)
+    try {
+      await api.startRelay({
+        preset: 'baseline',
+        seed: '',  // server resolves from preset
+        model_a: dbExperiment.model_a,
+        model_b: dbExperiment.model_b,
+        rounds: dbExperiment.rounds_planned,
+        temperature_a: dbExperiment.temperature_a ?? 0.7,
+        temperature_b: dbExperiment.temperature_b ?? 0.7,
+        max_tokens: 1000,
+        enable_scoring: !!(dbExperiment.enable_scoring),
+        enable_verdict: !!(dbExperiment.enable_verdict),
+        baseline_for_experiment_id: matchId,
+      })
+      setBaselineToast('Baseline running \u2014 check back soon')
+      setBaselineRunning(true)
+      setBaselinePolling(true)
+      setTimeout(() => setBaselineToast(null), 5000)
+    } catch {
+      setBaselineToast('Failed to launch baseline')
+      setTimeout(() => setBaselineToast(null), 5000)
+    } finally {
+      setLaunchingBaseline(false)
+    }
+  }
 
   const { events, connected, error: sseError } = useSSE(matchId ?? null)
   const experiment = useExperimentState(events)
@@ -68,6 +157,14 @@ export default function Theater() {
   const effectiveScores  = Object.keys(experiment.scores).length > 0 ? experiment.scores : dbScores
   const effectiveVerdict = experiment.verdict ?? dbVerdict
   const effectiveVocab   = experiment.vocab.length > 0 ? experiment.vocab : dbVocab
+
+  // Spec 018: source avg score for delta panel (after effectiveScores is defined)
+  const sourceAvgScore: number | null = (() => {
+    const vals = Object.values(effectiveScores as Record<string, { creativity: number; coherence: number; engagement: number; novelty: number }>)
+    if (vals.length === 0) return null
+    const sum = vals.reduce((acc, s) => acc + (s.creativity + s.coherence + s.engagement + s.novelty) / 4, 0)
+    return Math.round(sum / vals.length * 10) / 10
+  })()
 
   // Derived shorthands for legacy 2-agent props
   const modelAName = agentSlots[0]?.name ?? ''
@@ -391,9 +488,119 @@ export default function Theater() {
           >
             // Fork
           </Button>
+          {/* Spec 018: Run Baseline Comparison — only on completed non-baseline experiments without a linked baseline */}
+          {dbExperiment?.preset !== 'baseline' && !dbExperiment?.baseline_experiment_id && !baselineRunning && (
+            <Button
+              variant="outline"
+              className="font-mono text-xs border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+              disabled={launchingBaseline}
+              onClick={handleRunBaseline}
+            >
+              {launchingBaseline ? 'Launching...' : '// Baseline'}
+            </Button>
+          )}
+          {(baselineRunning || (dbExperiment?.baseline_experiment_id && !baselineExp)) && (
+            <span className="font-mono text-[10px] text-amber-400/70 animate-pulse-slow">
+              baseline running...
+            </span>
+          )}
           <Link to="/">
             <Button variant="outline" className="font-mono text-xs">New Experiment</Button>
           </Link>
+        </div>
+      )}
+
+      {/* Spec 018: toast notification */}
+      {baselineToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-bg-card border border-amber-500/50 px-4 py-2 rounded font-mono text-xs text-amber-400 shadow-lg">
+          {baselineToast}
+        </div>
+      )}
+
+      {/* Spec 018: Baseline delta panel — shown when baseline is complete */}
+      {baselineExp && baselineExp.status !== 'failed' && (
+        <div className="px-6 py-4 border-t border-amber-500/25 bg-amber-500/5">
+          <div className="max-w-3xl mx-auto space-y-3">
+            <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-amber-400/80">
+              // vs_baseline
+            </div>
+            {dbExperiment?.judge_model && baselineExp.judge_model && dbExperiment.judge_model !== baselineExp.judge_model && (
+              <div className="font-mono text-[10px] text-amber-300/70">
+                &#9888; Judge model differs &mdash; score delta may not be comparable
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Vocab delta */}
+              <div className="bg-bg-card/60 border border-amber-500/20 rounded px-3 py-2">
+                <div className="font-mono text-[9px] tracking-wider uppercase text-text-dim/50 mb-1">Vocab coined</div>
+                <div className="font-mono text-sm font-bold text-text-primary">
+                  {(() => {
+                    const srcCount = effectiveVocab.length || dbVocab.length
+                    const bCount = baselineVocabCount ?? 0
+                    const delta = srcCount - bCount
+                    return (
+                      <>
+                        <span className={delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-text-dim'}>
+                          {delta > 0 ? '+' : ''}{delta}
+                        </span>
+                        <span className="text-[10px] text-text-dim/60 font-normal ml-2">
+                          ({srcCount} vs {bCount})
+                        </span>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+
+              {/* Score delta — only shown when scoring was enabled */}
+              {dbExperiment?.enable_scoring && sourceAvgScore !== null && (
+                <div className="bg-bg-card/60 border border-amber-500/20 rounded px-3 py-2">
+                  <div className="font-mono text-[9px] tracking-wider uppercase text-text-dim/50 mb-1">Avg score</div>
+                  <div className="font-mono text-sm font-bold text-text-primary">
+                    {baselineAvgScore !== null ? (() => {
+                      const delta = Math.round((sourceAvgScore - baselineAvgScore) * 10) / 10
+                      return (
+                        <>
+                          <span className={delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-text-dim'}>
+                            {delta > 0 ? '+' : ''}{delta}
+                          </span>
+                          <span className="text-[10px] text-text-dim/60 font-normal ml-2">
+                            ({sourceAvgScore} vs {baselineAvgScore})
+                          </span>
+                        </>
+                      )
+                    })() : <span className="text-text-dim/50 text-xs">no scores</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Rounds parity */}
+              <div className="bg-bg-card/60 border border-amber-500/20 rounded px-3 py-2">
+                <div className="font-mono text-[9px] tracking-wider uppercase text-text-dim/50 mb-1">Rounds parity</div>
+                <div className="font-mono text-sm font-bold text-text-primary">
+                  {dbExperiment?.rounds_completed === baselineExp.rounds_completed ? (
+                    <span className="text-emerald-400">&#10003; both {dbExperiment?.rounds_completed}/{dbExperiment?.rounds_planned}</span>
+                  ) : (
+                    <span className="text-amber-400">&#10007; {dbExperiment?.rounds_completed} vs {baselineExp.rounds_completed}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {baselineExp?.status === 'failed' && (
+        <div className="px-6 py-3 border-t border-amber-500/25 text-center">
+          <span className="font-mono text-[10px] text-amber-400/70">
+            Baseline run failed &mdash;{' '}
+            <button
+              className="underline hover:text-amber-300"
+              onClick={handleRunBaseline}
+              disabled={launchingBaseline}
+            >
+              re-run
+            </button>
+          </span>
         </div>
       )}
 

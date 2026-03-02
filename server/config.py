@@ -234,14 +234,17 @@ MODEL_REGISTRY: dict[str, str] = {
     "Claude Opus 4.5":     "anthropic/claude-opus-4-5-20251101",
     # -- Google ----------------------------------------------------------
     "Gemini Flash":        "gemini/gemini-2.5-flash",
+    "Gemini Flash Lite":   "gemini/gemini-2.5-flash-lite",   # 1000 RPD free, lower latency
     "Gemini Pro":          "gemini/gemini-2.5-pro",
     # -- OpenAI ----------------------------------------------------------
+    "GPT-4.1 Nano":        "openai/gpt-4.1-nano",            # cheapest/fastest OpenAI tier
     "GPT-4.1 Mini":        "openai/gpt-4.1-mini",
     "GPT-4.1":             "openai/gpt-4.1",
     # -- DeepSeek --------------------------------------------------------
     "DeepSeek Chat":       "deepseek/deepseek-chat",
     "DeepSeek R1":         "deepseek/deepseek-reasoner",
-    # -- Groq (Llama 4 / fast inference) ---------------------------------
+    # -- Groq (Llama / fast inference) -----------------------------------
+    "Llama 3.3 70B":       "groq/llama-3.3-70b-versatile",   # free tier, Cerebras fallback
     "Llama 4 Scout":       "groq/meta-llama/llama-4-scout-17b-16e-instruct",
     "Llama 4 Maverick":    "groq/meta-llama/llama-4-maverick-17b-128e-instruct",
     # -- Mistral ---------------------------------------------------------

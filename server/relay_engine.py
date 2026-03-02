@@ -52,9 +52,9 @@ _FALLBACK_MAP: dict[str, list[tuple[str | None, str | None]]] = {
     # Each Gemini model has its own free-tier quota bucket, so sibling
     # models are tried first; cross-provider is the last resort.
     "gemini/gemini-2.5-flash": [
-        ("gemini/gemini-2.0-flash", None),   # sibling model, separate quota
-        ("gemini/gemini-1.5-flash", None),   # older model, own quota bucket
-        ("openai/gpt-4.1-mini", None),       # cross-provider last resort
+        ("gemini/gemini-2.5-flash-lite", None),  # Flash Lite: own quota, 1000 RPD free tier
+        ("gemini/gemini-2.0-flash", None),        # sibling model, separate quota
+        ("openai/gpt-4.1-mini", None),            # cross-provider last resort
     ],
     "gemini/gemini-2.5-pro": [
         ("gemini/gemini-2.5-flash", None),   # lower-tier, often has remaining quota
@@ -64,11 +64,13 @@ _FALLBACK_MAP: dict[str, list[tuple[str | None, str | None]]] = {
     # Catch-all for any other gemini/* model: backup key then cross-provider
     "gemini/":     [(None, "GEMINI_API_KEY_BACKUP"), ("openai/gpt-4.1-mini", None)],
     "openrouter/": [(None, "OPENROUTER_API_KEY_BACKUP")],
-    # Cross-provider fallbacks (same model weights, different inference provider)
-    "groq/llama-3.3-70b-versatile":  [("cerebras/llama3.3-70b", None)],
-    # Cross-provider fallbacks (equivalent model, different provider)
+    # Llama 3.3 on Groq: Cerebras fallback (corrected hyphen format: llama-3.3-70b)
+    "groq/llama-3.3-70b-versatile":  [("cerebras/llama-3.3-70b", None)],
+    # DeepSeek: SambaNova hosts same weights, more stable than deepseek.com
     "deepseek/deepseek-reasoner": [("sambanova/DeepSeek-R1", None)],
     "deepseek/deepseek-chat":     [("sambanova/deepseek-v3-0324", None)],
+    # Jamba: AI21 reliability is low; best-effort fallback to capable free-tier model
+    "ai21/jamba-1.5-large":       [("groq/llama-3.3-70b-versatile", None)],
 }
 
 

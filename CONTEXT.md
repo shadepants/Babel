@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-03-01 (session 36 &mdash; spec 019 implementation + session 35 commits)
+**Last Updated:** 2026-03-01 (session 37 &mdash; spec 018 baseline control preset shipped)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -16,27 +16,24 @@ A standalone shareable web app where AI models talk to each other in real-time &
 
 ## 3. Current State
 
-### Phases 1-19 + Sessions 20-35 (SHIPPED)
+### Phases 1-19 + Sessions 20-36 (SHIPPED)
 See `docs/CHANGELOG.md` for full history.
 
-### Session 36 &mdash; Spec 019 Implementation (SHIPPED `d4236c1`)
+### Session 37 &mdash; Spec 018 Implementation (SHIPPED `c3848f4`)
 
-- [x] **E2E smoke run**: 4/6 passed, 2 skipped (expected &mdash; no verdict/running experiment in DB)
-- [x] **Committed session 35 bug fixes** (`3a56f51`): summarizer guard, gemini prefix, audit dynamic models, vocab Unicode symbols, BOM strips, preset yaml em-dash fix
-- [x] **Committed playground specs** (`15d1892`): 15 task files (tasks/005-019), CONTEXT.md update
-- [x] **Spec 019 (Model Version Snapshot)** implemented and shipped (`d4236c1`):
-  - `server/config.py`: `resolve_model_version()` &mdash; date-stamped strings extract YYYYMMDD; aliases get `@YYYY-MM-DD` proxy
-  - `server/db.py`: idempotent migration adds `model_a_version`, `model_b_version` TEXT columns; `create_experiment()` accepts both
-  - `server/routers/relay.py`: resolves versions for standard, N-way, and RPG paths before DB insert; belt-and-suspenders `try/except`
-  - `ui/src/lib/models.ts`: new `formatModelVersion()` helper (60-char display, v-prefix for date-stamped, &ldquo;launched&rdquo; for aliases)
-  - `ui/src/api/types.ts`: `model_a_version?` / `model_b_version?` added to `ExperimentRecord`
-  - `ui/src/components/theater/ExperimentHeader.tsx`: version tooltip on model badges
-  - `ui/src/pages/Theater.tsx`: exposes `dbExperiment` from hook; passes versions to header
-  - `ui/src/pages/Gallery.tsx`: version tooltip on model name spans
+- [x] **Spec 018 (Baseline Control Preset)** fully implemented:
+  - `server/presets/baseline.yaml`: new control preset (`is_control: true`, 4 rounds, unstructured seed)
+  - `server/db.py`: idempotent migration adds `baseline_experiment_id` TEXT column; `link_baseline()` helper
+  - `server/routers/relay.py`: `baseline_for_experiment_id` field; pre-flight 404 guard; links baseline&rarr;source after `create_experiment`
+  - `server/routers/experiments.py`: `GET /:id/baseline` endpoint &mdash; 200 (full record), 202 (running), 404 (not linked)
+  - `ui/src/api/types.ts`: `is_control` on `Preset`, `baseline_experiment_id` on `ExperimentRecord`, `baseline_for_experiment_id` on `RelayStartRequest`
+  - `ui/src/api/client.ts`: `getExperimentBaseline()`
+  - `ui/src/pages/SeedLab.tsx`: baseline card styled muted/dashed with amber (Control) badge + measurement hint
+  - `ui/src/pages/Theater.tsx`: &ldquo;// Baseline&rdquo; button (hidden on baseline experiments + when already linked); 15s polling; vocab/score/rounds delta panel with signed deltas; judge-model mismatch warning
+  - `ui/src/pages/Gallery.tsx`: amber CONTROL badge; &ldquo;controls&rdquo; filter toggle (hidden by default)
 
 ### Next
 - [ ] **Gemini quota workaround**: configure `JUDGE_MODEL` to `anthropic/claude-haiku-4-5-20251001` in `.env` before re-running failed experiments (or wait for quota reset)
-- [ ] **Implement spec 018** (Baseline Control Preset): `server/presets/baseline.yaml` + `baseline_experiment_id` FK + Theater delta panel &mdash; ~2hr
 - [ ] **Implement spec 017** (Replication Runs): `replication_groups` table + `POST /api/relay/replicate` + Gallery group card &mdash; ~half-day
 - [ ] **RelayConfig wiring** (deferred): `run_relay()` still takes 20+ individual params; wire `RelayConfig` into signature + update 4 callers
 - [ ] **Re-run failed experiments**: experiments 01/06/08/09/10 failed due to Gemini quota; retry with Haiku judge
@@ -58,12 +55,12 @@ See `docs/CHANGELOG.md` for full history.
 | 015 | `tasks/015-what-if-replay-mode.md` | What-If Replay | Medium | Spec only |
 | 016 | `tasks/016-emergent-pattern-detector.md` | Pattern Detector | Large | Spec only |
 | **017** | `tasks/017-replication-runs.md` | **Replication Runs** | **Medium** | **Spec ready** |
-| **018** | `tasks/018-baseline-control-preset.md` | **Baseline Control Preset** | **Small** | **Spec ready** |
+| **018** | `tasks/018-baseline-control-preset.md` | **Baseline Control Preset** | **Small** | **&#x2705; SHIPPED** |
 | **019** | `tasks/019-model-version-snapshot.md` | **Model Version Snapshot** | **Tiny** | **&#x2705; SHIPPED** |
 
-**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 (next) &rarr; 017
+**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; **017 (next)**
 
-## 5. Architecture (v36.0)
+## 5. Architecture (v37.0)
 ```
 server/
   config.py             resolve_model_version() [s36]; RelayConfig (UNWIRED) [s33]; RPGConfig (wired) [s33]
@@ -72,23 +69,21 @@ server/
   summarizer_engine.py  hot_threshold guard fixed; gemini/ prefix fixed [s35]
   audit_engine.py       dynamic model selection from source experiment [s35]
   vocab_extractor.py    Unicode symbol tracking added; "original" in _CONLANG_PRESETS [s35]
-  routers/relay.py      resolve_model_version wired at create_experiment [s36]; helpers [s33]
-  db.py                 model_a_version + model_b_version columns + create_experiment params [s36]
+  presets/
+    baseline.yaml       control preset (is_control: true) [s37]
+  routers/relay.py      baseline_for_experiment_id field + link_baseline call [s37]; version [s36]
+  routers/experiments.py GET /:id/baseline endpoint [s37]; GET /:id/audit [s27]
+  db.py                 baseline_experiment_id column + link_baseline() [s37]; model_a/b_version [s36]
 ui/src/
   lib/
     models.ts           formatModelVersion() helper [s36]
-    color.ts, spriteStatus.ts, exporters.ts [s33]
-  hooks/                useTheaterData.ts, useColorBleed.ts [s33]
-  components/configure/ AgentSlotsPanel.tsx [s33]
-  components/theater/
-    ExperimentHeader.tsx version tooltip on model badges [s36]
-  api/types.ts          model_a_version / model_b_version fields [s36]; BOM stripped [s35]
+  api/
+    types.ts            baseline fields on Preset + ExperimentRecord + RelayStartRequest [s37]
+    client.ts           getExperimentBaseline() [s37]
   pages/
-    Theater.tsx         exposes dbExperiment for version passthrough [s36]
-    Gallery.tsx         version tooltip on model name spans [s36]
-    Settings.tsx        Memory Bank key fix [s34]; BOM stripped [s35]
-    Configure.tsx       BOM stripped [s35]
-    Documentary.tsx     BOM stripped [s35]
+    SeedLab.tsx         baseline card: dashed/muted/amber Control badge [s37]
+    Theater.tsx         Run Baseline button + 15s poll + delta panel [s37]; version passthrough [s36]
+    Gallery.tsx         CONTROL badge + controls filter toggle [s37]; version tooltip [s36]
 tasks/                  005-019: 15 playground feature specs [s35]
 ```
 
@@ -106,3 +101,4 @@ tasks/                  005-019: 15 playground feature specs [s35]
 - **RPGConfig:** fully wired &mdash; pass `config: RPGConfig` to `run_rpg_match()`.
 - **Subagent definitions:** use `babel-*-agent` from `~/.claude/agents/` for future sub-tasks.
 - **spec 019 versions:** null for pre-019 experiments &mdash; all UI surfaces handle null gracefully (no tooltip).
+- **baseline link:** `link_baseline(source_id, baseline_id)` updates source experiment; polling via `GET /api/experiments/{source_id}/baseline`.

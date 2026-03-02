@@ -48,8 +48,20 @@ for _name in ("LiteLLM", "litellm", "httpx", "httpcore", "openai", "anthropic"):
 # Exact keys take priority over prefix keys.
 
 _FALLBACK_MAP: dict[str, list[tuple[str | None, str | None]]] = {
-    # Same-provider key rotation (backup API key, same model)
-    # then cross-provider escape when backup key is also exhausted/missing
+    # Gemini: model-specific chains tried before the prefix catch-all.
+    # Each Gemini model has its own free-tier quota bucket, so sibling
+    # models are tried first; cross-provider is the last resort.
+    "gemini/gemini-2.5-flash": [
+        ("gemini/gemini-2.0-flash", None),   # sibling model, separate quota
+        ("gemini/gemini-1.5-flash", None),   # older model, own quota bucket
+        ("openai/gpt-4.1-mini", None),       # cross-provider last resort
+    ],
+    "gemini/gemini-2.5-pro": [
+        ("gemini/gemini-2.5-flash", None),   # lower-tier, often has remaining quota
+        ("gemini/gemini-2.0-flash", None),   # sibling model
+        ("openai/gpt-4.1", None),            # cross-provider equivalent tier
+    ],
+    # Catch-all for any other gemini/* model: backup key then cross-provider
     "gemini/":     [(None, "GEMINI_API_KEY_BACKUP"), ("openai/gpt-4.1-mini", None)],
     "openrouter/": [(None, "OPENROUTER_API_KEY_BACKUP")],
     # Cross-provider fallbacks (same model weights, different inference provider)
@@ -390,7 +402,7 @@ def compute_echo_similarity(
 async def call_model(
     agent: RelayAgent,
     messages: list[dict],
-    max_retries: int = 2,
+    max_retries: int = 3,
     match_id: str | None = None,
 ) -> tuple[str, float, int | None]:
     """Call an LLM with full conversation history.

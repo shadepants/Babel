@@ -97,6 +97,7 @@ export function Layout() {
           <NavLink to="/arena"    className={linkClass}>Arena</NavLink>
           <NavLink to="/rpg-hub"  className={linkClass}>RPG</NavLink>
           <NavLink to="/settings" className={linkClass}>Settings</NavLink>
+          <NavLink to="/help"     className={linkClass}>Help</NavLink>
         </div>
       </nav>
 

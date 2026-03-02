@@ -28,6 +28,7 @@ export default function Configure() {
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
   const forkId = searchParams.get('fork')
+  const cfgParam = searchParams.get('cfg')
   const formAccentColor = isCustom ? null : getPresetGlow(presetId)
 
   // -- Data loading --
@@ -93,6 +94,9 @@ export default function Configure() {
 
   // -- Spec 017: Replication Runs --
   const [replicationCount, setReplicationCount] = useState(1)
+
+  // -- Spec 014: Shareable Config URLs --
+  const [copied, setCopied] = useState(false)
 
   // Load models + preset data
   useEffect(() => {
@@ -184,6 +188,33 @@ export default function Configure() {
             // fork experiment not found -- continue with preset defaults
           }
         }
+
+        // Spec 014: Shareable Config URLs -- apply last so cfg wins over preset/remix/fork
+        if (cfgParam) {
+          try {
+            const decoded = JSON.parse(cfgParam)
+            if (decoded.agents) setAgents(decoded.agents)
+            if (decoded.rounds != null) setRounds(decoded.rounds)
+            if (decoded.maxTokens != null) setMaxTokens(decoded.maxTokens)
+            if (decoded.turnDelay != null) setTurnDelay(decoded.turnDelay)
+            if (decoded.seed != null) { setSeed(decoded.seed); setSeedEditing(true) }
+            if (decoded.systemPrompt != null) { setSystemPrompt(decoded.systemPrompt); setPromptEditing(true) }
+            if (decoded.judgeModel != null) setJudgeModel(decoded.judgeModel)
+            if (decoded.enableScoring != null) setEnableScoring(decoded.enableScoring)
+            if (decoded.enableVerdict != null) setEnableVerdict(decoded.enableVerdict)
+            if (decoded.enableMemory != null) setEnableMemory(decoded.enableMemory)
+            if (decoded.observerModel != null) setObserverModel(decoded.observerModel)
+            if (decoded.observerInterval != null) setObserverInterval(decoded.observerInterval)
+            if (decoded.enableEchoDetector != null) setEnableEchoDetector(decoded.enableEchoDetector)
+            if (decoded.enableEchoIntervention != null) setEnableEchoIntervention(decoded.enableEchoIntervention)
+            if (decoded.enableAudit != null) setEnableAudit(decoded.enableAudit)
+            if (decoded.replicationCount != null) setReplicationCount(decoded.replicationCount)
+            if (decoded.hiddenGoals != null) setHiddenGoals(decoded.hiddenGoals)
+            if (decoded.revelationRound !== undefined) setRevelationRound(decoded.revelationRound)
+          } catch {
+            // invalid cfg param -- ignore silently
+          }
+        }
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Failed to load configuration')
       } finally {
@@ -191,7 +222,7 @@ export default function Configure() {
       }
     }
     loadData()
-  }, [presetId, isCustom, remixId, forkId])
+  }, [presetId, isCustom, remixId, forkId, cfgParam])
 
   // Load personas for dropdowns
   useEffect(() => {
@@ -210,6 +241,21 @@ export default function Configure() {
     setRounds(presetDefaults.rounds)
     setMaxTokens(presetDefaults.maxTokens)
     setAgents(prev => prev.map(a => ({ ...a, temperature: presetDefaults.temperature })))
+  }
+
+  function handleShare() {
+    const cfg = {
+      agents, rounds, maxTokens, turnDelay, seed, systemPrompt,
+      judgeModel, enableScoring, enableVerdict, enableMemory,
+      observerModel, observerInterval, enableEchoDetector,
+      enableEchoIntervention, enableAudit, replicationCount,
+      hiddenGoals, revelationRound,
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.set('cfg', JSON.stringify(cfg))
+    navigator.clipboard.writeText(url.toString()).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   // Agent slot helpers
@@ -847,6 +893,17 @@ export default function Configure() {
                   : `// launches ${replicationCount} identical experiments &mdash; grouped for stats`}
               </span>
             </div>
+          </div>
+
+          {/* Share Config (Spec 014) */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="font-mono text-[9px] text-text-dim/40 hover:text-accent tracking-widest uppercase transition-colors"
+            >
+              {copied ? '&#10003; link copied' : '&#8599; share config'}
+            </button>
           </div>
 
           {/* Launch */}

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { api } from '@/api/client'
-import type { ExperimentRecord } from '@/api/types'
+import type { ExperimentRecord, ReplicationGroupSummary } from '@/api/types'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { formatDuration, modelDisplayName } from '@/lib/format'
 import { formatModelVersion } from '@/lib/models'
@@ -49,6 +49,7 @@ type StatusFilter = typeof STATUS_FILTERS[number]
 export default function Gallery() {
   const navigate = useNavigate()
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([])
+  const [replicationGroups, setReplicationGroups] = useState<ReplicationGroupSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -63,8 +64,14 @@ export default function Gallery() {
       offset: page * PAGE_SIZE,
     }
     if (statusFilter !== 'all') params.status = statusFilter
-    api.listExperiments(params)
-      .then((res) => setExperiments(res.experiments))
+    Promise.all([
+      api.listExperiments(params),
+      api.listReplicationGroups({ limit: 20 }),
+    ])
+      .then(([expRes, groupRes]) => {
+        setExperiments(expRes.experiments)
+        setReplicationGroups(groupRes.groups)
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load experiments'))
       .finally(() => setLoading(false))
   }, [page, statusFilter])
@@ -73,13 +80,20 @@ export default function Gallery() {
     fetchExperiments()
   }, [fetchExperiments])
 
-  // Auto-poll if there are running experiments
+  // Auto-poll if there are running experiments or groups
   useEffect(() => {
     const hasRunning = experiments.some((e) => e.status === 'running')
+      || replicationGroups.some((g) => g.status === 'running')
     if (!hasRunning) return
     const interval = setInterval(fetchExperiments, 15_000)
     return () => clearInterval(interval)
-  }, [experiments, fetchExperiments])
+  }, [experiments, replicationGroups, fetchExperiments])
+
+  // Experiments that don't belong to a replication group -- memoised to skip filter on unrelated re-renders
+  const standaloneExperiments = useMemo(
+    () => experiments.filter((e) => !e.replication_group_id),
+    [experiments],
+  )
 
   return (
     <div className="flex-1 p-6 max-w-4xl mx-auto space-y-8">
@@ -128,6 +142,68 @@ export default function Gallery() {
         </div>
       </div>
 
+      {/* Replication Groups (Spec 017) */}
+      {replicationGroups.length > 0 && (
+        <div className="space-y-2">
+          <div className="font-mono text-[9px] tracking-[0.2em] uppercase text-text-dim/50 px-1">
+            Replication Groups
+          </div>
+          {replicationGroups.map((group) => {
+            const statusColor =
+              group.status === 'completed' ? 'text-emerald-400 border-emerald-500/30' :
+              group.status === 'running'   ? 'text-accent border-accent/30' :
+              group.status === 'partial'   ? 'text-amber-400 border-amber-500/30' :
+              'text-danger border-danger/30'
+            const modelA = group.model_a?.split('/').pop() ?? ''
+            const modelB = group.model_b?.split('/').pop() ?? ''
+            return (
+              <div
+                key={group.group_id}
+                className="neural-row neural-row--completed cursor-pointer"
+                onClick={() => navigate(`/replication/${group.group_id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/replication/${group.group_id}`) }}
+              >
+                <div className="px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-[9px] tracking-widest uppercase border px-1.5 py-0.5 rounded-sm text-violet-400 border-violet-500/30">
+                        replication
+                      </span>
+                      <span className="font-mono text-[10px] text-accent border border-accent/30 px-1.5 py-0.5 rounded-sm font-bold">
+                        n={group.count}
+                      </span>
+                      {group.preset && (
+                        <span className="font-mono text-[9px] tracking-wider text-accent/55 border border-accent/20 px-1.5 py-0.5 rounded-sm uppercase">
+                          {group.preset}
+                        </span>
+                      )}
+                      {modelA && (
+                        <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
+                          {modelA} <span className="text-text-dim/60 font-mono text-[10px]">vs</span> {modelB}
+                        </span>
+                      )}
+                      <span className={`font-mono text-[9px] tracking-widest uppercase border px-1.5 py-0.5 rounded-sm ${statusColor}`}>
+                        {group.status}
+                      </span>
+                    </div>
+                    <div className="font-mono text-[10px] text-text-dim/50">
+                      {new Date(group.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      <span className="text-accent/25 mx-1.5">&middot;</span>
+                      {group.group_id}
+                    </div>
+                  </div>
+                  <span className="font-mono text-[9px] text-accent/60 tracking-wider shrink-0">
+                    View &rarr;
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Loading */}
       {loading && (
         <p className="font-mono text-[10px] text-text-dim animate-pulse-slow tracking-widest uppercase">
@@ -141,7 +217,7 @@ export default function Gallery() {
       )}
 
       {/* Empty State */}
-      {!loading && !error && experiments.length === 0 && (
+      {!loading && !error && standaloneExperiments.length === 0 && replicationGroups.length === 0 && (
         <div className="neural-card p-10 text-center space-y-4">
           <div className="neural-card-bar" />
           <p className="font-mono text-xs text-text-dim tracking-wider uppercase">// no records found</p>
@@ -151,8 +227,8 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Experiment Log Rows */}
-      {!loading && !error && experiments.length > 0 && (
+      {/* Experiment Log Rows (standalone only) */}
+      {!loading && !error && standaloneExperiments.length > 0 && (
         <div className="space-y-2">
           {/* Column headers */}
           <div className="grid grid-cols-[16px_1fr_auto_auto] gap-4 px-4 pb-1">
@@ -162,7 +238,7 @@ export default function Gallery() {
             <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-text-dim/50 w-32" />
           </div>
 
-          {experiments.filter((exp) => showControls || exp.preset !== 'baseline').map((exp) => {
+          {standaloneExperiments.filter((exp) => showControls || exp.preset !== 'baseline').map((exp) => {
             const isControl = exp.preset === 'baseline'
             const statuses = resolveSpritePair(exp.winner, exp.status)
             return (

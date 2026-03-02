@@ -108,6 +108,11 @@ class RelayStartRequest(BaseModel):
         default=None,
         description="If set, this experiment is a baseline comparison for the given experiment ID.",
     )
+    # Spec 017: Replication Runs (used only by /replicate; ignored by /start)
+    replication_count: int = Field(
+        default=1, ge=1, le=10,
+        description="Number of identical replications to launch (1 = single, behaves like /start).",
+    )
 
 
 class RelayStartResponse(BaseModel):
@@ -364,7 +369,100 @@ async def start_relay(body: RelayStartRequest, request: Request):
         if source_exp is None:
             raise HTTPException(404, f"Source experiment '{body.baseline_for_experiment_id}' not found")
 
-    # -- Resolve preset if specified (server is authoritative source of truth) --
+    seed, system_prompt = await _resolve_preset_and_prompt(body, request)
+
+    if body.mode == "rpg" and body.participants:
+        # RPG path: build experiment record manually (RPG-specific version logic)
+        config = {
+            "temperature_a": body.temperature_a,
+            "temperature_b": body.temperature_b,
+            "max_tokens": body.max_tokens,
+            "recovery": {
+                "mode": body.mode,
+                "agents": (
+                    [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+                     for ac in resolved_agents]
+                    if resolved_agents else
+                    [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+                     {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
+                ),
+                "turn_delay_seconds": body.turn_delay_seconds,
+                "preset": body.preset,
+                "enable_scoring": body.enable_scoring,
+                "enable_verdict": body.enable_verdict,
+                "enable_memory": body.enable_memory,
+                "observer_model": body.observer_model,
+                "observer_interval": body.observer_interval,
+                "participants": body.participants,
+                "rpg_config": body.rpg_config,
+            },
+        }
+        try:
+            _p = body.participants
+            _m_a = (_p[0].get("model", "") if isinstance(_p[0], dict) else getattr(_p[0], "model", "")) or body.model_a
+            _m_b = ((_p[1].get("model", "") if isinstance(_p[1], dict) else getattr(_p[1], "model", "")) if len(_p) > 1 else "") or body.model_b
+            model_a_version = resolve_model_version(_m_a)
+            model_b_version = resolve_model_version(_m_b)
+        except Exception:
+            model_a_version = body.model_a
+            model_b_version = body.model_b
+
+        agents_dicts = (
+            [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
+             for ac in resolved_agents]
+            if resolved_agents else
+            [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
+             {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
+        )
+        match_id = await db.create_experiment(
+            model_a=body.model_a,
+            model_b=body.model_b,
+            seed=seed,
+            system_prompt=system_prompt,
+            rounds_planned=body.rounds,
+            preset=body.preset,
+            config=config,
+            temperature_a=body.temperature_a,
+            temperature_b=body.temperature_b,
+            judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
+            enable_scoring=body.enable_scoring,
+            enable_verdict=body.enable_verdict,
+            mode=body.mode,
+            participants_json=json.dumps(body.participants) if body.participants else None,
+            parent_experiment_id=body.parent_experiment_id,
+            fork_at_round=body.fork_at_round,
+            agents=agents_dicts,
+            hidden_goals=body.hidden_goals,
+            model_a_version=model_a_version,
+            model_b_version=model_b_version,
+        )
+        if body.baseline_for_experiment_id:
+            await db.link_baseline(body.baseline_for_experiment_id, match_id)
+        cancel_event = asyncio.Event()
+        return await _start_rpg_relay(
+            match_id, body, request, db, hub, cancel_event, seed, system_prompt
+        )
+
+    # Standard path (including Spec 018 baseline linkage)
+    match_id = await _create_and_launch_one(
+        body, request, db, hub, seed, system_prompt,
+        resolved_agents, resolved_judge,
+    )
+    if body.baseline_for_experiment_id:
+        await db.link_baseline(body.baseline_for_experiment_id, match_id)
+
+    agents_for_resp = resolved_agents or []
+    return RelayStartResponse(
+        match_id=match_id,
+        model_a=agents_for_resp[0].model if agents_for_resp else body.model_a,
+        model_b=agents_for_resp[1].model if len(agents_for_resp) > 1 else body.model_b,
+        rounds=body.rounds,
+        status="running",
+    )
+
+
+async def _resolve_preset_and_prompt(body: "RelayStartRequest", request: Request) -> tuple[str, str]:
+    """Return (seed, system_prompt) after applying preset overrides."""
     seed = body.seed
     system_prompt = body.system_prompt
     if body.preset:
@@ -373,18 +471,27 @@ async def start_relay(body: RelayStartRequest, request: Request):
         if preset_data:
             seed = preset_data.get("seed", seed)
             system_prompt = preset_data.get("system_prompt", system_prompt)
-
-    # RPG mode: swap out the conlang default for an RPG-appropriate system prompt
-    # (only when the caller hasn't provided a custom prompt)
     if body.mode == "rpg" and system_prompt == DEFAULT_SYSTEM_PROMPT:
         system_prompt = DEFAULT_RPG_SYSTEM_PROMPT
+    return seed, system_prompt
 
-    # -- Create experiment record --
+
+async def _create_and_launch_one(
+    body: "RelayStartRequest",
+    request: Request,
+    db,
+    hub,
+    seed: str,
+    system_prompt: str,
+    resolved_agents: list | None,
+    resolved_judge: str,
+    replication_group_id: str | None = None,
+) -> str:
+    """Create one experiment record, launch the relay, and return the match_id."""
     config = {
         "temperature_a": body.temperature_a,
         "temperature_b": body.temperature_b,
         "max_tokens": body.max_tokens,
-        # Full recovery config -- used by recover_stale_sessions() on server restart
         "recovery": {
             "mode": body.mode,
             "agents": (
@@ -405,7 +512,6 @@ async def start_relay(body: RelayStartRequest, request: Request):
             "rpg_config": body.rpg_config,
         },
     }
-    # Serialise agents list for create_experiment (it handles model_a/model_b population)
     agents_dicts = (
         [{"model": ac.model, "temperature": ac.temperature, "name": ac.name}
          for ac in resolved_agents]
@@ -413,15 +519,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
         [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
          {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
     )
-
-    # Spec 019: resolve model version identifiers (best-effort, never blocks launch)
     try:
-        if body.mode == "rpg" and body.participants and len(body.participants) >= 1:
-            # For RPG, version the first two participants' models
-            _p = body.participants
-            _m_a = (_p[0].get("model", "") if isinstance(_p[0], dict) else getattr(_p[0], "model", "")) or body.model_a
-            _m_b = ((_p[1].get("model", "") if isinstance(_p[1], dict) else getattr(_p[1], "model", "")) if len(_p) > 1 else "") or body.model_b
-        elif resolved_agents:
+        if resolved_agents:
             _m_a = resolved_agents[0].model
             _m_b = resolved_agents[1].model if len(resolved_agents) > 1 else resolved_agents[0].model
         else:
@@ -453,23 +552,66 @@ async def start_relay(body: RelayStartRequest, request: Request):
         hidden_goals=body.hidden_goals,
         model_a_version=model_a_version,
         model_b_version=model_b_version,
+        replication_group_id=replication_group_id,
     )
-
-    # Spec 018: link this baseline experiment back to the source experiment
-    if body.baseline_for_experiment_id:
-        await db.link_baseline(body.baseline_for_experiment_id, match_id)
-
     cancel_event = asyncio.Event()
-
-    # -- Dispatch to the appropriate launch helper --
-    if body.mode == "rpg" and body.participants:
-        return await _start_rpg_relay(
-            match_id, body, request, db, hub, cancel_event, seed, system_prompt
-        )
-    return await _start_standard_relay(
+    await _start_standard_relay(
         match_id, body, request, db, hub, cancel_event, seed, system_prompt,
         resolved_agents, resolved_judge,
     )
+    return match_id
+
+
+@router.post("/replicate")
+async def replicate_relay(body: RelayStartRequest, request: Request):
+    """Launch N identical experiments and group them into a replication group.
+
+    RPG mode is not supported. Uses POST /api/relay/replicate instead of /start
+    when replication_count > 1.
+    """
+    db = _get_db(request)
+    hub = _get_hub(request)
+
+    if body.mode == "rpg":
+        raise HTTPException(400, "Replication of RPG mode experiments is not supported in v1")
+
+    resolved_agents, resolved_judge = _validate_and_resolve_agents(body)
+    seed, system_prompt = await _resolve_preset_and_prompt(body, request)
+
+    n = body.replication_count
+
+    # Create the group record with an empty list; update after all launches
+    group_id = await db.create_replication_group(
+        config_snapshot=body.model_dump(exclude={"replication_count"}),
+        experiment_ids=[],
+    )
+
+    experiment_ids: list[str] = []
+    for i in range(n):
+        if i > 0:
+            await asyncio.sleep(2)
+        match_id = await _create_and_launch_one(
+            body, request, db, hub, seed, system_prompt,
+            resolved_agents, resolved_judge,
+            replication_group_id=group_id,
+        )
+        experiment_ids.append(match_id)
+
+    await db.update_replication_group_experiments(group_id, experiment_ids)
+
+    logger.info(
+        "Replication group %s created: %d experiments launched (preset=%s)",
+        group_id, n, body.preset,
+    )
+
+    return {
+        "group_id": group_id,
+        "experiment_ids": experiment_ids,
+        "count": n,
+        "status": "running",
+    }
+
+
 @router.post("/{match_id}/stop")
 async def stop_relay(match_id: str, request: Request):
     """Stop a running experiment. Sets cancel flag checked between rounds."""

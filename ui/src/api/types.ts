@@ -446,6 +446,8 @@ export interface ExperimentRecord {
   model_b_version?: string | null;
   // Spec 018: baseline control preset
   baseline_experiment_id?: string | null;
+  // Spec 017: replication group membership (null = standalone)
+  replication_group_id?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */
@@ -702,6 +704,68 @@ export interface TreeNode {
   created_at: string;
   preset: string | null;
   children: TreeNode[];
+}
+
+// ── Spec 017: Replication Runs ───────────────────────────────
+
+/** POST /api/relay/replicate response */
+export interface ReplicateResponse {
+  group_id: string;
+  experiment_ids: string[];
+  count: number;
+  status: string;
+}
+
+/** Aggregate stats for a replication group */
+export interface ReplicationStats {
+  vocab_count: { mean: number | null; stddev: number | null; min: number | null; max: number | null; values: number[] };
+  winner: { A: number; B: number; tie: number; none: number };
+  avg_score_a: { mean: number | null; stddev: number | null };
+  avg_score_b: { mean: number | null; stddev: number | null };
+  rounds_completed: { mean: number | null; min: number | null; max: number | null };
+  failed: number;
+}
+
+/** Single experiment summary inside a replication group */
+export interface ReplicationExperimentSummary {
+  id: string;
+  status: string;
+  rounds_completed: number;
+  winner: string | null;
+  created_at: string | null;
+}
+
+/** GET /api/replication-groups/:id response */
+export interface ReplicationGroup {
+  group_id: string;
+  status: string;
+  count: number;
+  completed: number;
+  running: number;
+  failed: number;
+  experiments: ReplicationExperimentSummary[];
+  stats: ReplicationStats;
+  config_snapshot: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Single item from GET /api/replication-groups list */
+export interface ReplicationGroupSummary {
+  group_id: string;
+  created_at: string;
+  status: string;
+  count: number;
+  experiment_ids: string[];
+  preset: string | null;
+  model_a: string | null;
+  model_b: string | null;
+}
+
+/** GET /api/replication-groups response */
+export interface ReplicationGroupsListResponse {
+  groups: ReplicationGroupSummary[];
+  limit: number;
+  offset: number;
 }
 
 /** Session 27: Model Pairing Oracle */

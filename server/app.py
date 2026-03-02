@@ -125,12 +125,14 @@ def create_app() -> FastAPI:
     from server.routers.presets import router as presets_router
     from server.routers.tournaments import router as tournaments_router
     from server.routers.personas import router as personas_router
+    from server.routers.replication import router as replication_router
 
     app.include_router(relay_router, prefix="/api")
     app.include_router(experiments_router, prefix="/api/experiments")
     app.include_router(presets_router, prefix="/api/presets")
     app.include_router(tournaments_router, prefix="/api/tournaments")
     app.include_router(personas_router, prefix="/api/personas")
+    app.include_router(replication_router, prefix="/api/replication-groups")
 
     # --- PASSWORD PROTECTION GATEKEEPER (share mode only) ---
     if os.getenv("SHARE_MODE"):

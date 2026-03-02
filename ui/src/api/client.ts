@@ -1,6 +1,9 @@
 import type {
   RelayStartRequest,
   RelayStartResponse,
+  ReplicateResponse,
+  ReplicationGroup,
+  ReplicationGroupsListResponse,
   ModelsResponse,
   PersonaRecord,
   PresetsResponse,
@@ -294,6 +297,27 @@ export const api = {
    *  Throws ApiError 404 when no baseline is linked. */
   getExperimentBaseline: (experimentId: string) =>
     fetchJson<ExperimentRecord | { status: string }>(`/api/experiments/${experimentId}/baseline`),
+
+  // -- Spec 017: Replication Runs -------------------------------------------
+
+  /** Launch N identical experiments and create a replication group */
+  startReplication: (body: RelayStartRequest & { replication_count: number }) =>
+    fetchJson<ReplicateResponse>('/api/relay/replicate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** List all replication groups */
+  listReplicationGroups: (params?: { limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    return fetchJson<ReplicationGroupsListResponse>(`/api/replication-groups?${query.toString()}`);
+  },
+
+  /** Get replication group detail + live stats */
+  getReplicationGroup: (groupId: string) =>
+    fetchJson<ReplicationGroup>(`/api/replication-groups/${groupId}`),
 };
 
 export { ApiError };

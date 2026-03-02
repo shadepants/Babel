@@ -174,6 +174,16 @@ CREATE TABLE IF NOT EXISTS entity_snapshots (
     snapshot_json TEXT NOT NULL,
     generated_at TEXT NOT NULL
 );
+
+-- Spec 017: Replication Runs
+CREATE TABLE IF NOT EXISTS replication_groups (
+    id            TEXT PRIMARY KEY,
+    created_at    TEXT NOT NULL,
+    config_snapshot_json TEXT NOT NULL,
+    experiment_ids_json  TEXT NOT NULL,
+    status        TEXT DEFAULT 'running'
+        CHECK(status IN ('running', 'completed', 'partial', 'failed'))
+);
 """
 
 
@@ -391,6 +401,15 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Spec 017: Replication Runs
+        try:
+            await self._db.execute(
+                "ALTER TABLE experiments ADD COLUMN replication_group_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -459,6 +478,7 @@ class Database:
         hidden_goals: list[dict] | None = None,
         model_a_version: str | None = None,
         model_b_version: str | None = None,
+        replication_group_id: str | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -485,18 +505,202 @@ class Database:
                     judge_model, enable_scoring, enable_verdict,
                     mode, participants_json,
                     parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json,
-                    model_a_version, model_b_version)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    model_a_version, model_b_version, replication_group_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
                  judge_model, int(enable_scoring), int(enable_verdict),
                  mode, participants_json,
                  parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json,
-                 model_a_version, model_b_version),
+                 model_a_version, model_b_version, replication_group_id),
             )
             await self.db.commit()
         return experiment_id
+
+    # -- Replication Groups (Spec 017) ----------------------------------------
+
+    async def create_replication_group(
+        self,
+        config_snapshot: dict,
+        experiment_ids: list[str],
+    ) -> str:
+        """Create a replication group record and return its ID."""
+        group_id = uuid.uuid4().hex[:12]
+        now = datetime.now(timezone.utc).isoformat()
+        async with self._write_lock:  # type: ignore[union-attr]
+            await self.db.execute(
+                """INSERT INTO replication_groups
+                   (id, created_at, config_snapshot_json, experiment_ids_json, status)
+                   VALUES (?, ?, ?, ?, 'running')""",
+                (group_id, now, json.dumps(config_snapshot), json.dumps(experiment_ids)),
+            )
+            await self.db.commit()
+        return group_id
+
+    async def update_replication_group_experiments(
+        self, group_id: str, experiment_ids: list[str]
+    ) -> None:
+        """Update the experiment list for a replication group after all launches."""
+        await self._execute_queued(
+            "UPDATE replication_groups SET experiment_ids_json = ? WHERE id = ?",
+            (json.dumps(experiment_ids), group_id),
+        )
+
+    async def get_replication_group(self, group_id: str) -> dict | None:
+        """Fetch a single replication group by ID."""
+        cursor = await self.db.execute(
+            "SELECT * FROM replication_groups WHERE id = ?", (group_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_replication_groups(
+        self, limit: int = 20, offset: int = 0
+    ) -> list[dict]:
+        """List replication groups, most recent first."""
+        cursor = await self.db.execute(
+            "SELECT * FROM replication_groups ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def update_replication_group_status(self, group_id: str) -> None:
+        """Re-derive group status from its member experiments."""
+        group = await self.get_replication_group(group_id)
+        if not group:
+            return
+        exp_ids = json.loads(group["experiment_ids_json"])
+        statuses = []
+        for exp_id in exp_ids:
+            exp = await self.get_experiment(exp_id)
+            if exp:
+                statuses.append(exp.get("status", "running"))
+
+        if not statuses:
+            return
+
+        running_count = sum(1 for s in statuses if s == "running")
+        completed_count = sum(1 for s in statuses if s == "completed")
+        failed_count = sum(1 for s in statuses if s in ("failed", "stopped"))
+
+        if running_count > 0:
+            new_status = "running"
+        elif failed_count == len(statuses):
+            new_status = "failed"
+        elif failed_count > 0:
+            new_status = "partial"
+        else:
+            new_status = "completed"
+
+        await self._execute_queued(
+            "UPDATE replication_groups SET status = ? WHERE id = ?",
+            (new_status, group_id),
+        )
+
+    async def get_replication_group_stats(self, group_id: str) -> dict:
+        """Compute aggregate statistics for a replication group.
+
+        Only completed experiments contribute to numeric stats.
+        Failed experiments are counted but excluded from means/stddev.
+        """
+        group = await self.get_replication_group(group_id)
+        if not group:
+            return {}
+
+        exp_ids = json.loads(group["experiment_ids_json"])
+
+        completed: list[dict] = []
+        failed_count = 0
+        running_count = 0
+
+        for exp_id in exp_ids:
+            exp = await self.get_experiment(exp_id)
+            if not exp:
+                continue
+            status = exp.get("status", "running")
+            if status == "completed":
+                completed.append(exp)
+            elif status in ("failed", "stopped"):
+                failed_count += 1
+            else:
+                running_count += 1
+
+        def _mean(values: list) -> float | None:
+            return sum(values) / len(values) if values else None
+
+        def _stddev(values: list) -> float | None:
+            if len(values) < 3:
+                return None
+            mu = sum(values) / len(values)
+            return math.sqrt(sum((x - mu) ** 2 for x in values) / len(values))
+
+        # Vocab counts (one query per completed experiment)
+        vocab_values: list[int] = []
+        for exp in completed:
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) AS cnt FROM vocabulary WHERE experiment_id = ?",
+                (exp["id"],),
+            )
+            row = await cursor.fetchone()
+            vocab_values.append(row["cnt"] if row else 0)
+
+        # Winner tallies
+        winner_counts: dict[str, int] = {"A": 0, "B": 0, "tie": 0, "none": 0}
+        rounds_values: list[int] = []
+        for exp in completed:
+            w = exp.get("winner")
+            if w == "agent_0":
+                winner_counts["A"] += 1
+            elif w == "agent_1":
+                winner_counts["B"] += 1
+            elif w == "tie":
+                winner_counts["tie"] += 1
+            else:
+                winner_counts["none"] += 1
+            rounds_values.append(exp.get("rounds_completed") or 0)
+
+        # Per-agent avg scores (join turn_scores on turns.model)
+        score_a_values: list[float] = []
+        score_b_values: list[float] = []
+        for exp in completed:
+            exp_id = exp["id"]
+            for model_col, acc in [(exp["model_a"], score_a_values), (exp["model_b"], score_b_values)]:
+                cursor = await self.db.execute(
+                    """SELECT AVG((ts.creativity + ts.coherence + ts.engagement + ts.novelty) / 4.0)
+                           AS avg_score
+                       FROM turn_scores ts
+                       JOIN turns t ON ts.turn_id = t.id
+                       WHERE t.experiment_id = ? AND t.model = ?""",
+                    (exp_id, model_col),
+                )
+                row = await cursor.fetchone()
+                if row and row["avg_score"] is not None:
+                    acc.append(row["avg_score"])
+
+        return {
+            "vocab_count": {
+                "mean": _mean(vocab_values),
+                "stddev": _stddev(vocab_values),
+                "min": min(vocab_values) if vocab_values else None,
+                "max": max(vocab_values) if vocab_values else None,
+                "values": vocab_values,
+            },
+            "winner": winner_counts,
+            "avg_score_a": {
+                "mean": _mean(score_a_values),
+                "stddev": _stddev(score_a_values),
+            },
+            "avg_score_b": {
+                "mean": _mean(score_b_values),
+                "stddev": _stddev(score_b_values),
+            },
+            "rounds_completed": {
+                "mean": _mean(rounds_values),
+                "min": min(rounds_values) if rounds_values else None,
+                "max": max(rounds_values) if rounds_values else None,
+            },
+        }
 
     async def link_baseline(self, source_experiment_id: str, baseline_experiment_id: str) -> None:
         """Set the baseline_experiment_id on the source experiment (Spec 018)."""

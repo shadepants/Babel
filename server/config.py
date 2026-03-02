@@ -1,5 +1,7 @@
 """Babel configuration -- settings, defaults, and model registry."""
 
+import datetime
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -101,6 +103,36 @@ DEFAULT_MAX_TOKENS = 1500
 JUDGE_MODEL = "gemini/gemini-2.5-flash"
 DEFAULT_SCORING_ENABLED = False
 DEFAULT_VERDICT_ENABLED = False
+
+
+# -- Model Version Snapshot --------------------------------------------------
+# Spec 019: resolve the most specific version identifier available at launch.
+
+_DATE_PATTERN = re.compile(r'\b(\d{8})\b')  # matches YYYYMMDD in model strings
+
+
+def resolve_model_version(model_string: str) -> str:
+    """Return the most specific version identifier available for this model.
+
+    For date-stamped model strings (e.g. Anthropic), the date suffix IS the
+    version checkpoint. For all other models, return model_string@YYYY-MM-DD
+    as a launch-date proxy so experiments are at least date-bracketed.
+
+    Never raises -- returns the bare model_string as an absolute fallback.
+
+    Examples:
+        "anthropic/claude-haiku-4-5-20251001"  ->  "anthropic/claude-haiku-4-5-20251001@2025-10-01"
+        "gemini/gemini-2.5-flash"              ->  "gemini/gemini-2.5-flash@2026-03-01"  (today)
+    """
+    try:
+        if m := _DATE_PATTERN.search(model_string):
+            raw = m.group(1)                        # e.g. "20251001"
+            formatted = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
+            return f"{model_string}@{formatted}"
+        today = datetime.date.today().isoformat()
+        return f"{model_string}@{today}"
+    except Exception:
+        return model_string                         # never lose the launch
 
 
 # -- RelayConfig -------------------------------------------------------------

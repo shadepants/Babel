@@ -372,6 +372,16 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Spec 019: Model version snapshot (best-effort; null for pre-019 experiments)
+        for col in ("model_a_version", "model_b_version"):
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE experiments ADD COLUMN {col} TEXT"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -438,6 +448,8 @@ class Database:
         fork_at_round: int | None = None,
         agents: list[dict] | None = None,
         hidden_goals: list[dict] | None = None,
+        model_a_version: str | None = None,
+        model_b_version: str | None = None,
     ) -> str:
         """Create a new experiment and return its ID."""
         experiment_id = uuid.uuid4().hex[:12]
@@ -463,14 +475,16 @@ class Database:
                     temperature_a, temperature_b,
                     judge_model, enable_scoring, enable_verdict,
                     mode, participants_json,
-                    parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json,
+                    model_a_version, model_b_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (experiment_id, now, model_a, model_b, preset, seed,
                  system_prompt, rounds_planned, config_json,
                  temperature_a, temperature_b,
                  judge_model, int(enable_scoring), int(enable_verdict),
                  mode, participants_json,
-                 parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json),
+                 parent_experiment_id, fork_at_round, agents_config_json, hidden_goals_json,
+                 model_a_version, model_b_version),
             )
             await self.db.commit()
         return experiment_id
@@ -1582,3 +1596,4 @@ class Database:
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+

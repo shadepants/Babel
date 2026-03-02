@@ -438,6 +438,9 @@ export interface ExperimentRecord {
   revelation_round?: number | null;
   // Session 29: gallery chemistry score (initiative_balance + surprise_index) / 2
   chm_score?: number | null;
+  // Spec 019: model version snapshot (null for experiments created before this feature)
+  model_a_version?: string | null;
+  model_b_version?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

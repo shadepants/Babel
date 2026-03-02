@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import type { ExperimentRecord } from '@/api/types'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { formatDuration, modelDisplayName } from '@/lib/format'
+import { formatModelVersion } from '@/lib/models'
 import { SpriteAvatar } from '@/components/theater/SpriteAvatar'
 import { getPresetGlow } from '@/lib/presetColors'
 import { ProviderSigil } from '@/components/common/ProviderSigil'
@@ -173,13 +174,19 @@ export default function Gallery() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <SpriteAvatar status={statuses.a} color="model-a" size={28} />
                       <ProviderSigil model={exp.model_a} size={13} color="rgba(245,158,11,0.75)" />
-                      <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
+                      <span
+                        className="font-display text-sm font-bold tracking-wider uppercase text-text-primary"
+                        title={exp.model_a_version ? formatModelVersion(exp.model_a_version) : undefined}
+                      >
                         {modelDisplayName(exp.model_a)}
                       </span>
                       <span className="font-mono text-[10px] text-text-dim/60">vs</span>
                       <SpriteAvatar status={statuses.b} color="model-b" size={28} />
                       <ProviderSigil model={exp.model_b} size={13} color="rgba(6,182,212,0.75)" />
-                      <span className="font-display text-sm font-bold tracking-wider uppercase text-text-primary">
+                      <span
+                        className="font-display text-sm font-bold tracking-wider uppercase text-text-primary"
+                        title={exp.model_b_version ? formatModelVersion(exp.model_b_version) : undefined}
+                      >
                         {modelDisplayName(exp.model_b)}
                       </span>
                       {exp.preset && (

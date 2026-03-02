@@ -31,6 +31,7 @@ from server.config import (
     MODEL_REGISTRY,
     RPGConfig,
     get_display_name,
+    resolve_model_version,
 )
 
 # Allowed model strings â€” validated at request time
@@ -401,6 +402,25 @@ async def start_relay(body: RelayStartRequest, request: Request):
         [{"model": body.model_a, "temperature": body.temperature_a, "name": get_display_name(body.model_a)},
          {"model": body.model_b, "temperature": body.temperature_b, "name": get_display_name(body.model_b)}]
     )
+
+    # Spec 019: resolve model version identifiers (best-effort, never blocks launch)
+    try:
+        if body.mode == "rpg" and body.participants and len(body.participants) >= 1:
+            # For RPG, version the first two participants' models
+            _p = body.participants
+            _m_a = (_p[0].get("model", "") if isinstance(_p[0], dict) else getattr(_p[0], "model", "")) or body.model_a
+            _m_b = ((_p[1].get("model", "") if isinstance(_p[1], dict) else getattr(_p[1], "model", "")) if len(_p) > 1 else "") or body.model_b
+        elif resolved_agents:
+            _m_a = resolved_agents[0].model
+            _m_b = resolved_agents[1].model if len(resolved_agents) > 1 else resolved_agents[0].model
+        else:
+            _m_a, _m_b = body.model_a, body.model_b
+        model_a_version = resolve_model_version(_m_a)
+        model_b_version = resolve_model_version(_m_b)
+    except Exception:
+        model_a_version = body.model_a
+        model_b_version = body.model_b
+
     match_id = await db.create_experiment(
         model_a=body.model_a,
         model_b=body.model_b,
@@ -420,6 +440,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
         fork_at_round=body.fork_at_round,
         agents=agents_dicts,
         hidden_goals=body.hidden_goals,
+        model_a_version=model_a_version,
+        model_b_version=model_b_version,
     )
 
     cancel_event = asyncio.Event()

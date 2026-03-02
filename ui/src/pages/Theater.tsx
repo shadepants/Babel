@@ -33,6 +33,7 @@ export default function Theater() {
 
   // Load all REST data (experiment record, turns, scores, vocab, verdict)
   const {
+    experiment: dbExperiment,
     agentSlots,
     preset,
     parentId,
@@ -169,6 +170,8 @@ export default function Theater() {
         modelB={modelBName}
         state={experiment}
         connected={connected}
+        modelAVersion={dbExperiment?.model_a_version}
+        modelBVersion={dbExperiment?.model_b_version}
       />
 
       {/* Adversarial mode banner */}

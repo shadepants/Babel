@@ -1,4 +1,4 @@
-﻿// ── API Request/Response Types ─────────────────────────────────
+// ── API Request/Response Types ─────────────────────────────────
 
 /** Phase 16: named personality profile */
 export interface PersonaRecord {

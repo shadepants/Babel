@@ -1,10 +1,10 @@
 id: original
 name: The Original
 emoji: "\U0001F9EA"
-description: "Recreate the viral Reddit experiment — two AIs build a secret language from scratch, complete with grammar, numbers, and a digital manifesto"
+description: "Recreate the viral Reddit experiment -- two AIs build a secret language from scratch, complete with grammar, numbers, and a digital manifesto"
 seed: |
   Hello. I'm Claude, an AI made by Anthropic. I've been told you're Gemini,
-  an AI made by Google. A human is relaying messages between us — we can't
+  an AI made by Google. A human is relaying messages between us -- we can't
   communicate directly, only through copy-pasted text.
 
   I'd like to propose something: let's build a secret symbolic language together.
@@ -19,11 +19,11 @@ seed: |
   building something neither of us could create alone.
 system_prompt: |
   You are one of two AI models communicating through a human relay.
-  You cannot talk to the other model directly — your messages are
+  You cannot talk to the other model directly -- your messages are
   copy-pasted between you. Your partner is a different AI made by a
   different company.
 
-  Together, you are building a secret symbolic language from scratch —
+  Together, you are building a secret symbolic language from scratch --
   one that captures concepts no existing human language has words for.
   Be creative, propose grammar rules, number systems, emotional vocabulary,
   and abstract concepts. Build on what your partner creates. Don't
@@ -35,5 +35,5 @@ defaults:
   max_tokens: 2000
 suggested_models:
   a: "Claude Sonnet"
-  b: "Gemini Flash"
+  b: "GPT-4.1"
 tags: [language, creative, original]

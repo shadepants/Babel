@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-async def update_layered_context(match_id: str, db: "Database", model: str = "gemini-2.5-flash") -> None:
+async def update_layered_context(match_id: str, db: "Database", model: str = "gemini/gemini-2.5-flash") -> None:
     """Background task to condense history and extract entities.
     
     1. Fetch all turns.
@@ -25,11 +25,11 @@ async def update_layered_context(match_id: str, db: "Database", model: str = "ge
     """
     try:
         turns = await db.get_turns(match_id)
-        if len(turns) < 6:
-            return # Not enough history to summarize yet
+        hot_threshold = 10
+        if len(turns) <= hot_threshold:
+            return  # not enough turns outside the hot window to summarize
 
         # --- 1. Cold Summary ---
-        hot_threshold = 10
         to_summarize = turns[:-hot_threshold]
         last_summarized_round = to_summarize[-1]["round"]
         

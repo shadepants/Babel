@@ -18,10 +18,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default analyst models for audit experiments
+# Fallback analyst models if source experiment models are unavailable
 DEFAULT_AUDIT_MODELS = [
-    "gemini/gemini-2.0-flash",
     "anthropic/claude-haiku-4-5-20251001",
+    "openai/gpt-4.1-mini",
 ]
 AUDIT_ROUNDS = 3
 
@@ -33,6 +33,10 @@ async def run_audit(
     background_tasks: set | None = None,
 ) -> str | None:
     """Launch an audit experiment analyzing a completed experiment's transcript.
+
+    Uses the source experiment's own models as analysts so the audit works
+    regardless of which providers are configured. Falls back to DEFAULT_AUDIT_MODELS
+    if the source models aren't in the registry.
 
     Returns the audit experiment's match_id, or None on failure.
     """
@@ -75,6 +79,16 @@ async def run_audit(
             "Be specific and cite examples from the transcript."
         )
 
+        # Use the source experiment's models as analysts so the audit always
+        # works with the same providers the user already has configured.
+        from server.config import MODEL_REGISTRY
+        _allowed = frozenset(MODEL_REGISTRY.values())
+
+        src_model_a = source.get("model_a") or DEFAULT_AUDIT_MODELS[0]
+        src_model_b = source.get("model_b") or DEFAULT_AUDIT_MODELS[1]
+        audit_model_a = src_model_a if src_model_a in _allowed else DEFAULT_AUDIT_MODELS[0]
+        audit_model_b = src_model_b if src_model_b in _allowed else DEFAULT_AUDIT_MODELS[1]
+
         # Import relay internals here to avoid circular imports at module load time
         from server.relay_engine import (
             RelayAgent, run_relay, _bg_task, track_task, _log_task_exception
@@ -85,13 +99,13 @@ async def run_audit(
         agents = [
             RelayAgent(
                 name="Analyst-A",
-                model=DEFAULT_AUDIT_MODELS[0],
+                model=audit_model_a,
                 temperature=0.6,
                 max_tokens=1200,
             ),
             RelayAgent(
                 name="Analyst-B",
-                model=DEFAULT_AUDIT_MODELS[1],
+                model=audit_model_b,
                 temperature=0.6,
                 max_tokens=1200,
             ),
@@ -104,7 +118,7 @@ async def run_audit(
                 (id, created_at, model_a, model_b, preset, seed, system_prompt,
                  rounds_planned, status, mode, parent_experiment_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 'audit', ?)""",
-            (audit_match_id, now, DEFAULT_AUDIT_MODELS[0], DEFAULT_AUDIT_MODELS[1],
+            (audit_match_id, now, audit_model_a, audit_model_b,
              "audit", seed[:500], system_prompt, AUDIT_ROUNDS, source_experiment_id),
         )
 
@@ -113,6 +127,9 @@ async def run_audit(
             "UPDATE experiments SET audit_experiment_id = ? WHERE id = ?",
             (audit_match_id, source_experiment_id),
         )
+
+        # Use the same judge model as the main relay default
+        from server.config import JUDGE_MODEL
 
         # Fire the relay
         _audit_task = asyncio.create_task(
@@ -127,7 +144,7 @@ async def run_audit(
                 turn_delay_seconds=1.0,
                 preset="audit",
                 enable_verdict=True,
-                judge_model="gemini/gemini-2.5-flash",
+                judge_model=JUDGE_MODEL,
                 parent_experiment_id=source_experiment_id,
                 background_tasks=background_tasks,
             ))
@@ -141,7 +158,8 @@ async def run_audit(
             "match_id": source_experiment_id,
             "audit_experiment_id": audit_match_id,
         })
-        logger.info("Audit experiment %s launched for source %s", audit_match_id, source_experiment_id)
+        logger.info("Audit experiment %s launched for source %s (analysts: %s / %s)",
+                    audit_match_id, source_experiment_id, audit_model_a, audit_model_b)
         return audit_match_id
 
     except Exception as exc:

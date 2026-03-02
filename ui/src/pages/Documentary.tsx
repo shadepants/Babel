@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { api } from '@/api/client'

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Preset, ModelInfo, ModelStatusInfo, PersonaRecord, AgentSlot } from '@/api/types'

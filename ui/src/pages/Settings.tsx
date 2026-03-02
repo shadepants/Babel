@@ -1,4 +1,4 @@
-&#xFEFF;import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { ScrambleText } from '@/components/common/ScrambleText'
 import { Slider } from '@/components/ui/slider'

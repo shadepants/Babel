@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+﻿import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useSSE } from '@/api/sse'
 import { useExperimentState } from '@/api/hooks'
@@ -382,9 +382,9 @@ export default function RPGTheater() {
         try { setParticipants(JSON.parse(exp.participants_json)) } catch { /* ignore */ }
       }
       // config_json is present at runtime but not in ExperimentRecord type -- added in a later migration
-      if ((exp as Record<string, unknown>).config_json) {
+      if ((exp as unknown as Record<string, unknown>).config_json) {
         try {
-          const cfg = JSON.parse((exp as Record<string, unknown>).config_json as string)
+          const cfg = JSON.parse((exp as unknown as Record<string, unknown>).config_json as string)
           if (cfg.rpg_config) setRpgConfig(cfg.rpg_config)
         } catch { /* ignore */ }
       }

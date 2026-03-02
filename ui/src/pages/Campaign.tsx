@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
+﻿import { useState, useEffect } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { RelayStartRequest, RPGParticipant, CampaignPreset } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -52,7 +52,6 @@ interface CampaignNavState {
 }
 
 export default function Campaign() {
-  const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
   const configState = location.state as CampaignNavState | null
@@ -158,6 +157,7 @@ export default function Campaign() {
       // Explicit snake_case mapping -- spreading configState alone drops maxTokens/turnDelay
       const payload: RelayStartRequest = {
         ...configState,
+        agents: undefined,  // configState.agents lacks temperature; use participants instead
         model_a: dmModel,
         model_b: dmModel,
         mode: 'rpg',

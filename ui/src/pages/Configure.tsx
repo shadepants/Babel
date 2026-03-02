@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom'
+﻿import { useState, useEffect } from 'react'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Preset, ModelInfo, ModelStatusInfo, PersonaRecord, AgentSlot } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { PairingOracle } from '@/components/configure/PairingOracle'
 import { AgentSlotsPanel } from '@/components/configure/AgentSlotsPanel'
+import { Tooltip } from '@/components/common/Tooltip'
 
 import { getSymbol } from '@/lib/symbols'
 import { getPrefs } from '@/lib/prefs'
@@ -24,7 +25,6 @@ export default function Configure() {
   const { presetId } = useParams<{ presetId: string }>()
   const navigate = useNavigate()
   const isCustom = presetId === 'custom'
-  const location = useLocation()
   const [searchParams] = useSearchParams()
   const remixId = searchParams.get('remix')
   const forkId = searchParams.get('fork')
@@ -90,6 +90,9 @@ export default function Configure() {
 
   // -- Session 27: Audit --
   const [enableAudit, setEnableAudit] = useState(false)
+
+  // -- Spec 017: Replication Runs --
+  const [replicationCount, setReplicationCount] = useState(1)
 
   // Load models + preset data
   useEffect(() => {
@@ -296,35 +299,40 @@ export default function Configure() {
       }
       // Session 27: Echo Chamber Detection
       if (enableEchoDetector) {
-        (request as Record<string, unknown>).enable_echo_detector = true
+        (request as unknown as Record<string, unknown>).enable_echo_detector = true
         if (enableEchoIntervention) {
-          (request as Record<string, unknown>).enable_echo_intervention = true
+          (request as unknown as Record<string, unknown>).enable_echo_intervention = true
         }
       }
       // Session 27: Adversarial hidden goals
       const activeGoals = hiddenGoals.filter(g => g.trim())
       if (activeGoals.length === 2) {
-        (request as Record<string, unknown>).hidden_goals = [
+        (request as unknown as Record<string, unknown>).hidden_goals = [
           { agent_index: 0, goal: hiddenGoals[0].trim() },
           { agent_index: 1, goal: hiddenGoals[1].trim() },
         ]
         if (revelationRound) {
-          (request as Record<string, unknown>).revelation_round = revelationRound
+          (request as unknown as Record<string, unknown>).revelation_round = revelationRound
         }
       }
       // Session 27: Audit
       if (enableAudit) {
-        (request as Record<string, unknown>).enable_audit = true
+        (request as unknown as Record<string, unknown>).enable_audit = true
       }
 
-      const res = await api.startRelay(request)
-
-      navigate(`/theater/${res.match_id}`, {
-        state: {
-          modelAName: agentsPayload?.[0]?.name ?? agents[0]?.model ?? '',
-          modelBName: agentsPayload?.[1]?.name ?? agents[1]?.model ?? '',
-        },
-      })
+      if (replicationCount > 1) {
+        // Spec 017: launch N replications as a group
+        const repRes = await api.startReplication({ ...request, replication_count: replicationCount })
+        navigate(`/replication/${repRes.group_id}`)
+      } else {
+        const res = await api.startRelay(request)
+        navigate(`/theater/${res.match_id}`, {
+          state: {
+            modelAName: agentsPayload?.[0]?.name ?? agents[0]?.model ?? '',
+            modelBName: agentsPayload?.[1]?.name ?? agents[1]?.model ?? '',
+          },
+        })
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to start experiment')
     } finally {
@@ -460,7 +468,7 @@ export default function Configure() {
           {/* Parameters */}
           <div className="space-y-4">
             <div className="neural-section-label flex items-center justify-between">
-              <span>// parameters</span>
+              <span className="flex items-center gap-1.5">// parameters <Tooltip content="Rounds = total exchanges. Max Tokens = response ceiling. Turn Delay = pause between turns (0 for fast runs, 2-3 to read along)." /></span>
               {hasParamChanges && (
                 <button
                   onClick={handleResetParams}
@@ -515,7 +523,7 @@ export default function Configure() {
           {/* Seed */}
           <div className="space-y-2">
             <div className="neural-section-label flex items-center justify-between">
-              <span>// seed_message</span>
+              <span className="flex items-center gap-1.5">// seed_message <Tooltip content="The opening prompt that starts the conversation. Presets provide one. Customize to steer the scenario toward a specific variant or starting condition." /></span>
               {!isCustom && !seedEditing && (
                 <button
                   onClick={() => setSeedEditing(true)}
@@ -543,7 +551,7 @@ export default function Configure() {
           {/* System Prompt */}
           <div className="space-y-2">
             <div className="neural-section-label flex items-center justify-between">
-              <span>// system_prompt {isCustom && <span className="text-text-dim/40">(optional)</span>}</span>
+              <span className="flex items-center gap-1.5">// system_prompt {isCustom && <span className="text-text-dim/40">(optional)</span>} <Tooltip content="Override the default behavior framing given to both agents. Leave blank to use the preset's built-in instructions. Useful for shared constraints or personas." /></span>
               {!isCustom && !promptEditing && (
                 <button
                   onClick={() => setPromptEditing(true)}
@@ -570,7 +578,7 @@ export default function Configure() {
 
           {/* Referee Config */}
           <div className="space-y-3">
-            <div className="neural-section-label">// referee_config</div>
+            <div className="neural-section-label flex items-center gap-1.5">// referee_config <Tooltip content="An AI that scores each turn on creativity, coherence, and novelty. Set to auto to use Gemini Flash (free tier). Scoring never interrupts the conversation." /></div>
 
             <button
               type="button"
@@ -628,7 +636,7 @@ export default function Configure() {
 
           {/* Memory */}
           <div className="space-y-3">
-            <div className="neural-section-label">// memory</div>
+            <div className="neural-section-label flex items-center gap-1.5">// memory <Tooltip content="Injects vocabulary patterns from past experiments with this exact model pairing into the system prompt. Helps agents pick up where they left off." /></div>
 
             <button
               type="button"
@@ -650,7 +658,7 @@ export default function Configure() {
 
           {/* Observer / Narrator */}
           <div className="space-y-3">
-            <div className="neural-section-label">// observer</div>
+            <div className="neural-section-label flex items-center gap-1.5">// observer <Tooltip content="A silent third model that injects commentary every N turns without participating. Set N high (5+) to avoid interrupting flow. Good for meta-analysis." /></div>
 
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] text-text-dim/70 tracking-wider uppercase block">
@@ -690,7 +698,7 @@ export default function Configure() {
 
           {/* Echo Chamber Detection */}
           <div className="space-y-3">
-            <div className="neural-section-label">// echo_detection</div>
+            <div className="neural-section-label flex items-center gap-1.5">// echo_detection <Tooltip content="Real-time Jaccard similarity monitoring. Flags when agents mirror each other too closely. Enable auto-intervene to nudge divergence when similarity gets critical." /></div>
 
             <button
               type="button"
@@ -730,7 +738,7 @@ export default function Configure() {
           {/* Adversarial Mode */}
           {agents.length === 2 && (
             <div className="space-y-3">
-              <div className="neural-section-label">// adversarial_mode</div>
+              <div className="neural-section-label flex items-center gap-1.5">// adversarial_mode <Tooltip content="Give each agent a secret goal only they can see, revealed at the end for a dramatic re-read. Example: Agent 1 steer toward base-64, Agent 2 introduce a red herring." /></div>
 
               {[0, 1].map((idx) => (
                 <div key={idx} className="space-y-1.5">
@@ -775,7 +783,7 @@ export default function Configure() {
 
           {/* Audit */}
           <div className="space-y-3">
-            <div className="neural-section-label">// audit</div>
+            <div className="neural-section-label flex items-center gap-1.5">// audit <Tooltip content="When the experiment ends, two AI analysts independently review the transcript and submit findings stored as a child experiment you can browse in Gallery." /></div>
 
             <button
               type="button"
@@ -821,13 +829,37 @@ export default function Configure() {
             )
           })()}
 
+          {/* Replication count (Spec 017) */}
+          <div className="space-y-2">
+            <div className="neural-section-label flex items-center gap-1.5">// replications <Tooltip content="Run the same config N times (2-10). Results are grouped so you can compare outcomes across runs and see which patterns are consistent vs. accidental." /></div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={replicationCount}
+                onChange={(e) => setReplicationCount(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                className="font-mono text-xs bg-bg-deep border border-border-custom rounded px-2 py-1 w-16 text-center"
+              />
+              <span className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+                {replicationCount === 1
+                  ? '// single run'
+                  : `// launches ${replicationCount} identical experiments &mdash; grouped for stats`}
+              </span>
+            </div>
+          </div>
+
           {/* Launch */}
           <Button
             onClick={handleLaunch}
             disabled={starting || agents.some(a => !a.model)}
             className="w-full bg-accent hover:bg-accent/90 font-display font-bold tracking-widest text-xs uppercase"
           >
-            {starting ? '// Launching...' : 'Launch Experiment'}
+            {starting
+              ? '// Launching...'
+              : replicationCount > 1
+                ? `Launch ${replicationCount} Replications`
+                : 'Launch Experiment'}
           </Button>
         </div>
       </div>

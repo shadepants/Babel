@@ -1,45 +1,47 @@
 # AI Agent Handoff Protocol
 
 ## Current Session Status
-**Last Updated:** 2026-03-01
-**Active Agent:** Claude Code
-**Current Goal:** Session 37 complete &mdash; spec 018 (Baseline Control Preset) fully implemented and shipped
+**Last Updated:** 2026-03-02
+**Active Agent:** Claude Code (session 40)
+**Current Goal:** Frontend optimization (bundle splitting + lazy routes + useMemo)
 
 ## Changes This Session
-
-### Spec 018 Implementation (`c3848f4`)
-- [x] `server/presets/baseline.yaml` &mdash; new control preset with `is_control: true`, 4 rounds, minimal unstructured seed
-- [x] `server/db.py` &mdash; idempotent `baseline_experiment_id TEXT` migration; `link_baseline(source_id, baseline_id)` helper
-- [x] `server/routers/relay.py` &mdash; `baseline_for_experiment_id` field on `RelayStartRequest`; pre-flight 404 guard; `link_baseline` call after `create_experiment`
-- [x] `server/routers/experiments.py` &mdash; `GET /:id/baseline` endpoint: 200 (full record when done), 202 (running), 404 (not linked)
-- [x] `ui/src/api/types.ts` &mdash; `is_control?` on `Preset`; `baseline_experiment_id?` on `ExperimentRecord`; `baseline_for_experiment_id?` on `RelayStartRequest`
-- [x] `ui/src/api/client.ts` &mdash; `getExperimentBaseline()` method
-- [x] `ui/src/pages/SeedLab.tsx` &mdash; baseline card: dashed border, amber (Control) badge, muted colors, measurement hint text
-- [x] `ui/src/pages/Theater.tsx` &mdash; &ldquo;// Baseline&rdquo; button on completed non-baseline experiments; 15s polling; vocab/score/rounds delta panel with signed deltas; judge-model mismatch warning; failed-run re-run link
-- [x] `ui/src/pages/Gallery.tsx` &mdash; amber CONTROL badge on baseline rows; &ldquo;controls&rdquo; filter toggle (off by default)
+- [x] `ui/vite.config.ts` &mdash; `manualChunks` function: splits d3, framer-motion, Radix UI, Lucide, React core, and generic vendor into separately-cacheable chunks
+- [x] `ui/src/App.tsx` &mdash; all 17 eager page imports converted to `React.lazy()` + single `<Suspense>` wrapper with Babel-themed "loading&hellip;" fallback
+- [x] `ui/src/pages/Gallery.tsx` &mdash; `standaloneExperiments` wrapped in `useMemo([experiments])`
+- [x] **TypeScript errors fixed (5 files, all pre-existing):**
+  - `Configure.tsx` &mdash; removed dead `location`/`useLocation`, double-cast 5 type assertions (`as unknown as Record<string, unknown>`)
+  - `Campaign.tsx` &mdash; removed unused `presetId`/`useParams`, added `agents: undefined` to override incompatible spread type
+  - `RPGTheater.tsx` &mdash; double-cast 2 type assertions
+  - `ReplicationGroup.tsx` &mdash; removed unused `formatDuration` import + orphaned `barW`/`winTotal`
+  - `RPGHub.tsx` &mdash; `ease: 'easeOut' as const` to satisfy `Easing` literal type
 
 ## Verification Status
-
 | Check | Status | Notes |
 |-------|--------|-------|
-| TypeScript `tsc --noEmit` | PASSED | Zero errors after all changes |
-| Backend import check | PASSED | `baseline_for_experiment_id` field loads; `/baseline` route registered |
-| Preset loader | PASSED | `load_presets()` returns `is_control: True` for baseline |
-| Frontend visual | PASSED | Baseline card renders with amber CONTROL badge in Seed Lab |
-| Backend server | RUNNING | Port 8000 |
-| Frontend server | RUNNING | Port 5173 |
+| `tsc -b` | PASSED | Zero errors (5-file TS cleanup done) |
+| `vite build` | PASSED | 21s, no errors |
+| Bundle size | IMPROVED | 873 KB monolith &rarr; 17 KB entry + lazy chunks |
+| Circular chunk warning | WARN (cosmetic) | `vendor &rarr; vendor-react &rarr; vendor` via React/scheduler co-dep; runtime unaffected |
+| Dev server smoke | NOT RUN | Optimization-only session; no functional changes |
+
+## Bundle Breakdown (post-optimization)
+| Chunk | Size | Gzip | Loads when |
+|-------|------|------|------------|
+| `index.js` (app entry) | 17 KB | 6.6 KB | Every visit |
+| `vendor-react` | 231 KB | 73.9 KB | Every visit |
+| `vendor` (misc) | 132 KB | 45.3 KB | Every visit |
+| `vendor-ui` (Radix) | 94 KB | 28.7 KB | First page with controls |
+| `vendor-d3` | 88 KB | 30.6 KB | First Analytics/BranchTree visit |
+| `vendor-motion` | 32 KB | 11.3 KB | First animated page |
+| `vendor-icons` | 2 KB | 1.1 KB | On demand |
+| 17 page chunks | 2&ndash;36 KB ea. | &mdash; | Per route visit |
 
 ## Next Steps
-
-1. [ ] **Implement spec 017** (Replication Runs) &mdash; `replication_groups` table + `POST /api/relay/replicate` + Gallery group card with n=X badge. Read `tasks/017-replication-runs.md` first.
-2. [ ] **Set `JUDGE_MODEL`** to `anthropic/claude-haiku-4-5-20251001` in `.env` before re-running batch experiments (Gemini quota exhausted; experiments 01/06/08/09/10 still failed)
-3. [ ] **RelayConfig wiring** (long-deferred): wire `RelayConfig` dataclass into `run_relay()` + update 4 callers
-
-## Key Commits This Session
-
-| Hash | Description |
-|------|-------------|
-| `c3848f4` | feat(spec-018): baseline control preset &mdash; measure treatment effect of any preset |
-
-## Build Order Reminder (MCDA-ranked)
-019 &#x2705; DONE &rarr; 018 &#x2705; DONE &rarr; **017 next** (medium: new table + endpoint + Gallery group card)
+1. [ ] **Commit** all uncommitted work &mdash; spec 017 (Replication Runs), spec 020 (Help System), session 40 optimization; suggest splitting into 3 atomic commits:
+   - `feat(spec-017): replication runs -- N-way experiment grouping`
+   - `feat(spec-020): help system -- click-to-pin tooltips + /help reference page`
+   - `perf(ui): route-level code splitting + vendor chunk caching`
+2. [ ] **Wire `update_replication_group_status`** &mdash; call from relay completion path so group status updates `running` &rarr; `completed` automatically
+3. [ ] **Smoke test** &mdash; start both servers, launch 3 replications of a quick preset, verify Gallery group card + ReplicationGroup page + Help page all load cleanly
+4. [ ] **Next spec** &mdash; 014 (Shareable Config URLs, Tiny) is the easiest next win; 005 (Hypothesis Testing) for depth

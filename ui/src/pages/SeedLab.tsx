@@ -36,8 +36,11 @@ export default function SeedLab() {
       .finally(() => setLoading(false))
   }, [])
 
-  const allTags = Array.from(new Set(presets.flatMap((p) => p.tags))).sort()
-  const visiblePresets = activeTag ? presets.filter((p) => p.tags.includes(activeTag)) : presets
+  // Exclude control preset tags (baseline, control, unstructured) from the filter bar
+  const allTags = Array.from(new Set(presets.filter((p) => !p.is_control).flatMap((p) => p.tags))).sort()
+  // Control presets sorted to end so real experiment presets appear first
+  const sortedPresets = [...presets].sort((a, b) => (a.is_control ? 1 : 0) - (b.is_control ? 1 : 0))
+  const visiblePresets = activeTag ? sortedPresets.filter((p) => !p.is_control && p.tags.includes(activeTag)) : sortedPresets
 
   return (
     <div className="flex-1 p-6 max-w-5xl mx-auto space-y-8">

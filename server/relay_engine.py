@@ -49,7 +49,8 @@ for _name in ("LiteLLM", "litellm", "httpx", "httpcore", "openai", "anthropic"):
 
 _FALLBACK_MAP: dict[str, list[tuple[str | None, str | None]]] = {
     # Same-provider key rotation (backup API key, same model)
-    "gemini/":     [(None, "GEMINI_API_KEY_BACKUP")],
+    # then cross-provider escape when backup key is also exhausted/missing
+    "gemini/":     [(None, "GEMINI_API_KEY_BACKUP"), ("openai/gpt-4.1-mini", None)],
     "openrouter/": [(None, "OPENROUTER_API_KEY_BACKUP")],
     # Cross-provider fallbacks (same model weights, different inference provider)
     "groq/llama-3.3-70b-versatile":  [("cerebras/llama3.3-70b", None)],

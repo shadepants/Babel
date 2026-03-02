@@ -247,6 +247,7 @@ async def _start_standard_relay(
     system_prompt: str,
     resolved_agents: list | None,
     resolved_judge: str,
+    replication_group_id: str | None = None,
 ) -> "RelayStartResponse":
     """Build the RelayAgent list, attach personas/vocab, launch run_relay, and return the response."""
     # Build RelayAgent list: N-way if agents provided, else legacy 2-agent
@@ -334,6 +335,8 @@ async def _start_standard_relay(
 
     def _cleanup_task(t: asyncio.Task) -> None:
         _running_relays.pop(match_id, None)
+        if replication_group_id:
+            asyncio.ensure_future(db.update_replication_group_status(replication_group_id))
 
     task.add_done_callback(_cleanup_task)
 
@@ -558,6 +561,7 @@ async def _create_and_launch_one(
     await _start_standard_relay(
         match_id, body, request, db, hub, cancel_event, seed, system_prompt,
         resolved_agents, resolved_judge,
+        replication_group_id=replication_group_id,
     )
     return match_id
 

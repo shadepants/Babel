@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ModelInfo, PersonaRecord, AgentSlot } from '@/api/types'
 import { Slider } from '@/components/ui/slider'
@@ -9,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AGENT_COLORS } from '@/components/theater/ConversationColumn'
+import { MODEL_META, TIER_COLOR } from '@/lib/modelMeta'
 
 // Tailwind can't purge dynamic class names; use explicit per-index color labels
 const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
@@ -55,11 +57,21 @@ export function AgentSlotsPanel({
   onUpdateAgent,
   onSetPersonaIds,
 }: AgentSlotsPanelProps) {
+  const [showGuide, setShowGuide] = useState(false)
+
   return (
     <div className="space-y-3">
       <div className="neural-section-label flex items-center justify-between">
         <span>// model_selection</span>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="font-mono text-[9px] text-text-dim/40 hover:text-accent tracking-wider uppercase transition-colors"
+            title="Toggle model guide"
+          >
+            {showGuide ? '&#9650; guide' : '&#9660; guide'}
+          </button>
           <button
             type="button"
             onClick={onSwapAB}
@@ -116,12 +128,26 @@ export function AgentSlotsPanel({
                   <SelectValue placeholder="Select model..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
-                      {m.name}
-                      {modelStatus.get(m.model) === false && <span className="ml-1 text-danger/70">&#9679;</span>}
-                    </SelectItem>
-                  ))}
+                  {models.map((m) => {
+                    const meta = MODEL_META[m.model]
+                    return (
+                      <SelectItem key={m.model} value={m.model} className="font-mono text-xs">
+                        <div className="flex flex-col gap-0.5 py-0.5">
+                          <span>
+                            {m.name}
+                            {modelStatus.get(m.model) === false && (
+                              <span className="ml-1 text-danger/70">&#9679;</span>
+                            )}
+                          </span>
+                          {meta && (
+                            <span className="text-[9px] text-text-dim/50 tracking-wide">
+                              {meta.tags.slice(0, 3).join(' \u00b7 ')}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
 
@@ -179,6 +205,48 @@ export function AgentSlotsPanel({
           )
         })}
       </div>
+
+      {/* Model guide card */}
+      {showGuide && (
+        <div className="mt-1 p-3 border border-border-custom/30 rounded-sm bg-bg-deep/50 space-y-2">
+          <p className="font-mono text-[9px] text-text-dim/50 tracking-wider uppercase">
+            // model guide &mdash; tiers &amp; use cases
+          </p>
+          <div className="space-y-1">
+            {models.map((m) => {
+              const meta = MODEL_META[m.model]
+              if (!meta) return null
+              const tierColor = TIER_COLOR[meta.tier] ?? '#888'
+              return (
+                <div key={m.model} className="flex items-start gap-2 py-0.5">
+                  <span
+                    className="font-mono text-[9px] w-4 shrink-0 mt-0.5 font-bold"
+                    style={{ color: tierColor }}
+                  >
+                    {meta.tier}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono text-[10px] text-text-primary">{m.name}</span>
+                    <span className="font-mono text-[9px] text-text-dim/40 ml-2">
+                      {meta.best_for.join(', ')}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 flex-wrap justify-end shrink-0">
+                    {meta.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="font-mono text-[8px] px-1 py-0.5 rounded-sm bg-white/5 text-text-dim/50"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

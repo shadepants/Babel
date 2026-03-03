@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AGENT_COLORS } from '@/components/theater/ConversationColumn'
-import { MODEL_META, TIER_COLOR } from '@/lib/modelMeta'
+import { MODEL_META, TIER_COLOR, getMaxTemp } from '@/lib/modelMeta'
 
 // Tailwind can't purge dynamic class names; use explicit per-index color labels
 const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
@@ -99,6 +99,7 @@ export function AgentSlotsPanel({
           const label = AGENT_LABELS[idx] ?? `Agent ${idx + 1}`
           const isSuggested = !isCustom && suggestedModels[idx] && agent.model === suggestedModels[idx]
           const keyUnavailable = agent.model && modelStatus.get(agent.model) === false
+          const maxTemp = getMaxTemp(agent.model)
           return (
             <div key={idx} className="space-y-2 p-3 border border-border-custom/40 rounded-sm bg-bg-deep/30">
               <div className="flex items-center justify-between">
@@ -120,7 +121,14 @@ export function AgentSlotsPanel({
                 )}
               </div>
 
-              <Select value={agent.model} onValueChange={(v) => onUpdateAgent(idx, { model: v })}>
+              <Select
+                value={agent.model}
+                onValueChange={(v) => {
+                  const newMax = getMaxTemp(v)
+                  const clampedTemp = Math.min(agent.temperature, newMax)
+                  onUpdateAgent(idx, { model: v, temperature: clampedTemp })
+                }}
+              >
                 <SelectTrigger
                   className="font-mono text-xs"
                   style={{ borderColor: agentColor + '4d' }}
@@ -169,11 +177,16 @@ export function AgentSlotsPanel({
                 <Slider
                   value={[agent.temperature]}
                   onValueChange={(v) => onUpdateAgent(idx, { temperature: v[0] })}
-                  min={0} max={2} step={0.1}
+                  min={0} max={maxTemp} step={0.1}
                 />
                 <div className="flex justify-between font-mono text-[9px] text-text-dim/50">
-                  <span>0 precise</span><span>2 creative</span>
+                  <span>0 precise</span><span>{maxTemp} creative</span>
                 </div>
+                {maxTemp < 2 && (
+                  <p className="font-mono text-[9px] text-amber-400/50 tracking-wider mt-0.5">
+                    // provider cap: max {maxTemp}
+                  </p>
+                )}
                 <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">
                   // controls randomness -- higher values produce more surprising responses
                 </p>

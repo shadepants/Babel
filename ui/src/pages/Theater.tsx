@@ -19,6 +19,7 @@ import type { ObserverEvent, ExperimentRecord, ModelInfo } from '@/api/types'
 import { resolveWinnerIndex } from '@/lib/spriteStatus'
 import { useTheaterData } from '@/hooks/useTheaterData'
 import { useColorBleed } from '@/hooks/useColorBleed'
+import { getMaxTemp } from '@/lib/modelMeta'
 
 // ── component ───────────────────────────────────────────────────
 
@@ -148,7 +149,18 @@ export default function Theater() {
 
   // Spec 006: launch the comparison fork
   async function handleRunComparison() {
-    if (!matchId) return
+    if (!matchId || !dbExperiment) return
+    // Guard: block out-of-range temperature before hitting the API
+    if (compareField === 'temperature_a' || compareField === 'temperature_b') {
+      const relevantModel = compareField === 'temperature_a' ? dbExperiment.model_a : dbExperiment.model_b
+      const maxTemp = getMaxTemp(relevantModel)
+      const tempVal = parseFloat(compareValue)
+      if (!isNaN(tempVal) && tempVal > maxTemp) {
+        setCompareToast(`Temperature ${tempVal} exceeds the ${relevantModel.split('/')[0]} provider cap of ${maxTemp}`)
+        setTimeout(() => setCompareToast(null), 6000)
+        return
+      }
+    }
     setLaunchingCompare(true)
     try {
       const override: Record<string, string | number> = {}
@@ -662,13 +674,33 @@ export default function Theater() {
                     ))}
                   </select>
                 ) : (compareField === 'temperature_a' || compareField === 'temperature_b') ? (
-                  <input
-                    type="number"
-                    min="0" max="2" step="0.1"
-                    className="w-full bg-bg-card/80 border border-violet-500/30 rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-violet-400"
-                    value={compareValue}
-                    onChange={e => setCompareValue(e.target.value)}
-                  />
+                  (() => {
+                    const relevantModel = compareField === 'temperature_a' ? dbExperiment.model_a : dbExperiment.model_b
+                    const maxTemp = getMaxTemp(relevantModel)
+                    const tempVal = parseFloat(compareValue)
+                    const overMax = !isNaN(tempVal) && tempVal > maxTemp
+                    return (
+                      <>
+                        <input
+                          type="number"
+                          min="0" max={maxTemp} step="0.1"
+                          className={`w-full bg-bg-card/80 border rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none ${overMax ? 'border-amber-500/70 focus:border-amber-400' : 'border-violet-500/30 focus:border-violet-400'}`}
+                          value={compareValue}
+                          onChange={e => setCompareValue(e.target.value)}
+                        />
+                        {overMax && (
+                          <p className="font-mono text-[9px] text-amber-400/80 tracking-wider">
+                            // exceeds provider cap ({maxTemp}) &mdash; will be rejected
+                          </p>
+                        )}
+                        {maxTemp < 2 && !overMax && (
+                          <p className="font-mono text-[9px] text-text-dim/35 tracking-wider">
+                            // provider cap: max {maxTemp}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()
                 ) : (
                   <input
                     type="number"

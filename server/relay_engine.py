@@ -724,7 +724,7 @@ async def run_relay(
     enable_scoring = cfg.enable_scoring
     enable_verdict = cfg.enable_verdict
     enable_memory = cfg.enable_memory
-    initial_history: list[dict] = list(cfg.initial_history)
+    initial_history: list[dict] = list(cfg.initial_history or [])
     parent_experiment_id = cfg.parent_experiment_id
     background_tasks = cfg.background_tasks
     start_round = cfg.start_round
@@ -732,9 +732,9 @@ async def run_relay(
     enable_echo_intervention = cfg.enable_echo_intervention
     echo_warn_threshold = cfg.echo_warn_threshold
     echo_intervene_threshold = cfg.echo_intervene_threshold
-    hidden_goals: list[dict] = list(cfg.hidden_goals)
+    hidden_goals: list[dict] = list(cfg.hidden_goals or [])
     revelation_round = cfg.revelation_round
-    vocabulary_seed: list[dict] = list(cfg.vocabulary_seed)
+    vocabulary_seed: list[dict] = list(cfg.vocabulary_seed or [])
     enable_audit = cfg.enable_audit
     hypothesis = cfg.hypothesis
 

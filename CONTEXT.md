@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-03-02 (session 40 &mdash; frontend optimization + TS clean)
+**Last Updated:** 2026-03-02 (session 41 &mdash; spec-014 shareable URLs + relay status fix)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -19,61 +19,49 @@ A standalone shareable web app where AI models talk to each other in real-time &
 ### Phases 1-19 + Sessions 20-36 (SHIPPED)
 See `docs/CHANGELOG.md` for full history.
 
-### Session 37 &mdash; Spec 018 Implementation (SHIPPED `c3848f4`)
-- [x] **Spec 018 (Baseline Control Preset)** fully implemented (9 files across backend + frontend)
+### Session 37 &mdash; Spec 018 (SHIPPED `c3848f4`)
+- [x] **Spec 018 (Baseline Control Preset)** fully implemented
 
 ### Session 38 &mdash; Provider Refresh + Model Guide UI (SHIPPED `773aff5`)
-- [x] **`server/relay_engine.py`** &mdash; fixed `_FALLBACK_MAP` (Flash Lite, Cerebras hyphen, Jamba)
-- [x] **`server/config.py`** &mdash; added 3 new models (Gemini Flash Lite, GPT-4.1 Nano, Llama 3.3 70B)
-- [x] **`ui/src/lib/modelMeta.ts`** &mdash; `MODEL_META` + `TIER_COLOR` static registry (18 models)
-- [x] **`ui/src/components/configure/AgentSlotsPanel.tsx`** &mdash; dropdown tag subtitles + guide card
+- [x] Fallback map fixes, 3 new models, `MODEL_META` registry, dropdown tags + guide card
 
-### Session 39 &mdash; Spec 017 Replication Runs + Spec 020 Help System (UNCOMMITTED)
-- [x] **`server/db.py`** &mdash; `replication_groups` table + migration + 5 new helpers
-- [x] **`server/routers/relay.py`** &mdash; `replication_count` + `/relay/replicate` endpoint
-- [x] **`server/routers/replication.py`** &mdash; new router: `GET /api/replication-groups` + `GET /api/replication-groups/:id`
-- [x] **`ui/src/api/types.ts` + `client.ts`** &mdash; full ReplicationGroup type set + 3 API methods
-- [x] **`ui/src/pages/Configure.tsx`** &mdash; replication count UI (1&ndash;10) + Tooltip icons on 10 section labels
-- [x] **`ui/src/pages/ReplicationGroup.tsx`** &mdash; detail page: stats panel, per-run table, 10s poll
-- [x] **`ui/src/pages/Gallery.tsx`** &mdash; replication group cards + `standaloneExperiments` filter
-- [x] **`ui/src/components/common/Tooltip.tsx`** &mdash; click-to-pin singleton tooltip component
-- [x] **`ui/src/pages/Help.tsx`** &mdash; 4-section reference page (concepts, configure, models, presets)
-- [x] **`App.tsx`** &mdash; `/help` route added; **`Layout.tsx`** &mdash; Help nav link
+### Sessions 39-40 &mdash; Spec 017 + Spec 020 + Frontend Optimization (SHIPPED)
+- [x] `feat(spec-017)` `4278a44` &mdash; replication runs: DB tables, `/replicate` endpoint, Gallery cards, ReplicationGroup detail page
+- [x] `feat(spec-020)` `0d8a504` &mdash; help system: click-to-pin Tooltip, /help reference page, nav link
+- [x] `perf(ui)` `79cd1d2` &mdash; Vite manualChunks, React.lazy() all 17 pages, TS fixes (5 files)
 
-### Session 40 &mdash; Frontend Optimization + TypeScript Clean (UNCOMMITTED)
-- [x] **`ui/vite.config.ts`** &mdash; `manualChunks`: d3 / framer-motion / radix / react / icons / vendor
-- [x] **`ui/src/App.tsx`** &mdash; all 17 page imports converted to `React.lazy()` + `<Suspense>`
-- [x] **`ui/src/pages/Gallery.tsx`** &mdash; `standaloneExperiments` wrapped in `useMemo([experiments])`
-- [x] **TypeScript errors fixed** &mdash; Configure, Campaign, RPGTheater, ReplicationGroup, RPGHub (5 files)
-- [x] **Build result** &mdash; 873 KB monolith &rarr; 17 KB entry + lazy page chunks + named vendor chunks; tsc clean
+### Session 41 &mdash; Relay Status Fix + Spec 014 Shareable URLs (SHIPPED)
+- [x] `fix(spec-017)` `09df6a3` &mdash; `update_replication_group_status` wired into `_cleanup_task` done-callback; group status now auto-flips `running` &rarr; `completed/partial/failed`
+- [x] `feat(spec-014)` `28568de` &mdash; `?cfg=<JSON>` param on Configure page: share button copies URL to clipboard, form deserializes all state on mount (agents, rounds, seed, all toggles)
+- [x] **Verified:** share &rarr; clipboard payload correct; round-trip pre-fill confirmed (rounds, maxTokens, turnDelay, seed, replicationCount all restored)
 
-### Next
-- [ ] **Commit** all uncommitted work (spec 017 + 020 + session 40 optimization, ~15 files)
-- [ ] **Wire `update_replication_group_status`** &mdash; call from relay completion path so group status updates `running` &rarr; `completed`
-- [ ] **Set `JUDGE_MODEL`** to `anthropic/claude-haiku-4-5-20251001` in `.env` before re-running batch experiments
-- [ ] **RelayConfig wiring** (deferred): `run_relay()` still takes 20+ individual params
+### Next Priorities (ordered)
+- [ ] **Spec 005** &mdash; Hypothesis Testing Mode (Medium): structured claim + evidence flow, most impactful next feature
+- [ ] **Spec 006** &mdash; A/B Forking Dashboard (Medium): visual branch tree for fork experiments
+- [ ] **RelayConfig wiring** &mdash; `run_relay()` still takes 20+ individual params; `RelayConfig` from `config.py` unwired
+- [ ] **Set `JUDGE_MODEL`** &mdash; `anthropic/claude-haiku-4-5-20251001` in `.env` before next batch experiments
 
 ## 4. Roadmap &mdash; Playground Specs
 
 | # | Task file | Feature | Complexity | Status |
 |---|-----------|---------|------------|--------|
-| 005 | `tasks/005-hypothesis-testing-mode.md` | Hypothesis Testing Mode | Medium | Spec only |
-| 006 | `tasks/006-ab-forking-dashboard.md` | A/B Forking Dashboard | Medium | Spec only |
-| 014 | `tasks/014-shareable-config-urls.md` | Shareable Config URLs | Small | Spec only |
-| **017** | `tasks/017-replication-runs.md` | **Replication Runs** | **Medium** | **&#x2705; SHIPPED** |
-| **018** | `tasks/018-baseline-control-preset.md` | **Baseline Control Preset** | **Small** | **&#x2705; SHIPPED** |
-| **019** | `tasks/019-model-version-snapshot.md` | **Model Version Snapshot** | **Tiny** | **&#x2705; SHIPPED** |
-| **020** | `tasks/020-help-system.md` | **Help System** | **Small** | **&#x2705; SHIPPED** |
+| **005** | `tasks/005-hypothesis-testing-mode.md` | Hypothesis Testing Mode | Medium | Spec only |
+| **006** | `tasks/006-ab-forking-dashboard.md` | A/B Forking Dashboard | Medium | Spec only |
+| **014** | `tasks/014-shareable-config-urls.md` | Shareable Config URLs | Tiny | **&#x2705; SHIPPED** |
+| **017** | `tasks/017-replication-runs.md` | Replication Runs | Medium | **&#x2705; SHIPPED** |
+| **018** | `tasks/018-baseline-control-preset.md` | Baseline Control Preset | Small | **&#x2705; SHIPPED** |
+| **019** | `tasks/019-model-version-snapshot.md` | Model Version Snapshot | Tiny | **&#x2705; SHIPPED** |
+| **020** | `tasks/020-help-system.md` | Help System | Small | **&#x2705; SHIPPED** |
 
-**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; next: 014 or 005
+**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; 014 &#x2705; &rarr; next: 005 or 006
 
-## 5. Architecture (v40.0)
+## 5. Architecture (v41.0)
 ```
 server/
   config.py             MODEL_REGISTRY 18 models [s38]; RelayConfig (UNWIRED) [s33]
   relay_engine.py       _FALLBACK_MAP: Flash Lite, Cerebras hyphen, Jamba [s38]
   routers/
-    relay.py            replication_count + /replicate endpoint [s39]
+    relay.py            replication_count + /replicate + _cleanup_task fires group status [s39,s41]
     replication.py      GET /replication-groups + GET /replication-groups/:id [s39]
   db.py                 replication_groups table + 5 helpers [s39]
 ui/src/
@@ -84,7 +72,7 @@ ui/src/
   pages/
     Help.tsx            4-section reference page (concepts/configure/models/presets) [s39]
     ReplicationGroup.tsx  stats panel + per-run table + 10s poll [s39]
-    Configure.tsx         replication count UI + Tooltip icons on 10 labels [s39]
+    Configure.tsx         ?cfg= round-trip + share button + replication count UI [s39,s41]
     Gallery.tsx           group cards + standaloneExperiments useMemo [s39,s40]
 tasks/                  005-020: 16 playground feature specs
 ```
@@ -100,5 +88,5 @@ tasks/                  005-020: 16 playground feature specs
 - **Cerebras model ID:** uses hyphens &mdash; `cerebras/llama-3.3-70b` (NOT `llama3.3-70b`).
 - **RelayConfig:** defined in `config.py` but NOT wired into `run_relay()` &mdash; 4 callers need updating.
 - **modelMeta.ts:** keyed by full litellm string; add entry whenever MODEL_REGISTRY changes.
-- **replication_group status:** `update_replication_group_status` exists but not yet called from relay completion path.
 - **Vite circular chunk warning:** `vendor -> vendor-react -> vendor` is cosmetic (React/scheduler co-dep) &mdash; runtime unaffected.
+- **cfg URL param:** `Configure.tsx` reads `?cfg=JSON` on mount; applied after preset/remix/fork so it always wins.

@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-03-03 (session 43 &mdash; spec-006 A/B comparison dashboard)
+**Last Updated:** 2026-03-03 (session 43 complete &mdash; spec-006 verified end-to-end)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -27,17 +27,19 @@ See `docs/CHANGELOG.md` for full history.
 ### Session 42 &mdash; JUDGE_MODEL + RelayConfig + Spec 005 (SHIPPED)
 - [x] JUDGE_MODEL env var; RelayConfig wiring into run_relay(); Spec 005 Hypothesis Testing Mode full stack
 
-### Session 43 &mdash; Spec 006 A/B Comparison Dashboard (SHIPPED `fc5042d`)
+### Session 43 &mdash; Spec 006 A/B Comparison Dashboard (SHIPPED + VERIFIED)
 - [x] **DB** &mdash; `comparison_group_id` + `comparison_variant` columns; `set_comparison_group()` / `get_comparison_group_experiments()` helpers
 - [x] **POST /api/relay/compare** &mdash; forks a completed experiment with one changed param; links both as variant 0/1; launches fork relay
 - [x] **GET /api/experiments/{id}/comparison** &mdash; vocab diff (a_only/b_only/shared) + auto-detected changed field + both experiment records with vocab_count + avg_score
 - [x] **Compare.tsx** &mdash; new `/compare/:experimentId` page: side-by-side cards, metric diff bar, vocab diff table, 8s polling while fork runs
-- [x] **Theater.tsx** &mdash; `// Compare` button on completed experiments; inline setup panel (field select + value input); `// View Compare` link when group exists
+- [x] **Theater.tsx** &mdash; `// Compare` button on completed experiments; inline setup panel; `// View Compare` link when group exists
+- [x] **effectiveStatus fix** &mdash; Theater completed action bar now falls back to `dbExperiment.status` when SSE history is empty (server restart / old experiment)
+- [x] **E2E verified** &mdash; Compare button visible, panel opens, fork launched, `/compare/:id` page renders side-by-side cards + "Variable changed: Temperature A (0.8 &rarr; 1.2)"
 
 ### Next Priorities (ordered)
-- [ ] **Live E2E smoke test** &mdash; run experiment with hypothesis; verify Gallery badge + Theater panel
 - [ ] **Spec 021+** &mdash; new specs TBD (run `/spec` to draft next feature)
-- [ ] **Push to origin** &mdash; 27 commits ahead of origin/master
+- [ ] **Live E2E smoke test of Spec 005** &mdash; run experiment with hypothesis; verify Gallery badge + Theater panel
+- [ ] **Push to origin** &mdash; 28 commits ahead of origin/master
 
 ## 4. Roadmap &mdash; Playground Specs
 
@@ -53,7 +55,7 @@ See `docs/CHANGELOG.md` for full history.
 
 **Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; 014 &#x2705; &rarr; 005 &#x2705; &rarr; 006 &#x2705; &rarr; next: 021+
 
-## 5. Architecture (v43.0)
+## 5. Architecture (v43.1)
 ```
 server/
   config.py             RelayConfig WIRED [s42]; JUDGE_MODEL from .env [s42]
@@ -71,7 +73,7 @@ ui/src/
     client.ts           startComparison() + getComparison() [s43]
   pages/
     Compare.tsx         /compare/:experimentId page [s43] (NEW)
-    Theater.tsx         Compare button + setup panel [s43]; hypothesis panel [s42]
+    Theater.tsx         effectiveStatus fallback [s43]; Compare button + setup panel [s43]
     Configure.tsx       hypothesis textarea [s42]; ?cfg= share [s41]
     Gallery.tsx         hypothesis outcome badges [s42]; group cards [s39]
     Analytics.tsx       hypothesis card [s42]
@@ -94,3 +96,4 @@ tasks/                  005-020: playground feature specs
 - **cfg URL param:** `Configure.tsx` reads `?cfg=JSON` on mount; applied after preset/remix/fork so it always wins.
 - **agents_config_json:** Must be populated for ALL experiment paths. If NULL, Theater shows 0 turns.
 - **Comparison group guard:** `POST /api/relay/compare` rejects experiments that already have a comparison_group_id.
+- **Theater effectiveStatus:** `experiment.status` (SSE) falls back to `dbExperiment.status` (DB) so the completed action bar renders for old/reloaded experiments.

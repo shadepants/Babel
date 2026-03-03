@@ -289,6 +289,33 @@ export default function Analytics() {
         )}
       </div>
 
+      {/* Hypothesis (Spec 005) */}
+      {experiment.hypothesis && (
+        <div className="neural-card p-4 space-y-2">
+          <div className="neural-section-label">// hypothesis</div>
+          <p className="font-mono text-xs text-text-dim/70 italic leading-relaxed">
+            &ldquo;{experiment.hypothesis}&rdquo;
+          </p>
+          {experiment.hypothesis_result ? (
+            <div className="flex items-start gap-3">
+              <span className={`font-display font-black tracking-widest text-sm ${
+                experiment.hypothesis_result === 'CONFIRMED' ? 'text-emerald-400' :
+                experiment.hypothesis_result === 'REFUTED' ? 'text-red-400' : 'text-amber-400'
+              }`}>
+                {experiment.hypothesis_result}
+              </span>
+              {experiment.hypothesis_reasoning && (
+                <p className="font-mono text-xs text-text-dim/60 leading-relaxed pt-0.5">{experiment.hypothesis_reasoning}</p>
+              )}
+            </div>
+          ) : (
+            <p className="font-mono text-[10px] text-text-dim/40 tracking-wider">
+              {experiment.status === 'completed' ? '// evaluating...' : '// pending completion'}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Collaboration Chemistry Card */}
       {chemistry && experiment && (
         <div className="mb-6">

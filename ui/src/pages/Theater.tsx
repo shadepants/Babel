@@ -392,6 +392,41 @@ export default function Theater() {
         </div>
       )}
 
+      {/* Hypothesis (Spec 005) */}
+      {dbExperiment?.hypothesis && (
+        <div className="px-6 py-4 border-t border-accent/15 bg-bg-card/40">
+          <div className="max-w-3xl mx-auto space-y-2">
+            <div className="neural-section-label">// hypothesis</div>
+            <p className="font-mono text-xs text-text-dim/70 italic leading-relaxed">
+              &ldquo;{dbExperiment.hypothesis}&rdquo;
+            </p>
+            {(() => {
+              const hr = experiment.hypothesisResult ?? (dbExperiment.hypothesis_result ? { result: dbExperiment.hypothesis_result, reasoning: dbExperiment.hypothesis_reasoning ?? '' } : null)
+              if (!hr) {
+                return experiment.status === 'completed'
+                  ? <p className="font-mono text-[10px] text-text-dim/40 tracking-wider animate-pulse-slow">// evaluating hypothesis...</p>
+                  : <p className="font-mono text-[10px] text-text-dim/30 tracking-wider">// will be evaluated on completion</p>
+              }
+              const colors: Record<string, string> = {
+                CONFIRMED: 'text-emerald-400',
+                REFUTED: 'text-red-400',
+                INCONCLUSIVE: 'text-amber-400',
+              }
+              return (
+                <div className="space-y-1">
+                  <span className={`font-display font-black tracking-widest text-sm ${colors[hr.result] ?? 'text-text-primary'}`}>
+                    {hr.result}
+                  </span>
+                  {hr.reasoning && (
+                    <p className="font-mono text-xs text-text-dim/60 leading-relaxed">{hr.reasoning}</p>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
       {(experiment.status === 'running' || experiment.status === 'paused') && (
         <div className="px-4 py-2 border-t border-border-custom space-y-2">
           {experiment.status === 'paused' && (

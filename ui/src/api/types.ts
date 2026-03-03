@@ -70,6 +70,8 @@ export interface RelayStartRequest {
   rpg_config?: RPGConfig;
   // Spec 018: baseline control preset
   baseline_for_experiment_id?: string;
+  // Spec 005: Hypothesis Testing Mode
+  hypothesis?: string | null;
 }
 
 /** POST /api/relay/start response */
@@ -252,6 +254,13 @@ export interface AuditStartedEvent extends BaseSSEEvent {
   audit_experiment_id: string;
 }
 
+/** relay.hypothesis_result -- Spec 005: judge evaluated the user's hypothesis */
+export interface HypothesisResultEvent extends BaseSSEEvent {
+  type: 'relay.hypothesis_result';
+  result: 'CONFIRMED' | 'REFUTED' | 'INCONCLUSIVE';
+  reasoning: string;
+}
+
 
 /** relay.human_timeout -- RPG human player went AFK; session continuing without input */
 export interface HumanTimeoutEvent extends BaseSSEEvent {
@@ -280,7 +289,8 @@ export type RelaySSEEvent =
   | EchoInterventionEvent
   | AgendaRevealedEvent
   | AuditStartedEvent
-  | HumanTimeoutEvent;
+  | HumanTimeoutEvent
+  | HypothesisResultEvent;
 
 // ── RPG Context Types ────────────────────────────────────────────
 
@@ -448,6 +458,10 @@ export interface ExperimentRecord {
   baseline_experiment_id?: string | null;
   // Spec 017: replication group membership (null = standalone)
   replication_group_id?: string | null;
+  // Spec 005: Hypothesis Testing Mode
+  hypothesis?: string | null;
+  hypothesis_result?: string | null;  // CONFIRMED | REFUTED | INCONCLUSIVE | null
+  hypothesis_reasoning?: string | null;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

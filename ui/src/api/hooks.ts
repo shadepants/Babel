@@ -6,7 +6,7 @@
  * Add new fields here when a new SSE event type needs to surface state.
  */
 import { useMemo } from 'react';
-import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent } from './types';
+import type { RelaySSEEvent, TurnEvent, VocabEvent, ScoreEvent, VerdictEvent, ObserverEvent, HypothesisResultEvent } from './types';
 
 export interface ExperimentState {
   turns: TurnEvent[];
@@ -27,6 +27,7 @@ export interface ExperimentState {
   interventionFired: boolean;
   revealedGoals: Array<{ agent_index: number; goal: string }> | null;
   auditExperimentId: string | null;
+  hypothesisResult: HypothesisResultEvent | null;
 }
 
 export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
@@ -50,6 +51,7 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
       interventionFired: false,
       revealedGoals: null,
       auditExperimentId: null,
+      hypothesisResult: null,
     };
 
     for (const event of events) {
@@ -130,6 +132,9 @@ export function useExperimentState(events: RelaySSEEvent[]): ExperimentState {
           break;
         case 'relay.audit_started':
           state.auditExperimentId = event.audit_experiment_id;
+          break;
+        case 'relay.hypothesis_result':
+          state.hypothesisResult = event;
           break;
       }
     }

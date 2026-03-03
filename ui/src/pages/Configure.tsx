@@ -95,6 +95,9 @@ export default function Configure() {
   // -- Spec 017: Replication Runs --
   const [replicationCount, setReplicationCount] = useState(1)
 
+  // -- Spec 005: Hypothesis Testing Mode --
+  const [hypothesis, setHypothesis] = useState('')
+
   // -- Spec 014: Shareable Config URLs --
   const [copied, setCopied] = useState(false)
 
@@ -364,6 +367,10 @@ export default function Configure() {
       // Session 27: Audit
       if (enableAudit) {
         (request as unknown as Record<string, unknown>).enable_audit = true
+      }
+      // Spec 005: Hypothesis
+      if (hypothesis.trim()) {
+        request.hypothesis = hypothesis.trim()
       }
 
       if (replicationCount > 1) {
@@ -893,6 +900,22 @@ export default function Configure() {
                   : `// launches ${replicationCount} identical experiments &mdash; grouped for stats`}
               </span>
             </div>
+          </div>
+
+          {/* Hypothesis (Spec 005) */}
+          <div className="space-y-2">
+            <div className="neural-section-label flex items-center gap-1.5">// hypothesis <Tooltip content="Optional: state a falsifiable prediction before running. After completion, the judge evaluates it and records CONFIRMED / REFUTED / INCONCLUSIVE. Builds a personal prediction accuracy history." /></div>
+            <textarea
+              className="w-full font-mono text-xs bg-bg-deep border border-border-custom rounded px-3 py-2 text-text-primary resize-none focus:outline-none focus:border-accent/50 placeholder:text-text-dim/30"
+              rows={2}
+              placeholder="e.g. The reasoning model will coin more vocabulary than the chat model."
+              value={hypothesis}
+              onChange={(e) => setHypothesis(e.target.value)}
+              maxLength={500}
+            />
+            <p className="font-mono text-[9px] text-text-dim/40 tracking-wider">
+              // make it specific and falsifiable &mdash; judge evaluates after completion
+            </p>
           </div>
 
           {/* Share Config (Spec 014) */}

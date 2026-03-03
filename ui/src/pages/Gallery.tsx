@@ -317,6 +317,26 @@ export default function Gallery() {
                           CHM {exp.chm_score.toFixed(2)}
                         </span>
                       )}
+                      {exp.hypothesis && !exp.hypothesis_result && (
+                        <span className="font-mono text-[9px] tracking-wider text-text-dim/40 border border-border-custom px-1.5 py-0.5 rounded-sm uppercase italic">
+                          hypothesis pending
+                        </span>
+                      )}
+                      {exp.hypothesis_result === 'CONFIRMED' && (
+                        <span className="font-mono text-[9px] tracking-wider text-emerald-400/90 border border-emerald-500/40 px-1.5 py-0.5 rounded-sm uppercase font-bold">
+                          &#10003; confirmed
+                        </span>
+                      )}
+                      {exp.hypothesis_result === 'REFUTED' && (
+                        <span className="font-mono text-[9px] tracking-wider text-red-400/80 border border-red-500/30 px-1.5 py-0.5 rounded-sm uppercase font-bold">
+                          &#10007; refuted
+                        </span>
+                      )}
+                      {exp.hypothesis_result === 'INCONCLUSIVE' && (
+                        <span className="font-mono text-[9px] tracking-wider text-amber-400/70 border border-amber-500/25 px-1.5 py-0.5 rounded-sm uppercase">
+                          ~ inconclusive
+                        </span>
+                      )}
                     </div>
                     <div className="font-mono text-[10px] text-text-dim/70 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span>{formatDate(exp.created_at)}</span>

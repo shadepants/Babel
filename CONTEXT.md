@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-03-03 (session 43 complete &mdash; spec-006 verified end-to-end)
+**Last Updated:** 2026-03-03 (session 44 complete &mdash; Spec 005 smoke test + temp UX)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -28,18 +28,25 @@ See `docs/CHANGELOG.md` for full history.
 - [x] JUDGE_MODEL env var; RelayConfig wiring into run_relay(); Spec 005 Hypothesis Testing Mode full stack
 
 ### Session 43 &mdash; Spec 006 A/B Comparison Dashboard (SHIPPED + VERIFIED)
-- [x] **DB** &mdash; `comparison_group_id` + `comparison_variant` columns; `set_comparison_group()` / `get_comparison_group_experiments()` helpers
-- [x] **POST /api/relay/compare** &mdash; forks a completed experiment with one changed param; links both as variant 0/1; launches fork relay
-- [x] **GET /api/experiments/{id}/comparison** &mdash; vocab diff (a_only/b_only/shared) + auto-detected changed field + both experiment records with vocab_count + avg_score
-- [x] **Compare.tsx** &mdash; new `/compare/:experimentId` page: side-by-side cards, metric diff bar, vocab diff table, 8s polling while fork runs
-- [x] **Theater.tsx** &mdash; `// Compare` button on completed experiments; inline setup panel; `// View Compare` link when group exists
-- [x] **effectiveStatus fix** &mdash; Theater completed action bar now falls back to `dbExperiment.status` when SSE history is empty (server restart / old experiment)
-- [x] **E2E verified** &mdash; Compare button visible, panel opens, fork launched, `/compare/:id` page renders side-by-side cards + "Variable changed: Temperature A (0.8 &rarr; 1.2)"
+- [x] **DB** &mdash; `comparison_group_id` + `comparison_variant` columns; helpers
+- [x] **POST /api/relay/compare** &mdash; forks experiment with one changed param
+- [x] **GET /api/experiments/{id}/comparison** &mdash; vocab diff + auto-detected changed field
+- [x] **Compare.tsx** &mdash; new `/compare/:experimentId` page: side-by-side cards, metric diff bar
+- [x] **Theater.tsx** &mdash; Compare button + setup panel + effectiveStatus fallback
+
+### Session 44 &mdash; Temp UX + Spec 005 Smoke Test (SHIPPED + VERIFIED)
+- [x] **provider-aware temperature** &mdash; `modelMeta.ts` `maxTemp`/`recommendedMax` per model; AgentSlotsPanel slider max is dynamic; clamp on model switch; provider cap hint + recommended range hint
+- [x] **Theater Compare panel** &mdash; same max/recommended logic; submit guard blocks out-of-range temps
+- [x] **fix relay_engine None bug** &mdash; `list(cfg.hidden_goals or [])` / `initial_history` / `vocabulary_seed` &mdash; prevented crash on any experiment omitting optional fields (cf25d85)
+- [x] **Spec 005 E2E smoke test PASSED** &mdash; Gallery &#x2718; REFUTED badge + Theater hypothesis panel + Analytics hypothesis card all verified live
+
+### Known Issue (session 44)
+- `GET /api/experiments/{id}` returns `turns: []` (0) even when 8 turns exist &mdash; Analytics reads from a different query and shows correctly. Likely a DB join or serialization bug in the experiments endpoint.
 
 ### Next Priorities (ordered)
+- [ ] **Investigate turns: 0 API bug** &mdash; `/api/experiments/{id}` not returning turns array (Analytics shows correct count)
 - [ ] **Spec 021+** &mdash; new specs TBD (run `/spec` to draft next feature)
-- [ ] **Live E2E smoke test of Spec 005** &mdash; run experiment with hypothesis; verify Gallery badge + Theater panel
-- [ ] **Push to origin** &mdash; 28 commits ahead of origin/master
+- [ ] **Model registry deep dive** &mdash; audit MODEL_REGISTRY vs modelMeta.ts for gaps/mismatches
 
 ## 4. Roadmap &mdash; Playground Specs
 
@@ -55,11 +62,11 @@ See `docs/CHANGELOG.md` for full history.
 
 **Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; 014 &#x2705; &rarr; 005 &#x2705; &rarr; 006 &#x2705; &rarr; next: 021+
 
-## 5. Architecture (v43.1)
+## 5. Architecture (v44.0)
 ```
 server/
   config.py             RelayConfig WIRED [s42]; JUDGE_MODEL from .env [s42]
-  relay_engine.py       run_relay(relay_config=RelayConfig); evaluate_hypothesis() [s42]
+  relay_engine.py       run_relay(relay_config=RelayConfig); or [] guards [s44]
   audit_engine.py       uses RelayConfig() [s42]
   tournament_engine.py  uses RelayConfig() [s42]
   routers/
@@ -68,22 +75,22 @@ server/
     replication.py      GET /replication-groups + GET /replication-groups/:id [s39]
   db.py                 comparison_group columns + helpers [s43]; hypothesis [s42]
 ui/src/
-  api/
-    types.ts            ComparisonData/ExperimentRecord comparison fields [s43]
-    client.ts           startComparison() + getComparison() [s43]
+  lib/
+    modelMeta.ts        maxTemp + recommendedMax per model; getMaxTemp/getRecommendedMax [s44]
   pages/
     Compare.tsx         /compare/:experimentId page [s43] (NEW)
-    Theater.tsx         effectiveStatus fallback [s43]; Compare button + setup panel [s43]
+    Theater.tsx         Compare button + panel [s43]; temp max/guard [s44]
     Configure.tsx       hypothesis textarea [s42]; ?cfg= share [s41]
     Gallery.tsx         hypothesis outcome badges [s42]; group cards [s39]
     Analytics.tsx       hypothesis card [s42]
-    Help.tsx            4-section reference page [s39]
-    ReplicationGroup.tsx stats panel + per-run table [s39]
+  components/configure/
+    AgentSlotsPanel.tsx dynamic slider max + recommended hints [s44]
 tasks/                  005-020: playground feature specs
 ```
 
 ## 6. Don't Forget
 - **File encoding:** NEVER use PowerShell to read/rewrite UTF-8 files. Use `win_write` MCP tool. Use HTML entities in JSX.
+- **git commit temp files:** Use `win_write` MCP tool (NOT PowerShell `Out-File`) &mdash; PowerShell adds BOM to UTF-8 files, corrupting commit messages.
 - **Tailwind dynamic classes:** NEVER `text-${color}` &mdash; purged in prod. Use explicit conditionals or `style={}`.
 - **FastAPI route order:** catch-all `/{id}` routes AFTER specific routes.
 - **asyncio blocking in async def:** use `asyncio.to_thread()` for SQLite/file I/O in async endpoints.
@@ -91,7 +98,7 @@ tasks/                  005-020: playground feature specs
 - **Gemini free tier:** Flash 250 RPD, Flash Lite 1000 RPD, Pro 100 RPD. JUDGE_MODEL now reads from `.env`.
 - **litellm model prefix:** ALWAYS `gemini/gemini-2.5-flash` (not bare) &mdash; bare routes to Vertex AI.
 - **Cerebras model ID:** uses hyphens &mdash; `cerebras/llama-3.3-70b` (NOT `llama3.3-70b`).
-- **modelMeta.ts:** keyed by full litellm string; add entry whenever MODEL_REGISTRY changes.
+- **modelMeta.ts:** keyed by full litellm string; add entry whenever MODEL_REGISTRY changes. Anthropic maxTemp=1.0; all others=2.0.
 - **Vite circular chunk warning:** `vendor -> vendor-react -> vendor` is cosmetic (React/scheduler co-dep) &mdash; runtime unaffected.
 - **cfg URL param:** `Configure.tsx` reads `?cfg=JSON` on mount; applied after preset/remix/fork so it always wins.
 - **agents_config_json:** Must be populated for ALL experiment paths. If NULL, Theater shows 0 turns.

@@ -30,6 +30,7 @@ from server.config import (
     JUDGE_MODEL,
     MODEL_REGISTRY,
     RPGConfig,
+    RelayConfig,
     get_display_name,
     resolve_model_version,
 )
@@ -112,6 +113,11 @@ class RelayStartRequest(BaseModel):
     replication_count: int = Field(
         default=1, ge=1, le=10,
         description="Number of identical replications to launch (1 = single, behaves like /start).",
+    )
+    # Spec 005: Hypothesis Testing Mode
+    hypothesis: str | None = Field(
+        default=None,
+        description="Optional falsifiable prediction about this experiment's outcome.",
     )
 
 
@@ -308,27 +314,30 @@ async def _start_standard_relay(
             rounds=body.rounds,
             hub=hub,
             db=db,
-            turn_delay_seconds=body.turn_delay_seconds,
-            cancel_event=cancel_event,
-            resume_event=resume_event,
-            preset=body.preset,
-            judge_model=resolved_judge if (body.enable_scoring or body.enable_verdict) else None,
-            enable_scoring=body.enable_scoring,
-            enable_verdict=body.enable_verdict,
-            enable_memory=body.enable_memory,
-            observer_model=body.observer_model,
-            observer_interval=body.observer_interval,
-            initial_history=body.initial_history,
-            parent_experiment_id=body.parent_experiment_id,
-            background_tasks=request.app.state.background_tasks,
-            enable_echo_detector=body.enable_echo_detector,
-            enable_echo_intervention=body.enable_echo_intervention,
-            echo_warn_threshold=body.echo_warn_threshold,
-            echo_intervene_threshold=body.echo_intervene_threshold,
-            hidden_goals=body.hidden_goals,
-            revelation_round=body.revelation_round,
-            vocabulary_seed=vocab_seed_data,
-            enable_audit=body.enable_audit,
+            relay_config=RelayConfig(
+                turn_delay_seconds=body.turn_delay_seconds,
+                cancel_event=cancel_event,
+                resume_event=resume_event,
+                preset=body.preset,
+                judge_model=resolved_judge,
+                enable_scoring=body.enable_scoring,
+                enable_verdict=body.enable_verdict,
+                enable_memory=body.enable_memory,
+                observer_model=body.observer_model,
+                observer_interval=body.observer_interval,
+                initial_history=body.initial_history or [],
+                parent_experiment_id=body.parent_experiment_id,
+                background_tasks=request.app.state.background_tasks,
+                enable_echo_detector=body.enable_echo_detector,
+                enable_echo_intervention=body.enable_echo_intervention,
+                echo_warn_threshold=body.echo_warn_threshold,
+                echo_intervene_threshold=body.echo_intervene_threshold,
+                hidden_goals=body.hidden_goals,
+                revelation_round=body.revelation_round,
+                vocabulary_seed=vocab_seed_data or [],
+                enable_audit=body.enable_audit,
+                hypothesis=body.hypothesis or None,
+            ),
         )
     )
     _running_relays[match_id] = (task, cancel_event, resume_event)
@@ -439,6 +448,8 @@ async def start_relay(body: RelayStartRequest, request: Request):
             model_a_version=model_a_version,
             model_b_version=model_b_version,
         )
+        if body.hypothesis and body.hypothesis.strip():
+            await db.save_hypothesis(match_id, body.hypothesis.strip())
         if body.baseline_for_experiment_id:
             await db.link_baseline(body.baseline_for_experiment_id, match_id)
         cancel_event = asyncio.Event()
@@ -557,6 +568,8 @@ async def _create_and_launch_one(
         model_b_version=model_b_version,
         replication_group_id=replication_group_id,
     )
+    if body.hypothesis and body.hypothesis.strip():
+        await db.save_hypothesis(match_id, body.hypothesis.strip())
     cancel_event = asyncio.Event()
     await _start_standard_relay(
         match_id, body, request, db, hub, cancel_event, seed, system_prompt,
@@ -1101,18 +1114,20 @@ async def recover_stale_sessions(hub, db, background_tasks: set[asyncio.Task] | 
                 seed=session["seed"],
                 system_prompt=session["system_prompt"],
                 rounds=rounds_remaining,
-                start_round=turns_done + 1,
                 hub=hub,
                 db=db,
-                turn_delay_seconds=recovery.get("turn_delay_seconds", 2.0),
-                cancel_event=cancel_event,
-                resume_event=resume_event,
-                preset=recovery.get("preset"),
-                enable_scoring=recovery.get("enable_scoring", False),
-                enable_verdict=recovery.get("enable_verdict", False),
-                enable_memory=recovery.get("enable_memory", False),
-                initial_history=initial_history,
-                background_tasks=background_tasks,
+                relay_config=RelayConfig(
+                    start_round=turns_done + 1,
+                    turn_delay_seconds=recovery.get("turn_delay_seconds", 2.0),
+                    cancel_event=cancel_event,
+                    resume_event=resume_event,
+                    preset=recovery.get("preset"),
+                    enable_scoring=recovery.get("enable_scoring", False),
+                    enable_verdict=recovery.get("enable_verdict", False),
+                    enable_memory=recovery.get("enable_memory", False),
+                    initial_history=initial_history,
+                    background_tasks=background_tasks,
+                ),
             ))
 
             def _cleanup(t: asyncio.Task, mid: str = match_id) -> None:

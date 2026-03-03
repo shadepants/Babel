@@ -1,6 +1,7 @@
 """Babel configuration -- settings, defaults, and model registry."""
 
 import datetime
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -99,8 +100,9 @@ DEFAULT_MAX_TOKENS = 1500
 # -- Judge / Scoring Defaults ------------------------------------------------
 # judge_model is used for per-turn scoring and final verdicts.
 # Both features are opt-in (disabled by default).
+# Override via JUDGE_MODEL env var in .env (default: Haiku 4.5 for cost efficiency).
 
-JUDGE_MODEL = "gemini/gemini-2.5-flash"
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gemini/gemini-2.5-flash")
 DEFAULT_SCORING_ENABLED = False
 DEFAULT_VERDICT_ENABLED = False
 
@@ -168,7 +170,7 @@ class RelayConfig:
     background_tasks: object = None  # set[asyncio.Task] | None
 
     # Judge / scoring
-    judge_model: str = JUDGE_MODEL
+    judge_model: str = field(default_factory=lambda: JUDGE_MODEL)
     enable_scoring: bool = False
     enable_verdict: bool = False
 
@@ -195,6 +197,8 @@ class RelayConfig:
     observer_model: str | None = None
     observer_interval: int = 3
 
+    # Spec 005: Hypothesis Testing Mode
+    hypothesis: str | None = None
 
 
 @dataclass

@@ -128,10 +128,8 @@ async def run_audit(
             (audit_match_id, source_experiment_id),
         )
 
-        # Use the same judge model as the main relay default
-        from server.config import JUDGE_MODEL
-
         # Fire the relay
+        from server.config import RelayConfig
         _audit_task = asyncio.create_task(
             _bg_task(run_relay(
                 match_id=audit_match_id,
@@ -141,12 +139,13 @@ async def run_audit(
                 rounds=AUDIT_ROUNDS,
                 hub=hub,
                 db=db,
-                turn_delay_seconds=1.0,
-                preset="audit",
-                enable_verdict=True,
-                judge_model=JUDGE_MODEL,
-                parent_experiment_id=source_experiment_id,
-                background_tasks=background_tasks,
+                relay_config=RelayConfig(
+                    turn_delay_seconds=1.0,
+                    preset="audit",
+                    enable_verdict=True,
+                    parent_experiment_id=source_experiment_id,
+                    background_tasks=background_tasks,
+                ),
             ))
         )
         if background_tasks is not None:

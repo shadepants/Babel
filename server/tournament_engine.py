@@ -12,7 +12,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from server.config import get_display_name
+from server.config import get_display_name, RelayConfig
 from server.relay_engine import RelayAgent, run_relay
 
 if TYPE_CHECKING:
@@ -146,8 +146,10 @@ async def run_tournament(
                     rounds=tournament["rounds"],
                     hub=hub,
                     db=db,
-                    cancel_event=cancel_event,
-                    preset=tournament.get("preset"),
+                    relay_config=RelayConfig(
+                        cancel_event=cancel_event,
+                        preset=tournament.get("preset"),
+                    ),
                 )
                 await db.update_tournament_match(match["id"], "completed")
                 completed += 1  # only count successfully completed matches

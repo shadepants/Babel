@@ -25,6 +25,7 @@ from server.vocab_extractor import extract_vocabulary
 from server.summarizer_engine import update_layered_context
 from server.chemistry_engine import compute_chemistry
 from server.audit_engine import run_audit
+from server.config import RelayConfig
 
 if TYPE_CHECKING:
     from server.event_hub import EventHub
@@ -268,6 +269,58 @@ async def score_turn(
         })
     except Exception as exc:
         logger.warning("Scoring failed for turn %d: %s", turn_id, exc)
+
+
+async def evaluate_hypothesis(
+    match_id: str,
+    hypothesis: str,
+    turns: list[dict],
+    judge_model: str,
+    hub: "EventHub",
+    db: "Database",
+) -> None:
+    """Evaluate a user's hypothesis against the completed experiment transcript.
+
+    Publishes relay.hypothesis_result event and persists result to DB.
+    Fire-and-forget -- called after MATCH_COMPLETE. Never raises.
+    """
+    lines = [f"[{t['speaker']}]: {t['content'][:400]}" for t in turns[-20:]]
+    transcript = "\n\n".join(lines)
+    prompt = (
+        f"A user predicted the following about this AI-to-AI conversation:\n\n"
+        f"HYPOTHESIS: {hypothesis}\n\n"
+        f"Based on this conversation transcript, was the hypothesis CONFIRMED, REFUTED, or INCONCLUSIVE?\n"
+        f"Be decisive -- only use INCONCLUSIVE when the transcript genuinely cannot answer the claim.\n"
+        f"Return JSON only: {{\"result\": \"CONFIRMED\" | \"REFUTED\" | \"INCONCLUSIVE\", \"reasoning\": \"one sentence\"}}\n\n"
+        f"Transcript (last 20 turns):\n{transcript[:5000]}"
+    )
+    judge_agent = RelayAgent(
+        name="hypothesis_judge",
+        model=judge_model,
+        temperature=0.2,
+        max_tokens=150,
+        request_timeout=30,
+    )
+    try:
+        raw, _, _ = await call_model(judge_agent, [{"role": "user", "content": prompt}])
+        # Strip markdown fences if present
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = "\n".join(cleaned.split("\n")[1:]).rstrip("`").strip()
+        data = json.loads(cleaned)
+        result = data.get("result", "INCONCLUSIVE").upper()
+        if result not in ("CONFIRMED", "REFUTED", "INCONCLUSIVE"):
+            result = "INCONCLUSIVE"
+        reasoning = data.get("reasoning", "")
+        await db.save_hypothesis_result(match_id, result, reasoning)
+        hub.publish("relay.hypothesis_result", {
+            "match_id": match_id,
+            "result": result,
+            "reasoning": reasoning,
+        })
+        logger.info("Hypothesis evaluated for %s: %s", match_id, result)
+    except Exception as exc:
+        logger.warning("Hypothesis evaluation failed for %s: %s", match_id, exc)
 
 
 async def final_verdict(
@@ -628,36 +681,11 @@ async def run_relay(
     rounds: int = 5,
     hub: EventHub | None = None,
     db: Database | None = None,
-    turn_delay_seconds: float = 2.0,
-    cancel_event: asyncio.Event | None = None,
-    resume_event: asyncio.Event | None = None,
-    observer_model: str | None = None,
-    observer_interval: int = 3,
-    preset: str | None = None,
-    judge_model: str | None = None,
-    enable_scoring: bool = False,
-    enable_verdict: bool = False,
-    enable_memory: bool = False,
-    initial_history: list[dict] | None = None,
-    parent_experiment_id: str | None = None,
-    background_tasks: set[asyncio.Task] | None = None,
     # Backward-compat shim for callers that pass agent_a/agent_b explicitly
     agent_a: RelayAgent | None = None,
     agent_b: RelayAgent | None = None,
-    # Recovery: start round numbering here (1 = fresh session; N = resumed after crash)
-    start_round: int = 1,
-    # Session 27: Echo Chamber Detection
-    enable_echo_detector: bool = False,
-    enable_echo_intervention: bool = False,
-    echo_warn_threshold: float = 0.65,
-    echo_intervene_threshold: float = 0.88,
-    # Session 27: Recursive Adversarial Mode
-    hidden_goals: list[dict] | None = None,
-    revelation_round: int | None = None,
-    # Session 27: Linguistic Evolution
-    vocabulary_seed: list[dict] | None = None,
-    # Session 27: Recursive Audit
-    enable_audit: bool = False,
+    # All optional feature flags and settings packed into RelayConfig
+    relay_config: RelayConfig | None = None,
 ) -> None:
     """Run an N-way AI relay conversation (2-4 agents in round-robin order).
 
@@ -668,11 +696,11 @@ async def run_relay(
     In-memory turns use the same format: {"speaker": name, "content": str}.
     The seed turn uses speaker="" (neutral) so all agents see it as "user" role.
 
-    If initial_history is provided (fork flow), those turns pre-populate the
-    conversation context so models continue from a prior experiment.
+    If relay_config.initial_history is set (fork flow), those turns pre-populate
+    the conversation context so models continue from a prior experiment.
 
-    start_round > 1 is used by recover_stale_sessions() to resume a crashed session
-    at the correct round number so DB round counters stay accurate.
+    relay_config.start_round > 1 is used by recover_stale_sessions() to resume
+    a crashed session at the correct round number.
     """
     # Backward-compat: accept old (agent_a, agent_b) call signature
     if agents is None:
@@ -684,11 +712,37 @@ async def run_relay(
     assert hub is not None, "hub is required"
     assert db is not None, "db is required"
 
+    # Unpack RelayConfig into local variables (mirrors old kwarg names for minimal diff)
+    cfg = relay_config or RelayConfig()
+    turn_delay_seconds = cfg.turn_delay_seconds
+    cancel_event = cfg.cancel_event
+    resume_event = cfg.resume_event
+    observer_model = cfg.observer_model
+    observer_interval = cfg.observer_interval
+    preset = cfg.preset
+    judge_model = cfg.judge_model
+    enable_scoring = cfg.enable_scoring
+    enable_verdict = cfg.enable_verdict
+    enable_memory = cfg.enable_memory
+    initial_history: list[dict] = list(cfg.initial_history)
+    parent_experiment_id = cfg.parent_experiment_id
+    background_tasks = cfg.background_tasks
+    start_round = cfg.start_round
+    enable_echo_detector = cfg.enable_echo_detector
+    enable_echo_intervention = cfg.enable_echo_intervention
+    echo_warn_threshold = cfg.echo_warn_threshold
+    echo_intervene_threshold = cfg.echo_intervene_threshold
+    hidden_goals: list[dict] = list(cfg.hidden_goals)
+    revelation_round = cfg.revelation_round
+    vocabulary_seed: list[dict] = list(cfg.vocabulary_seed)
+    enable_audit = cfg.enable_audit
+    hypothesis = cfg.hypothesis
+
     # Pre-build speaker-name -> agent index map for pause-refresh
     name_to_idx: dict[str, int] = {a.name: i for i, a in enumerate(agents)}
 
     # In-memory turns: {"speaker": display_name_or_empty, "content": str}
-    turns: list[dict] = list(initial_history) if initial_history else []
+    turns: list[dict] = list(initial_history)
     # Neutral seed -- shown to all agents as plain "user" message (no [Name]: prefix)
     seed_turn = {"speaker": "", "content": seed}
     known_words: set[str] = set()
@@ -995,6 +1049,16 @@ async def run_relay(
                 track_task(_audit_task, background_tasks)
             else:
                 _audit_task.add_done_callback(_log_task_exception)
+
+        # Spec 005: Hypothesis Evaluation (fire-and-forget)
+        if hypothesis and hypothesis.strip():
+            _hyp_task = asyncio.create_task(
+                _bg_task(evaluate_hypothesis(match_id, hypothesis.strip(), turns, judge_model, hub, db))
+            )
+            if background_tasks is not None:
+                track_task(_hyp_task, background_tasks)
+            else:
+                _hyp_task.add_done_callback(_log_task_exception)
 
     except Exception as e:
         elapsed = time.time() - start_time

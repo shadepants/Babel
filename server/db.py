@@ -410,6 +410,14 @@ class Database:
         except Exception:
             pass  # column already exists
 
+        # Spec 005: Hypothesis Testing Mode
+        for col in ("hypothesis TEXT", "hypothesis_result TEXT", "hypothesis_reasoning TEXT"):
+            try:
+                await self._db.execute(f"ALTER TABLE experiments ADD COLUMN {col}")
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -791,6 +799,25 @@ class Database:
         await self._execute_queued(
             "UPDATE experiments SET winner = ?, verdict_reasoning = ? WHERE id = ?",
             (winner, verdict_reasoning, experiment_id),
+        )
+
+    async def save_hypothesis(self, experiment_id: str, hypothesis: str) -> None:
+        """Persist a user-provided hypothesis for an experiment (Spec 005)."""
+        await self._execute_queued(
+            "UPDATE experiments SET hypothesis = ? WHERE id = ?",
+            (hypothesis, experiment_id),
+        )
+
+    async def save_hypothesis_result(
+        self,
+        experiment_id: str,
+        result: str,
+        reasoning: str,
+    ) -> None:
+        """Persist the judge's CONFIRMED/REFUTED/INCONCLUSIVE verdict on a hypothesis (Spec 005)."""
+        await self._execute_queued(
+            "UPDATE experiments SET hypothesis_result = ?, hypothesis_reasoning = ? WHERE id = ?",
+            (result, reasoning, experiment_id),
         )
 
     async def delete_experiment(self, experiment_id: str) -> None:

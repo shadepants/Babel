@@ -2,48 +2,45 @@
 
 ## Current Session Status
 **Last Updated:** 2026-03-02
-**Active Agent:** Claude Code (session 41)
-**Current Goal:** Commit backlog + wire relay status + spec 014 shareable URLs
+**Active Agent:** Claude Code (session 42)
+**Current Goal:** JUDGE_MODEL env var + RelayConfig wiring + Spec 005 Hypothesis Testing Mode
 
 ## Changes This Session
 
-### Commits shipped (5 total)
-- [x] `feat(spec-017)` `4278a44` &mdash; replication runs backend + frontend (sessions 39-40 backlog)
-- [x] `feat(spec-020)` `0d8a504` &mdash; help system: Tooltip component + /help page + nav link
-- [x] `perf(ui)` `79cd1d2` &mdash; Vite manualChunks + React.lazy() 17 pages + 5-file TS cleanup
-- [x] `fix(spec-017)` `09df6a3` &mdash; `_cleanup_task` done-callback now fires `update_replication_group_status`; group status auto-flips after each experiment completes
-- [x] `feat(spec-014)` `28568de` &mdash; `?cfg=<JSON>` shareable config URLs; share button copies URL; form pre-fills all state on mount
+### Commits shipped (2 total)
+- [x] `refactor` `d2ec223` &mdash; JUDGE_MODEL from .env; wire RelayConfig into run_relay(); spec-005 backend (db.py, config.py, relay_engine.py, routers/relay.py, audit_engine.py, tournament_engine.py)
+- [x] `feat(spec-005)` `6a02b0e` &mdash; hypothesis testing UI (types.ts, hooks.ts, Configure.tsx, Gallery.tsx, Theater.tsx, Analytics.tsx)
+
+### What was done
+- **JUDGE_MODEL:** `.env` now has `JUDGE_MODEL=anthropic/claude-haiku-4-5-20251001`; `config.py` reads via `os.getenv()` with Gemini Flash fallback
+- **RelayConfig wiring:** `run_relay()` signature reduced from 20+ kwargs to `relay_config: RelayConfig | None`; unpacks into local vars inside body so rest of function is untouched; all 4 call sites updated
+- **Spec 005 backend:** `evaluate_hypothesis()` async fn fires after experiment completion; calls judge model; emits `relay.hypothesis_result` SSE event; persists CONFIRMED/REFUTED/INCONCLUSIVE + reasoning to DB
+- **Spec 005 frontend:** Configure textarea for hypothesis input; Gallery outcome badges; Theater panel with SSE live + DB fallback; Analytics card with colored verdict + reasoning
 
 ## Verification Status
 | Check | Status | Notes |
 |-------|--------|-------|
 | `tsc --noEmit` | PASSED | Zero errors |
-| Backend startup | PASSED | uvicorn reload on relay.py change confirmed |
-| Configure page load | PASSED | Screenshot verified, no console errors |
-| Share button | PASSED | Clipboard payload confirmed (agents, rounds, seed, toggles) |
-| Round-trip pre-fill | PASSED | rounds=8, maxTokens=2000, turnDelay=1.5s, seed, replicationCount=3 all restored |
-| Launch button label | PASSED | Shows "LAUNCH 3 REPLICATIONS" when replicationCount=3 |
+| Python imports | PASSED | relay_engine, routers/relay, audit_engine all import cleanly |
+| JUDGE_MODEL runtime | PASSED | `from server.config import JUDGE_MODEL` prints `anthropic/claude-haiku-4-5-20251001` |
 
 ## Next Priorities (in recommended order)
 
-1. **Spec 005 &mdash; Hypothesis Testing Mode** *(Medium, ~3-4h)*
-   - Structured experiment flow: user states a hypothesis, agents debate it, judge evaluates evidence quality
-   - Highest research value; unlocks quantitative claims about model behavior
-   - Task file: `tasks/005-hypothesis-testing-mode.md`
-
-2. **Spec 006 &mdash; A/B Forking Dashboard** *(Medium, ~2-3h)*
-   - Visual branch tree for fork experiments; shows divergence from parent turn
-   - Makes the fork feature discoverable and navigable
+1. **Spec 006 &mdash; A/B Forking Dashboard** *(Medium, ~2-3h)*
+   - Visual branch tree showing fork lineage; side-by-side metric comparison
+   - Needs: `comparison_group_id`/`comparison_variant` DB columns, `/compare/:groupId` page, "Compare" button on Theater, diff metrics bar
    - Task file: `tasks/006-ab-forking-dashboard.md`
 
-3. **RelayConfig wiring** *(Refactor, ~1h)*
-   - `RelayConfig` dataclass exists in `config.py` but `run_relay()` still takes 20+ individual kwargs
-   - 4 call sites need updating: `relay.py` (2x), `rpg_engine.py`, `recover_stale_sessions`
-   - Low risk, cleans up the biggest technical debt in the codebase
+2. **Live E2E smoke test of Spec 005** *(QA, ~30min)*
+   - Run an experiment with a hypothesis in Configure; verify Gallery badge appears; reload Theater and check hypothesis panel shows result
+   - Playwright: add `hypothesis` test to features suite
 
-4. **Set `JUDGE_MODEL` in `.env`** *(Config, 5 min)*
-   - Current default burns Gemini Flash quota on every scored experiment
-   - Set `JUDGE_MODEL=anthropic/claude-haiku-4-5-20251001` for cost-effective scoring
+3. **New specs** *(Design, any length)*
+   - Run `/spec` to draft the next playground feature
+   - Candidates: experiment comparison view, model personality profiles, persistent vocab dictionary across experiments
+
+4. **Push to origin** *(Ops, 2min)*
+   - 24 commits ahead of origin/master; push when ready for remote backup
 
 ## Session Log Entry
-Session 41: Committed 5 commits covering spec-017 (replication runs), spec-020 (help system), perf optimization (code splitting), spec-017 relay fix (group status auto-update), and spec-014 (shareable config URLs). All verified against live servers. Roadmap now has 5 specs shipped; spec-005 is the highest-value next item.
+Session 42: Shipped JUDGE_MODEL env config, RelayConfig wiring (biggest remaining tech debt), and full Spec 005 hypothesis testing mode end-to-end. 12 files changed, 314 insertions. All TypeScript and Python imports verified clean.

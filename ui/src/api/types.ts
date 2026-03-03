@@ -462,6 +462,49 @@ export interface ExperimentRecord {
   hypothesis?: string | null;
   hypothesis_result?: string | null;  // CONFIRMED | REFUTED | INCONCLUSIVE | null
   hypothesis_reasoning?: string | null;
+  // Spec 006: A/B Comparison groups
+  comparison_group_id?: string | null;
+  comparison_variant?: number | null;  // 0 = control, 1 = fork
+}
+
+// ── Spec 006: A/B Comparison ─────────────────────────────────
+
+/** Experiment in a comparison pair, augmented with computed metrics */
+export interface ComparisonExperiment extends ExperimentRecord {
+  vocab_count: number;
+  avg_score: number | null;
+}
+
+/** GET /api/experiments/:id/comparison response */
+export interface ComparisonData {
+  group_id: string;
+  experiments: [ComparisonExperiment, ComparisonExperiment];
+  vocab_diff: {
+    a_only: string[];
+    b_only: string[];
+    shared: string[];
+  };
+  changed_field: string | null;
+  changed_from: string | null;
+  changed_to: string | null;
+}
+
+/** POST /api/relay/compare request */
+export interface RelayCompareRequest {
+  source_experiment_id: string;
+  model_a?: string;
+  model_b?: string;
+  temperature_a?: number;
+  temperature_b?: number;
+  rounds?: number;
+  system_prompt?: string;
+}
+
+/** POST /api/relay/compare response */
+export interface CompareStartResponse {
+  comparison_group_id: string;
+  source_experiment_id: string;
+  fork_experiment_id: string;
 }
 
 /** Single turn score from GET /api/experiments/:id/scores */

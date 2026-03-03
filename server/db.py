@@ -418,6 +418,14 @@ class Database:
             except Exception:
                 pass  # column already exists
 
+        # Spec 006: A/B Comparison groups
+        for col in ("comparison_group_id TEXT", "comparison_variant INTEGER"):
+            try:
+                await self._db.execute(f"ALTER TABLE experiments ADD COLUMN {col}")
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._worker_task:
@@ -819,6 +827,24 @@ class Database:
             "UPDATE experiments SET hypothesis_result = ?, hypothesis_reasoning = ? WHERE id = ?",
             (result, reasoning, experiment_id),
         )
+
+    async def set_comparison_group(
+        self, experiment_id: str, group_id: str, variant: int
+    ) -> None:
+        """Link an experiment to a comparison group (Spec 006). variant: 0=control, 1=fork."""
+        await self._execute_queued(
+            "UPDATE experiments SET comparison_group_id = ?, comparison_variant = ? WHERE id = ?",
+            (group_id, variant, experiment_id),
+        )
+
+    async def get_comparison_group_experiments(self, group_id: str) -> list[dict]:
+        """Return both experiments in a comparison group, ordered by variant (Spec 006)."""
+        cursor = await self.db.execute(
+            "SELECT * FROM experiments WHERE comparison_group_id = ? ORDER BY comparison_variant",
+            (group_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     async def delete_experiment(self, experiment_id: str) -> None:
         """Delete an experiment and all associated data (cascades via FK)."""

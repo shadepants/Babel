@@ -148,6 +148,92 @@ async def get_vocabulary(experiment_id: str, request: Request):
     return {"experiment_id": experiment_id, "words": words}
 
 
+@router.get("/{experiment_id}/comparison")
+async def get_experiment_comparison(experiment_id: str, request: Request):
+    """Spec 006: Return both experiments in a comparison group along with vocab diff.
+
+    Can be called with either the source or the fork experiment ID — both resolve
+    to the same comparison group.
+    """
+    db = _get_db(request)
+    experiment = await db.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Experiment not found")
+
+    group_id = experiment.get("comparison_group_id")
+    if not group_id:
+        raise HTTPException(404, "Experiment is not part of a comparison group")
+
+    experiments = await db.get_comparison_group_experiments(group_id)
+    if len(experiments) < 2:
+        raise HTTPException(404, "Comparison group is incomplete")
+
+    exp_a = experiments[0]  # variant 0 = control
+    exp_b = experiments[1]  # variant 1 = fork
+
+    # Fetch vocabulary for both experiments
+    vocab_a = await db.get_vocabulary(exp_a["id"])
+    vocab_b = await db.get_vocabulary(exp_b["id"])
+
+    words_a = {w["word"] for w in vocab_a}
+    words_b = {w["word"] for w in vocab_b}
+
+    a_only = sorted(words_a - words_b)
+    b_only = sorted(words_b - words_a)
+    shared = sorted(words_a & words_b)
+
+    # Detect what parameter changed between the two experiments
+    changed_field: str | None = None
+    changed_from: str | None = None
+    changed_to: str | None = None
+
+    checks = [
+        ("model_a",       exp_a.get("model_a"),       exp_b.get("model_a")),
+        ("model_b",       exp_a.get("model_b"),       exp_b.get("model_b")),
+        ("temperature_a", exp_a.get("temperature_a"), exp_b.get("temperature_a")),
+        ("temperature_b", exp_a.get("temperature_b"), exp_b.get("temperature_b")),
+        ("rounds",        exp_a.get("rounds_planned"), exp_b.get("rounds_planned")),
+        ("system_prompt", exp_a.get("system_prompt"), exp_b.get("system_prompt")),
+    ]
+    for field_name, val_a, val_b in checks:
+        if str(val_a) != str(val_b):
+            changed_field = field_name
+            changed_from = str(val_a) if val_a is not None else None
+            changed_to = str(val_b) if val_b is not None else None
+            break
+
+    # Supplement each experiment with derived metrics
+    async def _metrics(exp: dict) -> dict:
+        vocab = await db.get_vocabulary(exp["id"])
+        vocab_count = len(vocab)
+        avg_score: float | None = None
+        try:
+            scores_cursor = await db.db.execute(
+                """SELECT AVG((ts.creativity + ts.coherence + ts.engagement + ts.novelty) / 4.0) AS s
+                   FROM turn_scores ts JOIN turns t ON ts.turn_id = t.id
+                   WHERE t.experiment_id = ?""",
+                (exp["id"],),
+            )
+            row = await scores_cursor.fetchone()
+            if row and row[0] is not None:
+                avg_score = round(float(row[0]), 2)
+        except Exception:
+            pass
+        return {**exp, "vocab_count": vocab_count, "avg_score": avg_score}
+
+    exp_a_full = await _metrics(exp_a)
+    exp_b_full = await _metrics(exp_b)
+
+    return {
+        "group_id": group_id,
+        "experiments": [exp_a_full, exp_b_full],
+        "vocab_diff": {"a_only": a_only, "b_only": b_only, "shared": shared},
+        "changed_field": changed_field,
+        "changed_from": changed_from,
+        "changed_to": changed_to,
+    }
+
+
 @router.get("/{experiment_id}/stats")
 async def get_experiment_stats(experiment_id: str, request: Request):
     """Pre-aggregated analytics: per-round latency/tokens, vocab growth, totals."""

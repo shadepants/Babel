@@ -629,6 +629,179 @@ async def replicate_relay(body: RelayStartRequest, request: Request):
     }
 
 
+# -- Spec 006: A/B Comparison ---------------------------------------------------
+
+class CompareStartRequest(BaseModel):
+    source_experiment_id: str
+    model_a: str | None = Field(default=None, description="Override model A (None = keep original)")
+    model_b: str | None = Field(default=None, description="Override model B (None = keep original)")
+    temperature_a: float | None = Field(default=None, ge=0.0, le=2.0)
+    temperature_b: float | None = Field(default=None, ge=0.0, le=2.0)
+    rounds: int | None = Field(default=None, ge=1, le=15)
+    system_prompt: str | None = None
+
+
+class CompareStartResponse(BaseModel):
+    comparison_group_id: str
+    source_experiment_id: str
+    fork_experiment_id: str
+
+
+@router.post("/compare", response_model=CompareStartResponse)
+async def start_comparison(body: CompareStartRequest, request: Request):
+    """Fork a completed experiment with one changed variable and link both as a comparison pair.
+
+    Assigns a comparison_group_id to both the source (variant 0) and the fork (variant 1).
+    Navigate to /compare/:source_experiment_id to see the side-by-side diff view.
+    """
+    import uuid as _uuid_mod
+
+    db = _get_db(request)
+    hub = _get_hub(request)
+
+    source = await db.get_experiment(body.source_experiment_id)
+    if source is None:
+        raise HTTPException(404, f"Experiment '{body.source_experiment_id}' not found")
+    if source["status"] not in ("completed", "stopped"):
+        raise HTTPException(400, "Only completed or stopped experiments can be compared")
+    if source.get("comparison_group_id"):
+        raise HTTPException(400, "Experiment is already part of a comparison group")
+
+    # Resolve fork parameters (fall back to source values when not overridden)
+    fork_model_a = body.model_a or source["model_a"]
+    fork_model_b = body.model_b or source["model_b"]
+    fork_temp_a = body.temperature_a if body.temperature_a is not None else (source.get("temperature_a") or 0.7)
+    fork_temp_b = body.temperature_b if body.temperature_b is not None else (source.get("temperature_b") or 0.7)
+    fork_rounds = body.rounds or source["rounds_planned"]
+    fork_system_prompt = body.system_prompt or source["system_prompt"]
+
+    for model in (fork_model_a, fork_model_b):
+        if model not in _ALLOWED_MODELS:
+            raise HTTPException(400, f"Model '{model}' is not in the allowed registry")
+
+    source_config = json.loads(source.get("config_json") or "{}")
+    max_tokens = source_config.get("max_tokens", DEFAULT_MAX_TOKENS)
+    source_judge = source.get("judge_model") or JUDGE_MODEL
+    enable_scoring = bool(source.get("enable_scoring"))
+    enable_verdict = bool(source.get("enable_verdict"))
+
+    # Assign a new comparison group ID; link source as variant 0 (control)
+    group_id = _uuid_mod.uuid4().hex[:12]
+    await db.set_comparison_group(body.source_experiment_id, group_id, 0)
+
+    # Build fork config dict
+    fork_config = {
+        "temperature_a": fork_temp_a,
+        "temperature_b": fork_temp_b,
+        "max_tokens": max_tokens,
+        "recovery": {
+            "mode": "standard",
+            "agents": [
+                {"model": fork_model_a, "temperature": fork_temp_a, "name": get_display_name(fork_model_a)},
+                {"model": fork_model_b, "temperature": fork_temp_b, "name": get_display_name(fork_model_b)},
+            ],
+            "turn_delay_seconds": source_config.get("recovery", {}).get("turn_delay_seconds", 2.0),
+            "preset": source.get("preset"),
+            "enable_scoring": enable_scoring,
+            "enable_verdict": enable_verdict,
+            "enable_memory": False,
+            "observer_model": None,
+            "observer_interval": 3,
+        },
+    }
+    fork_agents_dicts = [
+        {"model": fork_model_a, "temperature": fork_temp_a, "name": get_display_name(fork_model_a)},
+        {"model": fork_model_b, "temperature": fork_temp_b, "name": get_display_name(fork_model_b)},
+    ]
+    try:
+        fork_ver_a = resolve_model_version(fork_model_a)
+        fork_ver_b = resolve_model_version(fork_model_b)
+    except Exception:
+        fork_ver_a = fork_model_a
+        fork_ver_b = fork_model_b
+
+    fork_id = await db.create_experiment(
+        model_a=fork_model_a,
+        model_b=fork_model_b,
+        seed=source["seed"],
+        system_prompt=fork_system_prompt,
+        rounds_planned=fork_rounds,
+        preset=source.get("preset"),
+        config=fork_config,
+        temperature_a=fork_temp_a,
+        temperature_b=fork_temp_b,
+        judge_model=source_judge if (enable_scoring or enable_verdict) else None,
+        enable_scoring=enable_scoring,
+        enable_verdict=enable_verdict,
+        agents=fork_agents_dicts,
+        parent_experiment_id=body.source_experiment_id,
+        fork_at_round=0,
+        model_a_version=fork_ver_a,
+        model_b_version=fork_ver_b,
+    )
+    await db.set_comparison_group(fork_id, group_id, 1)
+
+    # Launch the fork relay
+    cancel_event = asyncio.Event()
+    resume_event = asyncio.Event()
+    resume_event.set()
+
+    fork_relay_agents = [
+        RelayAgent(
+            name=get_display_name(fork_model_a),
+            model=fork_model_a,
+            temperature=fork_temp_a,
+            max_tokens=max_tokens,
+        ),
+        RelayAgent(
+            name=get_display_name(fork_model_b),
+            model=fork_model_b,
+            temperature=fork_temp_b,
+            max_tokens=max_tokens,
+        ),
+    ]
+
+    task = asyncio.create_task(
+        run_relay(
+            match_id=fork_id,
+            agents=fork_relay_agents,
+            seed=source["seed"],
+            system_prompt=fork_system_prompt,
+            rounds=fork_rounds,
+            hub=hub,
+            db=db,
+            relay_config=RelayConfig(
+                turn_delay_seconds=source_config.get("recovery", {}).get("turn_delay_seconds", 2.0),
+                cancel_event=cancel_event,
+                resume_event=resume_event,
+                preset=source.get("preset"),
+                judge_model=source_judge,
+                enable_scoring=enable_scoring,
+                enable_verdict=enable_verdict,
+                parent_experiment_id=body.source_experiment_id,
+                background_tasks=request.app.state.background_tasks,
+            ),
+        )
+    )
+    _running_relays[fork_id] = (task, cancel_event, resume_event)
+
+    def _cleanup(t: asyncio.Task, fid: str = fork_id) -> None:
+        _running_relays.pop(fid, None)
+
+    task.add_done_callback(_cleanup)
+
+    logger.info(
+        "Comparison started: group=%s source=%s fork=%s",
+        group_id, body.source_experiment_id, fork_id,
+    )
+
+    return CompareStartResponse(
+        comparison_group_id=group_id,
+        source_experiment_id=body.source_experiment_id,
+        fork_experiment_id=fork_id,
+    )
+
+
 @router.post("/{match_id}/stop")
 async def stop_relay(match_id: str, request: Request):
     """Stop a running experiment. Sets cancel flag checked between rounds."""

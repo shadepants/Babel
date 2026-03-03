@@ -25,6 +25,9 @@ import type {
   RpgContextResponse,
   CollaborationMetrics,
   PairingOracleResult,
+  RelayCompareRequest,
+  CompareStartResponse,
+  ComparisonData,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -318,6 +321,19 @@ export const api = {
   /** Get replication group detail + live stats */
   getReplicationGroup: (groupId: string) =>
     fetchJson<ReplicationGroup>(`/api/replication-groups/${groupId}`),
+
+  // -- Spec 006: A/B Comparison ------------------------------------------------
+
+  /** Fork a completed experiment with one changed variable and create a comparison pair */
+  startComparison: (body: RelayCompareRequest) =>
+    fetchJson<CompareStartResponse>('/api/relay/compare', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Get comparison data for an experiment (vocab diff + both experiment records) */
+  getComparison: (experimentId: string) =>
+    fetchJson<ComparisonData>(`/api/experiments/${experimentId}/comparison`),
 };
 
 export { ApiError };

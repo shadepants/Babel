@@ -15,7 +15,7 @@ import { EndSessionModal } from '@/components/theater/EndSessionModal'
 import { DiceOverlay } from '@/components/theater/DiceOverlay'
 import { EchoChamberWarning } from '@/components/theater/EchoChamberWarning'
 import { AgendaRevealOverlay } from '@/components/theater/AgendaRevealOverlay'
-import type { ObserverEvent, ExperimentRecord } from '@/api/types'
+import type { ObserverEvent, ExperimentRecord, ModelInfo } from '@/api/types'
 import { resolveWinnerIndex } from '@/lib/spriteStatus'
 import { useTheaterData } from '@/hooks/useTheaterData'
 import { useColorBleed } from '@/hooks/useColorBleed'
@@ -63,6 +63,14 @@ export default function Theater() {
   const [baselineAvgScore, setBaselineAvgScore] = useState<number | null>(null)
   const [launchingBaseline, setLaunchingBaseline] = useState(false)
   const [baselineToast, setBaselineToast] = useState<string | null>(null)
+
+  // Spec 006: Compare panel state
+  const [showComparePanel, setShowComparePanel] = useState(false)
+  const [compareField, setCompareField] = useState<string>('temperature_a')
+  const [compareValue, setCompareValue] = useState<string>('')
+  const [compareModels, setCompareModels] = useState<ModelInfo[]>([])
+  const [launchingCompare, setLaunchingCompare] = useState(false)
+  const [compareToast, setCompareToast] = useState<string | null>(null)
 
   // BUG 7 FIX: stable callback for DiceOverlay onComplete (was inline arrow, reset animation each render)
   const handleRollComplete = useCallback(() => setActiveRoll(null), [])
@@ -118,6 +126,47 @@ export default function Theater() {
     const interval = setInterval(pollOnce, 15_000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [baselinePolling, matchId, baselineExp])
+
+  // Spec 006: load available models when compare panel opens
+  useEffect(() => {
+    if (!showComparePanel || compareModels.length > 0) return
+    api.getModels().then(r => setCompareModels(r.models)).catch(() => {/* silently ignore */})
+  }, [showComparePanel, compareModels.length])
+
+  // Spec 006: reset value input when field changes
+  useEffect(() => {
+    if (!dbExperiment) return
+    const defaults: Record<string, string> = {
+      temperature_a: String(dbExperiment.temperature_a ?? 0.7),
+      temperature_b: String(dbExperiment.temperature_b ?? 0.7),
+      model_a: dbExperiment.model_a,
+      model_b: dbExperiment.model_b,
+      rounds: String(dbExperiment.rounds_planned),
+    }
+    setCompareValue(defaults[compareField] ?? '')
+  }, [compareField, dbExperiment]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Spec 006: launch the comparison fork
+  async function handleRunComparison() {
+    if (!matchId) return
+    setLaunchingCompare(true)
+    try {
+      const override: Record<string, string | number> = {}
+      if (compareField === 'temperature_a') override.temperature_a = parseFloat(compareValue)
+      else if (compareField === 'temperature_b') override.temperature_b = parseFloat(compareValue)
+      else if (compareField === 'model_a') override.model_a = compareValue
+      else if (compareField === 'model_b') override.model_b = compareValue
+      else if (compareField === 'rounds') override.rounds = parseInt(compareValue, 10)
+      const result = await api.startComparison({ source_experiment_id: matchId, ...override } as Parameters<typeof api.startComparison>[0])
+      navigate(`/compare/${result.source_experiment_id}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to launch comparison'
+      setCompareToast(msg)
+      setTimeout(() => setCompareToast(null), 6000)
+    } finally {
+      setLaunchingCompare(false)
+    }
+  }
 
   // Spec 018: launch a baseline comparison run
   async function handleRunBaseline() {
@@ -539,9 +588,119 @@ export default function Theater() {
               baseline running...
             </span>
           )}
+          {/* Spec 006: Compare button — show "View" if already compared, setup panel trigger otherwise */}
+          {dbExperiment?.comparison_group_id ? (
+            <Link to={`/compare/${matchId}`}>
+              <Button variant="outline" className="font-mono text-xs border-violet-500/50 text-violet-400 hover:bg-violet-500/10">
+                // View Compare
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              variant="outline"
+              className={`font-mono text-xs ${showComparePanel ? 'border-violet-500/50 text-violet-300 bg-violet-500/10' : 'border-violet-500/50 text-violet-400 hover:bg-violet-500/10'}`}
+              onClick={() => setShowComparePanel(p => !p)}
+            >
+              // Compare
+            </Button>
+          )}
           <Link to="/">
             <Button variant="outline" className="font-mono text-xs">New Experiment</Button>
           </Link>
+        </div>
+      )}
+
+      {/* Spec 006: Compare setup panel */}
+      {showComparePanel && !dbExperiment?.comparison_group_id && dbExperiment && (experiment.status === 'completed' || experiment.status === 'stopped') && (
+        <div className="px-6 py-4 border-t border-violet-500/25 bg-violet-500/5">
+          <div className="max-w-2xl mx-auto space-y-3">
+            <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-violet-400/80">
+              // compare_setup
+            </div>
+            <p className="font-mono text-[10px] text-text-dim/70">
+              Change one variable and run a fork side-by-side. Launches 1 new experiment.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Field selector */}
+              <div className="space-y-1">
+                <label className="font-mono text-[9px] tracking-wider uppercase text-text-dim/50">Variable to change</label>
+                <select
+                  className="w-full bg-bg-card/80 border border-violet-500/30 rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-violet-400"
+                  value={compareField}
+                  onChange={e => setCompareField(e.target.value)}
+                >
+                  <option value="temperature_a">Temperature A</option>
+                  <option value="temperature_b">Temperature B</option>
+                  <option value="model_a">Model A</option>
+                  <option value="model_b">Model B</option>
+                  <option value="rounds">Rounds</option>
+                </select>
+              </div>
+              {/* New value input */}
+              <div className="space-y-1">
+                <label className="font-mono text-[9px] tracking-wider uppercase text-text-dim/50">
+                  New value
+                  {(compareField === 'temperature_a' || compareField === 'temperature_b') && (
+                    <span className="ml-2 text-text-dim/40">current: {compareField === 'temperature_a' ? (dbExperiment.temperature_a ?? 0.7) : (dbExperiment.temperature_b ?? 0.7)}</span>
+                  )}
+                  {compareField === 'rounds' && (
+                    <span className="ml-2 text-text-dim/40">current: {dbExperiment.rounds_planned}</span>
+                  )}
+                </label>
+                {(compareField === 'model_a' || compareField === 'model_b') ? (
+                  <select
+                    className="w-full bg-bg-card/80 border border-violet-500/30 rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-violet-400"
+                    value={compareValue}
+                    onChange={e => setCompareValue(e.target.value)}
+                  >
+                    {compareModels.length === 0 && <option value="">Loading models...</option>}
+                    {compareModels.map(m => (
+                      <option key={m.model} value={m.model}>{m.name}</option>
+                    ))}
+                  </select>
+                ) : (compareField === 'temperature_a' || compareField === 'temperature_b') ? (
+                  <input
+                    type="number"
+                    min="0" max="2" step="0.1"
+                    className="w-full bg-bg-card/80 border border-violet-500/30 rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-violet-400"
+                    value={compareValue}
+                    onChange={e => setCompareValue(e.target.value)}
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    min="1" max="15" step="1"
+                    className="w-full bg-bg-card/80 border border-violet-500/30 rounded px-2 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:border-violet-400"
+                    value={compareValue}
+                    onChange={e => setCompareValue(e.target.value)}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <Button
+                variant="outline"
+                className="font-mono text-xs border-violet-500/50 text-violet-300 hover:bg-violet-500/10"
+                disabled={launchingCompare || !compareValue}
+                onClick={handleRunComparison}
+              >
+                {launchingCompare ? 'Launching...' : 'Run Comparison'}
+              </Button>
+              <button
+                className="font-mono text-[10px] text-text-dim/50 hover:text-text-dim"
+                onClick={() => setShowComparePanel(false)}
+              >
+                cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spec 006: compare toast */}
+      {compareToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-bg-card border border-violet-500/50 px-4 py-2 rounded font-mono text-xs text-violet-300 shadow-lg">
+          {compareToast}
         </div>
       )}
 

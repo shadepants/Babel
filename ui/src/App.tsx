@@ -24,6 +24,7 @@ const BranchTree     = lazy(() => import('./pages/BranchTree'))
 const Documentary    = lazy(() => import('./pages/Documentary'))
 const ReplicationGroup = lazy(() => import('./pages/ReplicationGroup'))
 const Help           = lazy(() => import('./pages/Help'))
+const Compare        = lazy(() => import('./pages/Compare'))
 
 /** Minimal Babel-themed fallback shown during chunk loading */
 function PageFallback() {
@@ -49,6 +50,9 @@ function routeTint(pathname: string): string {
   }
   if (pathname.startsWith('/theater') || pathname.startsWith('/tree') || pathname.startsWith('/documentary')) {
     return '139,92,246'   // purple -- live experiment / branch tree / documentary
+  }
+  if (pathname.startsWith('/compare')) {
+    return '139,92,246'   // purple -- comparison view
   }
   return '139,92,246'     // default -- purple
 }
@@ -86,6 +90,7 @@ function AppInner() {
             <Route path="/documentary/:experimentId"  element={<Documentary />} />
             <Route path="/replication/:groupId"       element={<ReplicationGroup />} />
             <Route path="/help"                       element={<Help />} />
+            <Route path="/compare/:experimentId"      element={<Compare />} />
             <Route path="*" element={
               <div className="flex-1 flex flex-col items-center justify-center gap-4">
                 <h1 className="font-display text-2xl text-text-primary tracking-widest">404</h1>

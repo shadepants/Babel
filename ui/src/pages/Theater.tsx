@@ -206,6 +206,9 @@ export default function Theater() {
   const effectiveScores  = Object.keys(experiment.scores).length > 0 ? experiment.scores : dbScores
   const effectiveVerdict = experiment.verdict ?? dbVerdict
   const effectiveVocab   = experiment.vocab.length > 0 ? experiment.vocab : dbVocab
+  // Status fallback: when SSE history is gone (server restart / old experiment),
+  // use the DB status so the completed action bar renders correctly.
+  const effectiveStatus  = experiment.status !== 'idle' ? experiment.status : (dbExperiment?.status ?? 'idle')
 
   // Spec 018: source avg score for delta panel (after effectiveScores is defined)
   const sourceAvgScore: number | null = (() => {
@@ -550,7 +553,7 @@ export default function Theater() {
         </div>
       )}
 
-      {(experiment.status === 'completed' || experiment.status === 'stopped') && (
+      {(effectiveStatus === 'completed' || effectiveStatus === 'stopped') && (
         <div className="px-4 py-3 border-t border-border-custom flex items-center justify-center gap-3 flex-wrap">
           <Link to={`/analytics/${matchId}`}>
             <Button variant="outline" className="font-mono text-xs">Analytics</Button>
@@ -611,7 +614,7 @@ export default function Theater() {
       )}
 
       {/* Spec 006: Compare setup panel */}
-      {showComparePanel && !dbExperiment?.comparison_group_id && dbExperiment && (experiment.status === 'completed' || experiment.status === 'stopped') && (
+      {showComparePanel && !dbExperiment?.comparison_group_id && dbExperiment && (effectiveStatus === 'completed' || effectiveStatus === 'stopped') && (
         <div className="px-6 py-4 border-t border-violet-500/25 bg-violet-500/5">
           <div className="max-w-2xl mx-auto space-y-3">
             <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-violet-400/80">

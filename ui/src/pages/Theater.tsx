@@ -19,7 +19,7 @@ import type { ObserverEvent, ExperimentRecord, ModelInfo } from '@/api/types'
 import { resolveWinnerIndex } from '@/lib/spriteStatus'
 import { useTheaterData } from '@/hooks/useTheaterData'
 import { useColorBleed } from '@/hooks/useColorBleed'
-import { getMaxTemp } from '@/lib/modelMeta'
+import { getMaxTemp, getRecommendedMax } from '@/lib/modelMeta'
 
 // ── component ───────────────────────────────────────────────────
 
@@ -677,8 +677,10 @@ export default function Theater() {
                   (() => {
                     const relevantModel = compareField === 'temperature_a' ? dbExperiment.model_a : dbExperiment.model_b
                     const maxTemp = getMaxTemp(relevantModel)
+                    const recommendedMax = getRecommendedMax(relevantModel)
                     const tempVal = parseFloat(compareValue)
                     const overMax = !isNaN(tempVal) && tempVal > maxTemp
+                    const aboveRecommended = !overMax && !isNaN(tempVal) && tempVal > recommendedMax && recommendedMax < maxTemp
                     return (
                       <>
                         <input
@@ -696,6 +698,16 @@ export default function Theater() {
                         {maxTemp < 2 && !overMax && (
                           <p className="font-mono text-[9px] text-text-dim/35 tracking-wider">
                             // provider cap: max {maxTemp}
+                          </p>
+                        )}
+                        {aboveRecommended && (
+                          <p className="font-mono text-[9px] text-amber-400/60 tracking-wider">
+                            // above recommended range (0 &ndash; {recommendedMax})
+                          </p>
+                        )}
+                        {!overMax && !aboveRecommended && recommendedMax < maxTemp && (
+                          <p className="font-mono text-[9px] text-text-dim/35 tracking-wider">
+                            // recommended: 0 &ndash; {recommendedMax}
                           </p>
                         )}
                       </>

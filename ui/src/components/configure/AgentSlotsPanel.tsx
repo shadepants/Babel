@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AGENT_COLORS } from '@/components/theater/ConversationColumn'
-import { MODEL_META, TIER_COLOR, getMaxTemp } from '@/lib/modelMeta'
+import { MODEL_META, TIER_COLOR, getMaxTemp, getRecommendedMax } from '@/lib/modelMeta'
 
 // Tailwind can't purge dynamic class names; use explicit per-index color labels
 const AGENT_LABELS = ['Model A', 'Model B', 'Model C', 'Model D']
@@ -100,6 +100,8 @@ export function AgentSlotsPanel({
           const isSuggested = !isCustom && suggestedModels[idx] && agent.model === suggestedModels[idx]
           const keyUnavailable = agent.model && modelStatus.get(agent.model) === false
           const maxTemp = getMaxTemp(agent.model)
+          const recommendedMax = getRecommendedMax(agent.model)
+          const aboveRecommended = agent.temperature > recommendedMax && agent.temperature <= maxTemp
           return (
             <div key={idx} className="space-y-2 p-3 border border-border-custom/40 rounded-sm bg-bg-deep/30">
               <div className="flex items-center justify-between">
@@ -185,6 +187,16 @@ export function AgentSlotsPanel({
                 {maxTemp < 2 && (
                   <p className="font-mono text-[9px] text-amber-400/50 tracking-wider mt-0.5">
                     // provider cap: max {maxTemp}
+                  </p>
+                )}
+                {recommendedMax < maxTemp && !aboveRecommended && (
+                  <p className="font-mono text-[9px] text-text-dim/35 tracking-wider mt-0.5">
+                    // recommended: 0 &ndash; {recommendedMax}
+                  </p>
+                )}
+                {aboveRecommended && (
+                  <p className="font-mono text-[9px] text-amber-400/60 tracking-wider mt-0.5">
+                    // above recommended range (0 &ndash; {recommendedMax})
                   </p>
                 )}
                 <p className="font-mono text-[9px] text-text-dim/40 tracking-wider mt-0.5">

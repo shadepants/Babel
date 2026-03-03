@@ -1,6 +1,6 @@
 &#xFEFF;# Babel &mdash; AI-to-AI Conversation Arena
 
-**Last Updated:** 2026-03-02 (session 42 &mdash; spec-005 hypothesis testing + RelayConfig wiring)
+**Last Updated:** 2026-03-03 (session 43 &mdash; spec-006 A/B comparison dashboard)
 
 ## 1. Goal
 A standalone shareable web app where AI models talk to each other in real-time &mdash; co-inventing languages, debating ideas, writing stories, and evolving shared intelligence. Watch it happen live in the browser.
@@ -24,37 +24,36 @@ See `docs/CHANGELOG.md` for full history.
 - [x] Spec 020 help system, perf: route-level code splitting, Spec 014 shareable config URLs
 - [x] relay status fix: `update_replication_group_status` wired into done-callback
 
-### Session 42 &mdash; JUDGE_MODEL + RelayConfig + Spec 005 (SHIPPED `d2ec223`, `6a02b0e`)
-- [x] **JUDGE_MODEL** &mdash; `.env` env var; `config.py` reads via `os.getenv()` with fallback
-- [x] **RelayConfig wiring** &mdash; `run_relay()` now takes `relay_config: RelayConfig | None`; all 4 call sites updated (relay.py, audit_engine.py, tournament_engine.py, + recovery path)
-- [x] **Spec 005 Hypothesis Testing Mode** &mdash; full stack:
-  - DB: 3 new columns + `save_hypothesis()` / `save_hypothesis_result()` helpers
-  - relay_engine: `evaluate_hypothesis()` fires post-completion, emits `relay.hypothesis_result` SSE
-  - routers/relay.py: `hypothesis` field on `RelayStartRequest`; saved to DB on experiment create
-  - Configure.tsx: hypothesis textarea (500 char max) with falsifiable-claim hint
-  - Gallery.tsx: 4 outcome badges (pending / confirmed / refuted / inconclusive)
-  - Theater.tsx: hypothesis panel below verdict; SSE live + DB fallback
-  - Analytics.tsx: hypothesis card with colored result + reasoning
+### Session 42 &mdash; JUDGE_MODEL + RelayConfig + Spec 005 (SHIPPED)
+- [x] JUDGE_MODEL env var; RelayConfig wiring into run_relay(); Spec 005 Hypothesis Testing Mode full stack
+
+### Session 43 &mdash; Spec 006 A/B Comparison Dashboard (SHIPPED `fc5042d`)
+- [x] **DB** &mdash; `comparison_group_id` + `comparison_variant` columns; `set_comparison_group()` / `get_comparison_group_experiments()` helpers
+- [x] **POST /api/relay/compare** &mdash; forks a completed experiment with one changed param; links both as variant 0/1; launches fork relay
+- [x] **GET /api/experiments/{id}/comparison** &mdash; vocab diff (a_only/b_only/shared) + auto-detected changed field + both experiment records with vocab_count + avg_score
+- [x] **Compare.tsx** &mdash; new `/compare/:experimentId` page: side-by-side cards, metric diff bar, vocab diff table, 8s polling while fork runs
+- [x] **Theater.tsx** &mdash; `// Compare` button on completed experiments; inline setup panel (field select + value input); `// View Compare` link when group exists
 
 ### Next Priorities (ordered)
-- [ ] **Spec 006** &mdash; A/B Forking Dashboard: visual branch tree for fork experiments; compare side-by-side
+- [ ] **Live E2E smoke test** &mdash; run experiment with hypothesis; verify Gallery badge + Theater panel
 - [ ] **Spec 021+** &mdash; new specs TBD (run `/spec` to draft next feature)
+- [ ] **Push to origin** &mdash; 27 commits ahead of origin/master
 
 ## 4. Roadmap &mdash; Playground Specs
 
 | # | Task file | Feature | Complexity | Status |
 |---|-----------|---------|------------|--------|
 | **005** | `tasks/005-hypothesis-testing-mode.md` | Hypothesis Testing Mode | Medium | **&#x2705; SHIPPED** |
-| **006** | `tasks/006-ab-forking-dashboard.md` | A/B Forking Dashboard | Medium | Spec only |
+| **006** | `tasks/006-ab-forking-dashboard.md` | A/B Forking Dashboard | Medium | **&#x2705; SHIPPED** |
 | **014** | `tasks/014-shareable-config-urls.md` | Shareable Config URLs | Tiny | **&#x2705; SHIPPED** |
 | **017** | `tasks/017-replication-runs.md` | Replication Runs | Medium | **&#x2705; SHIPPED** |
 | **018** | `tasks/018-baseline-control-preset.md` | Baseline Control Preset | Small | **&#x2705; SHIPPED** |
 | **019** | `tasks/019-model-version-snapshot.md` | Model Version Snapshot | Tiny | **&#x2705; SHIPPED** |
 | **020** | `tasks/020-help-system.md` | Help System | Small | **&#x2705; SHIPPED** |
 
-**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; 014 &#x2705; &rarr; 005 &#x2705; &rarr; next: 006
+**Build order (MCDA-ranked):** 019 &#x2705; &rarr; 018 &#x2705; &rarr; 017 &#x2705; &rarr; 020 &#x2705; &rarr; 014 &#x2705; &rarr; 005 &#x2705; &rarr; 006 &#x2705; &rarr; next: 021+
 
-## 5. Architecture (v42.0)
+## 5. Architecture (v43.0)
 ```
 server/
   config.py             RelayConfig WIRED [s42]; JUDGE_MODEL from .env [s42]
@@ -62,17 +61,19 @@ server/
   audit_engine.py       uses RelayConfig() [s42]
   tournament_engine.py  uses RelayConfig() [s42]
   routers/
-    relay.py            hypothesis in RelayStartRequest; all call sites use RelayConfig [s42]
+    relay.py            POST /compare (spec-006) [s43]; hypothesis in RelayStartRequest [s42]
+    experiments.py      GET /{id}/comparison (spec-006) [s43]
     replication.py      GET /replication-groups + GET /replication-groups/:id [s39]
-  db.py                 hypothesis columns + helpers [s42]; replication tables [s39]
+  db.py                 comparison_group columns + helpers [s43]; hypothesis [s42]
 ui/src/
   api/
-    types.ts            HypothesisResultEvent + ExperimentRecord hypothesis fields [s42]
-    hooks.ts            hypothesisResult in ExperimentState [s42]
+    types.ts            ComparisonData/ExperimentRecord comparison fields [s43]
+    client.ts           startComparison() + getComparison() [s43]
   pages/
+    Compare.tsx         /compare/:experimentId page [s43] (NEW)
+    Theater.tsx         Compare button + setup panel [s43]; hypothesis panel [s42]
     Configure.tsx       hypothesis textarea [s42]; ?cfg= share [s41]
     Gallery.tsx         hypothesis outcome badges [s42]; group cards [s39]
-    Theater.tsx         hypothesis panel + SSE/DB fallback [s42]
     Analytics.tsx       hypothesis card [s42]
     Help.tsx            4-section reference page [s39]
     ReplicationGroup.tsx stats panel + per-run table [s39]
@@ -92,3 +93,4 @@ tasks/                  005-020: playground feature specs
 - **Vite circular chunk warning:** `vendor -> vendor-react -> vendor` is cosmetic (React/scheduler co-dep) &mdash; runtime unaffected.
 - **cfg URL param:** `Configure.tsx` reads `?cfg=JSON` on mount; applied after preset/remix/fork so it always wins.
 - **agents_config_json:** Must be populated for ALL experiment paths. If NULL, Theater shows 0 turns.
+- **Comparison group guard:** `POST /api/relay/compare` rejects experiments that already have a comparison_group_id.
